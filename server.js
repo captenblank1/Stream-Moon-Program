@@ -197,8 +197,9 @@ const authLimiter = rateLimit({
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: FRONTEND_URL, credentials: true },
+  cors: { origin: true, credentials: true },
   allowEIO3: true,
+  transports: ["websocket", "polling"],
 });
 
 const imagesDir = path.join(__dirname, "public", "images");
@@ -852,30 +853,35 @@ async function sendRconCommand(userId, command, playerName = null) {
 // ================ وظيفة Webhook (معدلة لدعم localhost عبر العميل المحلي) ================
 async function sendWebhook(webhookUrl, data, userId = null) {
   if (!webhookUrl || !webhookUrl.trim()) return;
-  
+
   // التحقق مما إذا كان الرابط يشير إلى localhost أو 127.0.0.1
-  const isLocalhost = webhookUrl.includes('localhost') || webhookUrl.includes('127.0.0.1');
-  
+  const isLocalhost =
+    webhookUrl.includes("localhost") || webhookUrl.includes("127.0.0.1");
+
   if (isLocalhost && userId) {
     const agentSocket = userLocalAgents.get(userId);
     if (agentSocket && agentSocket.connected) {
-      logger.info(`📡 إرسال webhook إلى العميل المحلي للمستخدم ${userId}: ${webhookUrl}`);
-      agentSocket.emit('webhook-request', {
+      logger.info(
+        `📡 إرسال webhook إلى العميل المحلي للمستخدم ${userId}: ${webhookUrl}`,
+      );
+      agentSocket.emit("webhook-request", {
         url: webhookUrl,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: data,
         repeat: 1,
         interval: 0,
-        delayBefore: 0
+        delayBefore: 0,
       });
       return;
     } else {
-      logger.warn(`⚠️ لا يوجد عميل محلي متصل للمستخدم ${userId} لتوجيه webhook إلى localhost`);
+      logger.warn(
+        `⚠️ لا يوجد عميل محلي متصل للمستخدم ${userId} لتوجيه webhook إلى localhost`,
+      );
       return;
     }
   }
-  
+
   // لـ URLs العادية، ننفذ مباشرة من الخادم
   logger.info(`🌐 إرسال Webhook إلى: ${webhookUrl.substring(0, 50)}...`);
   const controller = new AbortController();
@@ -1087,7 +1093,7 @@ async function executeAction(cmdObj, triggerUser = "Unknown", userId) {
     for (let i = 0; i < repeat; i++) {
       if (i > 0 && interval > 0)
         await new Promise((r) => setTimeout(r, interval));
-   await sendWebhook(webhookUrl, webhookData, userId);
+      await sendWebhook(webhookUrl, webhookData, userId);
     }
   }
 }
@@ -4316,11 +4322,11 @@ app.get("/", (req, res) => {
 app.get("/agent-auth", async (req, res) => {
   const { callbackPort } = req.query;
   const port = callbackPort || 3456;
-let protocol = req.protocol;
-if (process.env.NODE_ENV === "production") {
-  protocol = "https";
-}
-const serverUrl = `${protocol}://${req.get("host")}`;
+  let protocol = req.protocol;
+  if (process.env.NODE_ENV === "production") {
+    protocol = "https";
+  }
+  const serverUrl = `${protocol}://${req.get("host")}`;
 
   // إنشاء رمز ربط جديد
   const bindingToken = crypto.randomBytes(32).toString("hex");
@@ -4433,18 +4439,18 @@ app.post("/api/agent/exchange-binding", async (req, res) => {
       userId: data.userId,
       expires: Date.now() + 30 * 24 * 60 * 60 * 1000,
     });
-    
+
     // تحديد البروتوكول المناسب
     let wsProtocol = "ws";
     if (process.env.NODE_ENV === "production") {
       wsProtocol = "wss";
     }
     const wsUrl = `${wsProtocol}://${req.headers.host}/agent`;
-    
+
     res.json({
       success: true,
       sessionToken,
-      wsUrl
+      wsUrl,
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
