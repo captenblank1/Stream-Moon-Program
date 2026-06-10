@@ -526,7 +526,6 @@
             <input type="file" id="videoInput" accept="video/*" />
             <div id="videoPreview"></div>
             <input type="hidden" id="video" />
-            <input type="hidden" id="videoUrl" />
             <button type="button" class="clear-btn" onclick="clearVideo()">
               🗑️ إزالة الفيديو
             </button>
@@ -2685,8 +2684,6 @@
           document.getElementById("volumeValue").textContent =
             commandData.volume || 100;
           document.getElementById("video").value = commandData.video || "";
-          document.getElementById("videoUrl").value =
-            commandData.videoUrl || "";
           document.getElementById("videoFileName").textContent =
             commandData.video ? commandData.video : "";
           document.getElementById("screen").value = commandData.screen || 1;
@@ -2878,7 +2875,6 @@
               if (data.success) {
                 showMessage("✅ تم رفع الفيديو بنجاح");
                 document.getElementById("video").value = data.filename;
-                document.getElementById("videoUrl").value = data.url; // تخزين الرابط الصحيح
                 document.getElementById("videoFileName").textContent =
                   data.filename;
                 document.getElementById("videoInput").value = "";
@@ -3545,7 +3541,6 @@
           document.getElementById("videoInput").value = "";
           document.getElementById("videoPreview").innerHTML = "";
           document.getElementById("videoFileName").textContent = "";
-          document.getElementById("videoUrl").value = "";
         });
       }
 
@@ -4079,7 +4074,6 @@
           volume,
           video,
           videoVolume,
-          videoUrl: document.getElementById("videoUrl").value || null,
           screen,
           targetUser: targetUser || "all",
           oncePerLive: !!oncePerLive,
@@ -4237,7 +4231,7 @@
         if (!combo || combo.endsWith("+")) return;
 
         try {
-          const res = await fetch(`${API_BASE}/api/execute-keystroke`, {
+          const res = await fetch(`${API_BASE}/api/execute-keystroke`, { 
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ combo }),
