@@ -3,11 +3,11 @@
 
 require("dotenv").config();
 // تحديد عنوان الواجهة الأمامية تلقائيًا
-const FRONTEND_URL =
-  process.env.FRONTEND_URL ||
-  (process.env.NODE_ENV === "production"
-    ? "https://yourdomain.onrender.com"
-    : "http://localhost:3000");
+const FRONTEND_URL = process.env.FRONTEND_URL;
+if (!FRONTEND_URL && process.env.NODE_ENV === "production") {
+  console.error("❌ FRONTEND_URL must be set in production");
+  process.exit(1);
+}
 // ستحتاج لاحقًا إلى تغيير yourdomain.onrender.com إلى النطاق الذي ستحصل عليه
 
 const { TikTokLiveConnection, WebcastEvent } = require("tiktok-live-connector");
@@ -115,23 +115,23 @@ const logger = winston.createLogger({
 
 // ================ تهيئة node-key-sender ================
 let keySenderReady = false;
-try {
-  const nircmdPath = path.join(__dirname, "nircmd.exe");
-  if (fs.existsSync(nircmdPath)) {
-    nodeKeySender.setOption("nircmdPath", nircmdPath);
-    keySenderReady = true;
-    console.log("✅ node-key-sender مع nircmd جاهز لتنفيذ الكيستروك الحقيقية");
-  } else {
-    console.warn(
-      "⚠️ لم يتم العثور على nircmd.exe في المسار. سيتم استخدام SendKeys العادي",
-    );
-    keySenderReady = true;
+if (process.platform === 'win32') {
+  try {
+    const nircmdPath = path.join(__dirname, "nircmd.exe");
+    if (fs.existsSync(nircmdPath)) {
+      nodeKeySender.setOption("nircmdPath", nircmdPath);
+      keySenderReady = true;
+      console.log("✅ node-key-sender مع nircmd جاهز (Windows only)");
+    } else {
+      console.warn("⚠️ nircmd.exe غير موجود");
+    }
+  } catch (err) {
+    console.error("❌ فشل تحميل node-key-sender:", err.message);
   }
-} catch (err) {
-  console.error("❌ فشل تحميل node-key-sender:", err.message);
+} else {
+  console.log("ℹ️ تم تعطيل node-key-sender على Linux - سيتم الاعتماد على Agent المحلي فقط");
   keySenderReady = false;
 }
-
 // ================ دالة تنفيذ كيستروك حقيقية باستخدام node-key-sender ================
 
 async function executeNativeKeystroke(keys, repeat = 1, intervalMs = 500) {
@@ -4281,15 +4281,10 @@ cron.schedule("0 * * * *", async () => {
 });
 
 // ================ خدمة الواجهة الأمامية ================
-const frontendPath = path.join(__dirname, "..", "tik_black");
+const frontendPath = path.join(__dirname, "public");
 app.use(express.static(frontendPath));
 app.get("/", (req, res) => {
-  const html = fs.readFileSync(path.join(frontendPath, "index.html"), "utf8");
-  const injected = html.replace(
-    "</head>",
-    `<script>window.API_BASE = '${FRONTEND_URL}';</script></head>`,
-  );
-  res.send(injected);
+  res.sendFile(path.join(frontendPath, "index.html"));
 });
 
 app.get("/admin", authenticateToken, isAdmin, (req, res) => {
