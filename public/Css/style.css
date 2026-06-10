@@ -630,7 +630,7 @@ input[type="range"]::-webkit-slider-thumb {
 .modal {
   display: none;
   position: fixed;
-  z-index: 2000;
+  z-index: 100000;
   left: 0;
   top: 0;
   width: 100%;
@@ -1402,4 +1402,9 @@ tr.disabled-row button {
     max-height: 90vh;
     padding: 15px;
   }
+}
+.modal-content {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
 }
