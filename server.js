@@ -396,6 +396,7 @@ const giftCommandSchema = new mongoose.Schema(
     volume: { type: Number, default: 100 },
     video: { type: String, default: null },
     videoVolume: { type: Number, default: 100 },
+       videoUrl: { type: String, default: null },
     screen: { type: Number, default: 1 },
     targetUser: { type: String, default: "all" },
     active: { type: Boolean, default: true },
@@ -434,6 +435,7 @@ const interactionCommandSchema = new mongoose.Schema(
     volume: { type: Number, default: 100 },
     video: { type: String, default: null },
     videoVolume: { type: Number, default: 100 },
+     videoUrl: { type: String, default: null },
     screen: { type: Number, default: 1 },
     targetUser: { type: String, default: "all" },
     active: { type: Boolean, default: true },
@@ -1008,16 +1010,36 @@ async function executeAction(cmdObj, triggerUser = "Unknown", userId) {
   if (playSound && audio) {
     playAudio(audio, volume, userId);
   }
-  if (playVideo && video && userId) {
-    const room = `user-${userId}`;
-    const videoUrl = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload/${encodeURIComponent(video)}`;
+if (playVideo && video && userId) {
+  const room = `user-${userId}`;
+  let finalVideoUrl = null;
+
+  // 1. استخدم الرابط المحفوظ مسبقاً (videoUrl) إذا كان موجوداً
+  if (cmdObj.videoUrl) {
+    finalVideoUrl = cmdObj.videoUrl;
+  } 
+  // 2. وإلا حاول استرداد الرابط من جدول الفيديو باستخدام اسم الملف (للتوافق مع الأوامر القديمة)
+  else if (video) {
+    const videoDoc = await Video.findOne({ file: video });
+    if (videoDoc && videoDoc.cloudinaryUrl) {
+      finalVideoUrl = videoDoc.cloudinaryUrl;
+    } else {
+      // 3. كحل أخير: بناء الرابط بالطريقة القديمة (قد لا يعمل)
+      finalVideoUrl = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload/${encodeURIComponent(video)}`;
+    }
+  }
+
+  if (finalVideoUrl) {
     io.to(room).emit("gift-video", {
-      videoId: videoUrl,
+      videoId: finalVideoUrl,
       user: triggerUser,
       screen,
       volume: videoVolume,
     });
+  } else {
+    logger.warn(`⚠️ لا يمكن تشغيل الفيديو للأمر ${_id} - لا يوجد رابط صالح`);
   }
+}
 
   if (command && command.trim()) {
     const lines = command
@@ -2814,6 +2836,7 @@ app.post("/api/gift-commands", authenticateToken, async (req, res) => {
       audio: body.audio || null,
       volume: parseInt(body.volume || 100, 10) || 100,
       video: body.video || null,
+      videoUrl: body.videoUrl || null,
       videoVolume: parseInt(body.videoVolume || 100, 10) || 100,
       screen: parseInt(body.screen || 1, 10) || 1,
       targetUser: body.targetUser || "all",
@@ -2849,6 +2872,7 @@ app.put("/api/gift-commands/:id", authenticateToken, async (req, res) => {
         message: "لا يمكنك تعديل أمر من بروفايل غير مصرح به",
       });
     Object.assign(gift, req.body);
+    
     await gift.save();
     await refreshCachesForUser(req.user.id);
     res.json({ success: true, gift });
@@ -3010,6 +3034,7 @@ app.post("/api/interaction-commands", authenticateToken, async (req, res) => {
     } else {
       payload.combo = null;
     }
+    payload.videoUrl = payload.videoUrl || null;
     const created = await InteractionCommand.create(payload);
     await refreshCachesForUser(req.user.id);
     res.json({ success: true, command: created });
