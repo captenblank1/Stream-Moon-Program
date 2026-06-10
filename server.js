@@ -4291,7 +4291,11 @@ app.get("/", (req, res) => {
 app.get("/agent-auth", async (req, res) => {
   const { callbackPort } = req.query;
   const port = callbackPort || 3456;
-  const serverUrl = `${req.protocol}://${req.get("host")}`;
+let protocol = req.protocol;
+if (process.env.NODE_ENV === "production") {
+  protocol = "https";
+}
+const serverUrl = `${protocol}://${req.get("host")}`;
 
   // إنشاء رمز ربط جديد
   const bindingToken = crypto.randomBytes(32).toString("hex");
@@ -4404,10 +4408,18 @@ app.post("/api/agent/exchange-binding", async (req, res) => {
       userId: data.userId,
       expires: Date.now() + 30 * 24 * 60 * 60 * 1000,
     });
+    
+    // تحديد البروتوكول المناسب
+    let wsProtocol = "ws";
+    if (process.env.NODE_ENV === "production") {
+      wsProtocol = "wss";
+    }
+    const wsUrl = `${wsProtocol}://${req.headers.host}/agent`;
+    
     res.json({
       success: true,
       sessionToken,
-      wsUrl: `ws://${req.headers.host}/agent`,
+      wsUrl
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
