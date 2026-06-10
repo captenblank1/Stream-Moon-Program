@@ -89,9 +89,6 @@ let giftStreakState = new Map();
 let giftCommandsCache = new Map();
 let interactionCommandsCache = new Map();
 
-
-
-
 // **جديد** لتخزين اتصالات العملاء المحليين
 let userLocalAgents = new Map(); // key: userId (string), value: socket
 // تخزين مؤقت لرموز تسجيل العميل المحلي (تنتهي بعد 60 ثانية)
@@ -115,7 +112,7 @@ const logger = winston.createLogger({
 
 // ================ تهيئة node-key-sender ================
 let keySenderReady = false;
-if (process.platform === 'win32') {
+if (process.platform === "win32") {
   try {
     const nircmdPath = path.join(__dirname, "nircmd.exe");
     if (fs.existsSync(nircmdPath)) {
@@ -129,7 +126,9 @@ if (process.platform === 'win32') {
     console.error("❌ فشل تحميل node-key-sender:", err.message);
   }
 } else {
-  console.log("ℹ️ تم تعطيل node-key-sender على Linux - سيتم الاعتماد على Agent المحلي فقط");
+  console.log(
+    "ℹ️ تم تعطيل node-key-sender على Linux - سيتم الاعتماد على Agent المحلي فقط",
+  );
   keySenderReady = false;
 }
 // ================ دالة تنفيذ كيستروك حقيقية باستخدام node-key-sender ================
@@ -3975,7 +3974,7 @@ app.get("/admin", authenticateToken, isAdmin, (req, res) => {
 </div>
 </div>
 <script>
-  const API_BASE = "http://localhost:3000";
+  const API_BASE = '';
  
   let allUsers = [];
 
@@ -4287,220 +4286,6 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(frontendPath, "index.html"));
 });
 
-app.get("/admin", authenticateToken, isAdmin, (req, res) => {
-  res.send(`
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>لوحة تحكم Black Moon - Admin</title>
-  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family:'Cairo', sans-serif; background:#0a0a0a; color:#fff; padding:20px; }
-    .container { max-width:1400px; margin:0 auto; }
-    h1 { color:#4caf50; margin-bottom:20px; border-right:4px solid #4caf50; padding-right:15px; }
-    .stats-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px,1fr)); gap:20px; margin-bottom:30px; }
-    .stat-card { background:#1e1e1e; border-radius:12px; padding:20px; text-align:center; border:1px solid #333; }
-    .stat-value { font-size:2.5rem; font-weight:bold; color:#4caf50; }
-    .stat-label { color:#aaa; margin-top:8px; }
-    .chart-container { background:#1e1e1e; border-radius:12px; padding:20px; margin-bottom:30px; border:1px solid #333; }
-    canvas { max-height:300px; }
-    .users-table { width:100%; border-collapse:collapse; background:#1e1e1e; border-radius:12px; overflow:hidden; }
-    .users-table th, .users-table td { padding:12px; text-align:center; border-bottom:1px solid #333; }
-    .users-table th { background:#2a2a2a; color:#4caf50; }
-    .users-table tr:hover { background:#2a2a2a; }
-    .btn { padding:6px 12px; border:none; border-radius:6px; cursor:pointer; font-size:12px; margin:0 2px; }
-    .btn-renew-monthly { background:#2196f3; color:white; }
-    .btn-renew-yearly { background:#4caf50; color:white; }
-    .btn-downgrade { background:#ff9800; color:white; }
-    .btn-admin { background:#9c27b0; color:white; }
-    .btn-delete { background:#f44336; color:white; }
-    .badge { padding:4px 8px; border-radius:20px; font-size:12px; font-weight:bold; }
-    .badge-free { background:#555; color:#fff; }
-    .badge-paid { background:#4caf50; color:#fff; }
-    .badge-admin { background:#ff9800; color:#fff; }
-    .badge-user { background:#2196f3; color:#fff; }
-    .status-live { color:#f44336; font-weight:bold; background:#3a1a1a; padding:2px 8px; border-radius:20px; display:inline-block; }
-    .status-offline { color:#aaa; }
-    .refresh-btn { background:#4caf50; color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer; margin-bottom:20px; }
-    .search-box { margin-bottom:20px; display:flex; gap:10px; align-items:center; }
-    .search-box input { padding:8px; border-radius:6px; border:none; background:#2a2a2a; color:white; flex:1; max-width:300px; }
-    .tiktok-user { color:#4caf50; font-weight:bold; }
-  </style>
-</head>
-<body>
-<div class="container">
-  <h1>📊 لوحة تحكم Black Moon - Admin</h1>
-  <div class="search-box">
-    <input type="text" id="searchEmail" placeholder="🔍 بحث بالبريد الإلكتروني...">
-    <button class="refresh-btn" onclick="location.reload()">🔄 تحديث</button>
-  </div>
-  <div class="stats-grid" id="statsGrid">
-    <div class="stat-card"><div class="stat-value" id="totalUsers">0</div><div class="stat-label">إجمالي المستخدمين</div></div>
-    <div class="stat-card"><div class="stat-value" id="paidUsers">0</div><div class="stat-label">مشتركين مدفوعين</div></div>
-    <div class="stat-card"><div class="stat-value" id="freeUsers">0</div><div class="stat-label">مستخدمين مجانيين</div></div>
-    <div class="stat-card"><div class="stat-value" id="totalCommands">0</div><div class="stat-label">إجمالي الأوامر</div></div>
-    <div class="stat-card"><div class="stat-value" id="activeLive">0</div><div class="stat-label">بثوث حية نشطة</div></div>
-  </div>
-  <div class="chart-container"><canvas id="usersChart"></canvas></div>
-  <h2>👥 قائمة المستخدمين</h2>
-  <div style="overflow-x:auto;"><table class="users-table" id="usersTable"><thead>
-    <tr><th>البريد الإلكتروني</th><th>الخطة</th><th>النوع</th><th>تاريخ الانتهاء</th><th>الدور</th><th>TikTok</th><th>الحالة</th><th>عدد الأوامر</th><th>تاريخ التسجيل</th><th>إجراءات</th>表示
-  </thead><tbody></tbody>绵
-</div>
-</div>
-<script>
-  // استخدم المسار النسبي لضمان العمل في أي بيئة (تطوير أو إنتاج)
-  const API_BASE = '';
- 
-  let allUsers = [];
-
-  async function fetchWithAuth(url, options={}) {
-    // أضف API_BASE للمسار إذا كان url نسبياً
-    const fullUrl = API_BASE ? API_BASE + url : url;
-    const res = await fetch(fullUrl, {...options, credentials:"include"});
-    if(res.status===401){ alert("جلسة غير صالحة"); window.location.href="/"; return null; }
-    return res.json();
-  }
-
-  async function loadStats(){
-    const data = await fetchWithAuth('/api/admin/stats');
-    if(data && data.success){
-      document.getElementById("totalUsers").textContent = data.stats.totalUsers;
-      document.getElementById("paidUsers").textContent = data.stats.paidUsers;
-      document.getElementById("freeUsers").textContent = data.stats.freeUsers;
-      document.getElementById("totalCommands").textContent = data.stats.totalCommands;
-      document.getElementById("activeLive").textContent = data.stats.activeLiveUsers;
-    }
-  }
-
-  function renderUsersTable(users){
-    const tbody = document.querySelector("#usersTable tbody");
-    tbody.innerHTML = "";
-    users.forEach(user => {
-      const expiry = user.subscriptionExpiry ? new Date(user.subscriptionExpiry).toLocaleDateString('ar-EG') : 'غير محدد';
-      const planBadge = user.plan==='paid' ? '<span class="badge badge-paid">مدفوع</span>' : '<span class="badge badge-free">مجاني</span>';
-      const planType = user.planType ? (user.planType==='monthly' ? 'شهري' : 'سنوي') : '—';
-      const roleBadge = user.role==='admin' ? '<span class="badge badge-admin">مدير</span>' : '<span class="badge badge-user">مستخدم</span>';
-      const liveStatusHtml = user.isLiveNow
-        ? '<span class="status-live">🟢 مباشر</span>'
-        : '<span class="status-offline">⚫ غير متصل</span>';
-      const tiktokHtml = user.tiktokUsername
-        ? \`<span class="tiktok-user">@\${user.tiktokUsername}</span>\`
-        : '—';
-      const row = document.createElement("tr");
-      row.innerHTML = \`
-                <td>\${user.email}</td>
-                <td>\${planBadge}</td>
-                <td>\${planType}</td>
-                <td>\${expiry}</td>
-                <td>\${roleBadge}</td>
-                <td>\${tiktokHtml}</td>
-                <td>\${liveStatusHtml}</td>
-                <td>\${user.commandCount}</td>
-                <td>\${new Date(user.createdAt).toLocaleDateString('ar-EG')}</td>
-                <td>
-              <button class="btn btn-renew-monthly" data-id="\${user.id}" data-plan="monthly">شهري</button>
-              <button class="btn btn-renew-yearly" data-id="\${user.id}" data-plan="yearly">سنوي</button>
-              <button class="btn btn-downgrade" data-id="\${user.id}">إزالة الترقية</button>
-              <button class="btn btn-admin" data-id="\${user.id}">ترقية مدير</button>
-              <button class="btn btn-delete" data-id="\${user.id}">حذف</button>
-                   </td>
-      \`;
-      tbody.appendChild(row);
-    });
-
-    document.querySelectorAll(".btn-renew-monthly, .btn-renew-yearly").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const id = btn.dataset.id;
-        const plan = btn.dataset.plan;
-        if (confirm(\`تجديد الاشتراك (\${plan === 'monthly' ? 'شهري' : 'سنوي'})؟\`)) {
-          const res = await fetchWithAuth(\`/api/admin/user/\${id}/renew\`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ planType: plan })
-          });
-          if (res && res.success) alert("تم التجديد بنجاح");
-          else alert("فشل التجديد");
-          loadUsers();
-        }
-      });
-    });
-    document.querySelectorAll(".btn-downgrade").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const id = btn.dataset.id;
-        if (confirm("إزالة الترقية وجعل المستخدم مجانياً؟")) {
-          const res = await fetchWithAuth(\`/api/admin/user/\${id}/downgrade\`, { method: "POST" });
-          if (res && res.success) alert("تمت إزالة الترقية");
-          else alert("فشلت العملية");
-          loadUsers();
-        }
-      });
-    });
-    document.querySelectorAll(".btn-admin").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const id = btn.dataset.id;
-        if (confirm("ترقية إلى مدير؟")) {
-          const res = await fetchWithAuth(\`/api/admin/user/\${id}/make-admin\`, { method: "POST" });
-          if (res && res.success) alert("تمت الترقية");
-          else alert("فشلت الترقية");
-          loadUsers();
-        }
-      });
-    });
-    document.querySelectorAll(".btn-delete").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const id = btn.dataset.id;
-        if (confirm("حذف المستخدم وجميع أوامره؟")) {
-          const res = await fetchWithAuth(\`/api/admin/user/\${id}\`, { method: "DELETE" });
-          if (res && res.success) alert("تم الحذف");
-          else alert("فشل الحذف");
-          loadUsers();
-        }
-      });
-    });
-  }
-
-  async function loadUsers(){
-    const data = await fetchWithAuth('/api/admin/users');
-    if(!data || !data.success) return;
-    allUsers = data.users;
-    renderUsersTable(allUsers);
-  }
-
-  function searchUsers(){
-    const searchTerm = document.getElementById("searchEmail").value.toLowerCase().trim();
-    if(searchTerm === "") renderUsersTable(allUsers);
-    else {
-      const filtered = allUsers.filter(user => user.email.toLowerCase().includes(searchTerm));
-      renderUsersTable(filtered);
-    }
-  }
-
-  async function loadChart(){
-    const data = await fetchWithAuth('/api/admin/users');
-    if(!data || !data.success) return;
-    const planCounts = {free:0, paid:0};
-    data.users.forEach(u=>{ if(u.plan==='free') planCounts.free++; else planCounts.paid++; });
-    new Chart(document.getElementById('usersChart'), {
-      type:'pie',
-      data:{ labels:['مجاني','مدفوع'], datasets:[{ data:[planCounts.free,planCounts.paid], backgroundColor:['#555','#4caf50'], borderWidth:0 }] },
-      options:{ responsive:true, plugins:{ legend:{ position:'top', labels:{color:'#fff'} }, title:{ display:true, text:'نسبة المستخدمين المجانيين والمدفوعين', color:'#fff' } } }
-    });
-  }
-
-  document.getElementById("searchEmail").addEventListener("input", searchUsers);
-  loadStats(); loadUsers(); loadChart();
-  setInterval(()=>{ loadStats(); loadUsers(); }, 30000);
-</script>
-</body>
-</html>
-  `);
-});
-
 // ================ صفحة ربط العميل المحلي (Agent) ================
 app.get("/agent-auth", async (req, res) => {
   const { callbackPort } = req.query;
@@ -4608,7 +4393,9 @@ app.post("/api/agent/exchange-binding", async (req, res) => {
     const { bindingToken } = req.body;
     const data = bindingTokens.get(bindingToken);
     if (!data || data.expires < Date.now()) {
-      return res.status(400).json({ success: false, message: "Invalid or expired binding token" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid or expired binding token" });
     }
     bindingTokens.delete(bindingToken);
     const sessionToken = crypto.randomBytes(32).toString("hex");
@@ -4616,7 +4403,11 @@ app.post("/api/agent/exchange-binding", async (req, res) => {
       userId: data.userId,
       expires: Date.now() + 30 * 24 * 60 * 60 * 1000,
     });
-    res.json({ success: true, sessionToken, wsUrl: `ws://${req.headers.host}/agent` });
+    res.json({
+      success: true,
+      sessionToken,
+      wsUrl: `ws://${req.headers.host}/agent`,
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
