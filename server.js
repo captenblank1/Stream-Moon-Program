@@ -1466,29 +1466,30 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
   }
 });
 
-// ================ مسارات الشاشات ================
-app.get("/my-screens", authenticateToken, async (req, res) => {
+// ================ نقطة نهاية لإرجاع التوكن فقط (بدون HTML) ================
+app.get("/api/user/screen-token", authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).send("User not found");
-    const token = user.screenToken;
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
-    let screens = [];
-    for (let i = 1; i <= 10; i++) {
-      screens.push({
-        number: i,
-        url: `${baseUrl}/screens/${token}/${i}.html`,
-        description: `شاشة ${i} الخاصة بك – لا تشارك الرابط مع أي شخص آخر`,
-      });
+    if (!user) return res.status(404).json({ success: false, message: "مستخدم غير موجود" });
+    let token = user.screenToken;
+    if (!token) {
+      token = crypto.randomBytes(32).toString("hex");
+      user.screenToken = token;
+      await user.save();
     }
-    const html = `<!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>شاشات OBS الخاصة بك - Black Moon</title><style>body { font-family: 'Open Sans', sans-serif; background: #0a0a0a; color: #fff; margin: 0; padding: 30px; } .container { max-width: 1200px; margin: 0 auto; } h1 { color: #4caf50; margin-bottom: 10px; } .subtitle { color: #888; margin-bottom: 30px; } .screens-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px; } .screen-card { background: #1a1a1a; border-radius: 12px; padding: 20px; border: 1px solid #333; } .screen-card:hover { border-color: #4caf50; } .screen-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; } .screen-number { background: #4caf50; color: white; width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 20px; } .url-box { background: #0a0a0a; padding: 12px; border-radius: 6px; border: 1px solid #333; word-break: break-all; color: #4caf50; font-size: 13px; } .copy-btn { background: #333; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; transition: 0.2s; } .copy-btn:hover { background: #4caf50; } .instructions { background: #1e3a2e; padding: 20px; border-radius: 8px; margin-top: 30px; border-left: 4px solid #4caf50; } .warning { background: #3a1a1a; padding: 15px; border-radius: 8px; margin-top: 20px; border-left: 4px solid #f44336; }</style></head><body><div class="container"><h1>🎬 شاشات OBS الخاصة بك</h1><div class="subtitle">لديك 10 شاشات فريدة – لا تشارك الروابط مع أي شخص آخر</div><div class="screens-grid">${screens.map((screen) => `<div class="screen-card"><div class="screen-header"><div class="screen-number">${screen.number}</div><button class="copy-btn" onclick="copyUrl('${screen.url}')">📋 نسخ الرابط</button></div><div class="url-box">${screen.url}</div><div style="margin-top: 10px; color: #888;">${screen.description}</div></div>`).join("")}</div><div class="instructions"><h3>📌 كيفية الإضافة في OBS:</h3><ol style="color: #ddd; line-height: 1.8;"><li>أضف مصدر <strong>متصفح (Browser)</strong> جديد</li><li>الصق أي رابط من الروابط أعلاه</li><li>اضبط العرض: <strong>1920</strong> والارتفاع: <strong>1080</strong></li><li>فعّل ✅ "استخدام معدل إطارات مخصص" = 60 إطار/ثانية</li><li>الشاشة شفافة، وستعرض محتواك الخاص تلقائياً</li></ol></div><div class="warning">⚠️ <strong>هام:</strong> هذه الروابط خاصة بك فقط. لا تشاركها مع أي شخص آخر، لأن أي شخص لديه الرابط يمكنه مشاهدة محتوى شاشتك.</div></div><script>function copyUrl(url) { navigator.clipboard.writeText(url).then(() => { const btn = event.currentTarget; btn.textContent = '✅ تم النسخ!'; btn.style.background = '#4caf50'; setTimeout(() => { btn.textContent = '📋 نسخ الرابط'; btn.style.background = '#333'; }, 2000); }); }</script></body></html>`;
-    res.send(html);
+    res.json({ success: true, token });
   } catch (err) {
-    logger.error("❌ Error loading my-screens:", err);
-    res.status(500).send("خطأ في تحميل الصفحة");
+    logger.error("❌ خطأ في جلب توكن الشاشة:", err.message);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
+// ================ لوحة التحكم (توجيه إلى الفرونت) ================
+app.get("/admin", authenticateToken, isAdmin, (req, res) => {
+  res.redirect(`${FRONTEND_URL}/admin`);
+});
+
+// ================ نقطة نهاية لعرض صفحة الشاشة الفعلية (مطلوبة لـ OBS) ================
 app.get("/screens/:token/:screenNumber", async (req, res) => {
   try {
     const { token, screenNumber } = req.params;
@@ -1497,58 +1498,12 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       return res.status(404).send("Screen not found");
     const user = await User.findOne({ screenToken: token });
     if (!user) return res.status(404).send("Invalid screen token");
+    
     const html = `<!DOCTYPE html><html lang="ar"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>Screen ${screenNum} - ${user.email}</title><style>html,body{ margin:0;padding:0;width:100%;height:100%; background:transparent; overflow:hidden; } video{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:transparent; display:none; }</style></head><body><video id="videoPlayer" autoplay playsinline></video><script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script><script>(function(){ const SCREEN_NUMBER = ${screenNum}; const USER_TOKEN = '${token}'; console.log('🎬 Screen ' + SCREEN_NUMBER + ' loaded for user ' + USER_TOKEN); const socket = io(window.location.origin, { query: { token: USER_TOKEN }, transports: ['websocket', 'polling'] }); let audioUnlocked = false; let currentAudioElement = null; function getAudioElement(){ if (currentAudioElement) { currentAudioElement.pause(); currentAudioElement.currentTime = 0; currentAudioElement.src = ''; currentAudioElement.load(); } const a = new Audio(); a.preload = 'auto'; a.crossOrigin = 'anonymous'; a.onended = () => { a.src = ''; a.load(); if (currentAudioElement === a) currentAudioElement = null; }; currentAudioElement = a; return a; } async function tryUnlockAudio(){ if(audioUnlocked) return true; try { if (typeof AudioContext !== 'undefined') { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const o = ctx.createOscillator(); const g = ctx.createGain(); g.gain.value = 0; o.connect(g); g.connect(ctx.destination); o.start(0); setTimeout(()=>{ try{ o.stop(); ctx.close(); }catch(e){} }, 50); } const silent = getAudioElement(); silent.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA='; silent.volume = 0; await silent.play().catch(()=>{}); silent.pause(); silent.src = ''; audioUnlocked = true; return true; } catch (e) { console.warn('audio unlock failed', e); return false; } } window.addEventListener('load', ()=>{ tryUnlockAudio(); }); socket.on('play-sound', async (payload) => { try { if (!payload || !payload.filename) return; if (!audioUnlocked) await tryUnlockAudio(); const filename = payload.filename; const vol100 = typeof payload.volume !== 'undefined' ? Number(payload.volume) : 100; const vol = Math.min(100, Math.max(0, vol100)) / 100; const a = getAudioElement(); a.src = filename; a.volume = vol; a.currentTime = 0; a.play().catch(err => console.warn('audio play blocked', err)); } catch (err) { console.error('play-sound handler error', err); } }); const video = document.getElementById('videoPlayer'); const videoQueue = []; let isPlaying = false; let videoVolume = 1; function playNextVideo(){ if (isPlaying || videoQueue.length === 0) return; const src = videoQueue.shift(); isPlaying = true; video.src = src; video.volume = videoVolume; video.style.display = 'block'; video.muted = false; video.play().catch(e => console.warn('video autoplay blocked', e)); video.onended = () => { isPlaying = false; video.style.display = 'none'; video.src = ''; playNextVideo(); }; } socket.on('gift-video', (data) => { try { if (data.screen !== SCREEN_NUMBER) return; if (data.volume !== undefined) { videoVolume = Math.min(1, Math.max(0, Number(data.volume) / 100)); } const vidName = data.videoId; console.log('🎬 Screen ' + SCREEN_NUMBER + ' playing:', vidName); videoQueue.push(vidName); playNextVideo(); } catch (err) { console.error('gift-video handler error', err); } }); socket.on('connect_error', (err) => console.warn('socket connect_error', err)); socket.on('connect', () => console.log('✅ Socket connected')); })();</script></body></html>`;
     res.send(html);
   } catch (err) {
     logger.error("❌ Error serving screen:", err.message);
     res.status(500).send("Internal server error");
-  }
-});
-
-app.get("/screens", authenticateToken, (req, res) => {
-  res.redirect("/my-screens");
-});
-app.get("/api/user/screen-url", authenticateToken, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id);
-    if (!user)
-      return res
-        .status(404)
-        .json({ success: false, message: "مستخدم غير موجود" });
-    let token = user.screenToken;
-    if (!token) {
-      token = crypto.randomBytes(32).toString("hex");
-      user.screenToken = token;
-      await user.save();
-    }
-    const url = `${req.protocol}://${req.get("host")}/screens/${token}/1.html`;
-    res.json({ success: true, url });
-  } catch (err) {
-    logger.error("❌ خطأ في جلب رابط الشاشة:", err.message);
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-app.get("/api/screens", authenticateToken, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id);
-    if (!user)
-      return res
-        .status(404)
-        .json({ success: false, message: "مستخدم غير موجود" });
-    let token = user.screenToken;
-    if (!token) {
-      token = crypto.randomBytes(32).toString("hex");
-      user.screenToken = token;
-      await user.save();
-    }
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
-    const screens = [];
-    for (let i = 1; i <= 10; i++)
-      screens.push({ number: i, url: `${baseUrl}/screens/${token}/${i}.html` });
-    res.json({ success: true, total: screens.length, screens });
-  } catch (err) {
-    logger.error("❌ خطأ في جلب معلومات الشاشات:", err.message);
-    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -3224,10 +3179,9 @@ app.delete(
 );
 
 // ================ صفحة الداشبورد ================
+// إعادة توجيه لوحة التحكم إلى الواجهة الأمامية (بدلاً من تقديم HTML من الخادم)
 app.get("/admin", authenticateToken, isAdmin, (req, res) => {
-  res.send(
-    `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>لوحة تحكم Black Moon - Admin</title><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/chart.js"></script><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'Cairo',sans-serif;background:#0a0a0a;color:#fff;padding:20px;}.container{max-width:1400px;margin:0 auto;}h1{color:#4caf50;margin-bottom:20px;border-right:4px solid #4caf50;padding-right:15px;}.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:30px;}.stat-card{background:#1e1e1e;border-radius:12px;padding:20px;text-align:center;border:1px solid #333;}.stat-value{font-size:2.5rem;font-weight:bold;color:#4caf50;}.stat-label{color:#aaa;margin-top:8px;}.chart-container{background:#1e1e1e;border-radius:12px;padding:20px;margin-bottom:30px;border:1px solid #333;}canvas{max-height:300px;}.users-table{width:100%;border-collapse:collapse;background:#1e1e1e;border-radius:12px;overflow:hidden;}.users-table th,.users-table td{padding:12px;text-align:center;border-bottom:1px solid #333;}.users-table th{background:#2a2a2a;color:#4caf50;}.users-table tr:hover{background:#2a2a2a;}.btn{padding:6px 12px;border:none;border-radius:6px;cursor:pointer;font-size:12px;margin:0 2px;}.btn-renew-monthly{background:#2196f3;color:white;}.btn-renew-yearly{background:#4caf50;color:white;}.btn-downgrade{background:#ff9800;color:white;}.btn-admin{background:#9c27b0;color:white;}.btn-delete{background:#f44336;color:white;}.badge{padding:4px 8px;border-radius:20px;font-size:12px;font-weight:bold;}.badge-free{background:#555;color:#fff;}.badge-paid{background:#4caf50;color:#fff;}.badge-admin{background:#ff9800;color:#fff;}.badge-user{background:#2196f3;color:#fff;}.status-live{color:#f44336;font-weight:bold;background:#3a1a1a;padding:2px 8px;border-radius:20px;display:inline-block;}.status-offline{color:#aaa;}.refresh-btn{background:#4caf50;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;margin-bottom:20px;}.search-box{margin-bottom:20px;display:flex;gap:10px;align-items:center;}.search-box input{padding:8px;border-radius:6px;border:none;background:#2a2a2a;color:white;flex:1;max-width:300px;}.tiktok-user{color:#4caf50;font-weight:bold;}</style></head><body><div class="container"><h1>📊 لوحة تحكم Black Moon - Admin</h1><div class="search-box"><input type="text" id="searchEmail" placeholder="🔍 بحث بالبريد الإلكتروني..."><button class="refresh-btn" onclick="location.reload()">🔄 تحديث</button></div><div class="stats-grid" id="statsGrid"><div class="stat-card"><div class="stat-value" id="totalUsers">0</div><div class="stat-label">إجمالي المستخدمين</div></div><div class="stat-card"><div class="stat-value" id="paidUsers">0</div><div class="stat-label">مشتركين مدفوعين</div></div><div class="stat-card"><div class="stat-value" id="freeUsers">0</div><div class="stat-label">مستخدمين مجانيين</div></div><div class="stat-card"><div class="stat-value" id="totalCommands">0</div><div class="stat-label">إجمالي الأوامر</div></div><div class="stat-card"><div class="stat-value" id="activeLive">0</div><div class="stat-label">بثوث حية نشطة</div></div></div><div class="chart-container"><canvas id="usersChart"></canvas></div><h2>👥 قائمة المستخدمين</h2><div style="overflow-x:auto;"><table class="users-table" id="usersTable"><thead><tr><th>البريد الإلكتروني</th><th>الخطة</th><th>النوع</th><th>تاريخ الانتهاء</th><th>الدور</th><th>TikTok</th><th>الحالة</th><th>عدد الأوامر</th><th>تاريخ التسجيل</th><th>إجراءات</th></tr></thead><tbody></tbody></table></div></div><script>const API_BASE='';let allUsers=[];async function fetchWithAuth(url,options={}){const res=await fetch(url,{...options,credentials:"include"});if(res.status===401){alert("جلسة غير صالحة");window.location.href="/";return null;}return res.json();}async function loadStats(){const data=await fetchWithAuth(\`\${API_BASE}/api/admin/stats\`);if(data&&data.success){document.getElementById("totalUsers").textContent=data.stats.totalUsers;document.getElementById("paidUsers").textContent=data.stats.paidUsers;document.getElementById("freeUsers").textContent=data.stats.freeUsers;document.getElementById("totalCommands").textContent=data.stats.totalCommands;document.getElementById("activeLive").textContent=data.stats.activeLiveUsers;}}function renderUsersTable(users){const tbody=document.querySelector("#usersTable tbody");tbody.innerHTML="";users.forEach(user=>{const expiry=user.subscriptionExpiry?new Date(user.subscriptionExpiry).toLocaleDateString('ar-EG'):'غير محدد';const planBadge=user.plan==='paid'?'<span class="badge badge-paid">مدفوع</span>':'<span class="badge badge-free">مجاني</span>';const planType=user.planType?(user.planType==='monthly'?'شهري':'سنوي'):'—';const roleBadge=user.role==='admin'?'<span class="badge badge-admin">مدير</span>':'<span class="badge badge-user">مستخدم</span>';const liveStatusHtml=user.isLiveNow?'<span class="status-live">🟢 مباشر</span>':'<span class="status-offline">⚫ غير متصل</span>';const tiktokHtml=user.tiktokUsername?\`<span class="tiktok-user">@\${user.tiktokUsername}</span>\`:'—';const row=document.createElement("tr");row.innerHTML=\`<td>\${user.email}</td><td>\${planBadge}</td><td>\${planType}</td><td>\${expiry}</td><td>\${roleBadge}</td><td>\${tiktokHtml}</td><td>\${liveStatusHtml}</td><td>\${user.commandCount}</td><td>\${new Date(user.createdAt).toLocaleDateString('ar-EG')}</td><td><button class="btn btn-renew-monthly" data-id="\${user.id}" data-plan="monthly">شهري</button><button class="btn btn-renew-yearly" data-id="\${user.id}" data-plan="yearly">سنوي</button><button class="btn btn-downgrade" data-id="\${user.id}">إزالة الترقية</button><button class="btn btn-admin" data-id="\${user.id}">ترقية مدير</button><button class="btn btn-delete" data-id="\${user.id}">حذف</button></td>\`;tbody.appendChild(row);});document.querySelectorAll(".btn-renew-monthly, .btn-renew-yearly").forEach(btn=>{btn.addEventListener("click",async()=>{const id=btn.dataset.id;const plan=btn.dataset.plan;if(confirm(\`تجديد الاشتراك (\${plan==='monthly'?'شهري':'سنوي'})؟\`)){const res=await fetchWithAuth(\`\${API_BASE}/api/admin/user/\${id}/renew\`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({planType:plan})});if(res&&res.success)alert("تم التجديد بنجاح");else alert("فشل التجديد");loadUsers();}});});document.querySelectorAll(".btn-downgrade").forEach(btn=>{btn.addEventListener("click",async()=>{const id=btn.dataset.id;if(confirm("إزالة الترقية وجعل المستخدم مجانياً؟")){const res=await fetchWithAuth(\`\${API_BASE}/api/admin/user/\${id}/downgrade\`,{method:"POST"});if(res&&res.success)alert("تمت إزالة الترقية");else alert("فشلت العملية");loadUsers();}});});document.querySelectorAll(".btn-admin").forEach(btn=>{btn.addEventListener("click",async()=>{const id=btn.dataset.id;if(confirm("ترقية إلى مدير؟")){const res=await fetchWithAuth(\`\${API_BASE}/api/admin/user/\${id}/make-admin\`,{method:"POST"});if(res&&res.success)alert("تمت الترقية");else alert("فشلت الترقية");loadUsers();}});});document.querySelectorAll(".btn-delete").forEach(btn=>{btn.addEventListener("click",async()=>{const id=btn.dataset.id;if(confirm("حذف المستخدم وجميع أوامره؟")){const res=await fetchWithAuth(\`\${API_BASE}/api/admin/user/\${id}\`,{method:"DELETE"});if(res&&res.success)alert("تم الحذف");else alert("فشل الحذف");loadUsers();}});});}async function loadUsers(){const data=await fetchWithAuth(\`\${API_BASE}/api/admin/users\`);if(!data||!data.success)return;allUsers=data.users;renderUsersTable(allUsers);}function searchUsers(){const searchTerm=document.getElementById("searchEmail").value.toLowerCase().trim();if(searchTerm==="")renderUsersTable(allUsers);else{const filtered=allUsers.filter(user=>user.email.toLowerCase().includes(searchTerm));renderUsersTable(filtered);}}async function loadChart(){const data=await fetchWithAuth(\`\${API_BASE}/api/admin/users\`);if(!data||!data.success)return;const planCounts={free:0,paid:0};data.users.forEach(u=>{if(u.plan==='free')planCounts.free++;else planCounts.paid++;});new Chart(document.getElementById('usersChart'),{type:'pie',data:{labels:['مجاني','مدفوع'],datasets:[{data:[planCounts.free,planCounts.paid],backgroundColor:['#555','#4caf50'],borderWidth:0}]},options:{responsive:true,plugins:{legend:{position:'top',labels:{color:'#fff'}},title:{display:true,text:'نسبة المستخدمين المجانيين والمدفوعين',color:'#fff'}}}});}document.getElementById("searchEmail").addEventListener("input",searchUsers);loadStats();loadUsers();loadChart();setInterval(()=>{loadStats();loadUsers();},30000);</script></body></html>`,
-  );
+  res.redirect(`${FRONTEND_URL}/admin`);
 });
 
 // ================ Socket.IO للبلوجن والشاشات ================
