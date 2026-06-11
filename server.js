@@ -200,21 +200,20 @@ const io = new Server(server, {
   transports: ["websocket", "polling"],
 });
 
-// Middleware
 app.use(
   cors({
     origin: function (origin, callback) {
-      const allowedOrigins = [FRONTEND_URL, 'https://streammoon.net'];
+      const allowedOrigins = [FRONTEND_URL, "https://streammoon.net"];
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        callback(new Error('Not allowed by CORS'));
+        callback(new Error("Not allowed by CORS"));
       }
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
-  })
+  }),
 );
 
 app.use(bodyParser.json({ limit: "10mb" }));
@@ -3399,6 +3398,7 @@ app.get("/agent-auth", async (req, res) => {
     `<!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>ربط العميل المحلي - BlackMoon</title><style>body{background:#0a0a0a;color:white;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;}.container{background:#1e1e1e;padding:30px;border-radius:12px;text-align:center;max-width:400px;}input,button{padding:10px;margin:10px;border-radius:6px;border:none;}input{width:80%;background:#333;color:white;}button{background:#4caf50;color:white;cursor:pointer;}.error{color:#f44336;}</style></head><body><div class="container"><h2>🔗 ربط العميل المحلي</h2><p>الرجاء تسجيل الدخول أولاً ثم النقر على زر الربط.</p><div id="status"></div><button id="bindBtn">ربط العميل</button></div><script>const bindBtn=document.getElementById('bindBtn');const statusDiv=document.getElementById('status');const bindingToken='${bindingToken}';const callbackPort=${port};const serverUrl='${serverUrl}';async function checkLogin(){try{const res=await fetch('/api/auth/me',{credentials:'include'});const data=await res.json();if(data.success){statusDiv.innerHTML='<span style="color:#4caf50">✅ تم تسجيل الدخول كـ '+data.user.email+'</span>';return true;}else{statusDiv.innerHTML='<span style="color:#ff9800">⚠️ لم تسجل الدخول. سيتم فتح نافذة تسجيل الدخول.</span>';return false;}}catch(e){statusDiv.innerHTML='<span class="error">❌ خطأ في الاتصال</span>';return false;}}bindBtn.onclick=async()=>{const loggedIn=await checkLogin();if(!loggedIn){window.open('/login','_blank');alert('سجل الدخول ثم اضغط على الربط مرة أخرى');return;}const tokenRes=await fetch('/api/agent/binding-token',{credentials:'include'});const tokenData=await tokenRes.json();if(!tokenData.success){statusDiv.innerHTML='<span class="error">فشل الحصول على رمز الربط</span>';return;}const finalToken=tokenData.token;window.location.href=\`http://localhost:\${callbackPort}/callback?sessionToken=\${finalToken}&serverUrl=\${serverUrl}\`;};checkLogin();</script></body></html>`,
   );
 });
+
 app.get("/api/agent/binding-token", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
