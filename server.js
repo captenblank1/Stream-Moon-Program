@@ -187,8 +187,7 @@ const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
   message: { success: false, message: "تم تجاوز حد المحاولات، حاول لاحقاً" },
-  // الدالة دي بتقرأ الـ IPv4 والـ IPv6 وبتتعامل معاهم بشكل آمن تماماً
-  keyGenerator: ipKeyGenerator(), 
+  keyGenerator: (req) => req.ip, // ✅ يدعم IPv4 و IPv6 بشكل آمن
 });
 
 // ================ إعدادات Express ================
