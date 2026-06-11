@@ -187,7 +187,7 @@ const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
   message: { success: false, message: "تم تجاوز حد المحاولات، حاول لاحقاً" },
-  keyGenerator: ipKeyGenerator,   // ✅ استخدام الدالة المساعدة المناسبة
+  keyGenerator: ipKeyGenerator(),   // ✅ استخدام الدالة المساعدة المناسبة
 });
 
 // ================ إعدادات Express ================
