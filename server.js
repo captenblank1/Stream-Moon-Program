@@ -4311,13 +4311,6 @@ cron.schedule("0 * * * *", async () => {
   }
 });
 
-// ================ خدمة الواجهة الأمامية ================
-const frontendPath = path.join(__dirname, "public");
-app.use(express.static(frontendPath));
-app.get("/", (req, res) => {
-  res.sendFile(path.join(frontendPath, "index.html"));
-});
-
 // ================ صفحة ربط العميل المحلي (Agent) ================
 app.get("/agent-auth", async (req, res) => {
   const { callbackPort } = req.query;
