@@ -187,7 +187,7 @@ const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
   message: { success: false, message: "تم تجاوز حد المحاولات، حاول لاحقاً" },
-  keyGenerator: ipKeyGenerator(),   // ✅ استخدام الدالة المساعدة المناسبة
+  keyGenerator: ipKeyGenerator,
 });
 
 // ================ إعدادات Express ================
@@ -210,6 +210,7 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
   }),
 );
+
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
@@ -1401,8 +1402,10 @@ app.post("/api/auth/register", authLimiter, async (req, res) => {
     );
     res.cookie("token", token, {
       httpOnly: true,
-      secure: NODE_ENV === "production",
-      sameSite: "lax",
+      // طالما أنت على ريندر أونلاين (HTTPS)، لازم تكون true عشان المتصفح يقبلها
+      secure: true,
+      // 🔥 التعديل الإجباري: يسمح بنقل الكوكي بين الدومينات المختلفة (Cross-site)
+      sameSite: "none",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
     res.json({ success: true, token });
