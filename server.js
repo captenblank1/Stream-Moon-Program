@@ -200,7 +200,6 @@ const io = new Server(server, {
   transports: ["websocket", "polling"],
 });
 
-console.log(`✅ FRONTEND_URL from env: ${FRONTEND_URL}`);
 
 app.use(
   cors({
@@ -209,9 +208,9 @@ app.use(
 
       const allowedOrigins = [
         "https://streammoon.net",
-        "https://www.streammoon.net", // أضف النسخة مع www
+        "https://www.streammoon.net",  // أضف النسخة مع www
         "https://streammoon.onrender.com", // في حال استخدام النطاق الافتراضي لـ Render (اختياري)
-        "http://localhost:3000", // للتجربة المحلية
+        "http://localhost:3000",       // للتجربة المحلية
         "http://localhost:5500",
         "http://127.0.0.1:5500",
       ];
@@ -236,12 +235,11 @@ app.use(
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
-  }),
+  })
 );
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
-app.options("*", cors()); // الرد على طلبات preflight
 app.use((req, res, next) => {
   req.setTimeout(30 * 1000);
   next();
