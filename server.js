@@ -201,14 +201,20 @@ const io = new Server(server, {
 });
 
 // Middleware
-app.use(compression());
 app.use(
   cors({
-    origin: FRONTEND_URL,
+    origin: function (origin, callback) {
+      const allowedOrigins = [FRONTEND_URL, 'https://streammoon.net'];
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
-  }),
+  })
 );
 
 app.use(bodyParser.json({ limit: "10mb" }));
