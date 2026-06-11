@@ -203,14 +203,24 @@ const io = new Server(server, {
 app.use(
   cors({
     origin: function (origin, callback) {
-      const allowedOrigins = [FRONTEND_URL, "https://streammoon.net"];
-      if (!origin || allowedOrigins.includes(origin)) {
+      // السماح للطلبات بدون origin (مثل Postman) وللنطاق الأمامي المحدد
+      if (!origin) return callback(null, true);
+      // أضف هنا النطاق الذي تستخدمه للواجهة الأمامية بالضبط
+      const allowedOrigins = [
+        FRONTEND_URL, // من متغير البيئة
+      ];
+      // سماح مؤقت لـ localhost أثناء التطوير المحلي
+      if (origin.includes("localhost") || origin.includes("127.0.0.1")) {
+        return callback(null, true);
+      }
+      if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
+        console.warn(`CORS blocked origin: ${origin}`);
         callback(new Error("Not allowed by CORS"));
       }
     },
-    credentials: true,
+    credentials: true, // مهم لإرسال التوكن
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
   }),
@@ -1407,10 +1417,11 @@ app.post("/api/auth/register", authLimiter, async (req, res) => {
     );
     res.cookie("token", token, {
       httpOnly: true,
-      secure: true,
+      secure: NODE_ENV === "production",
       sameSite: "none",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
+
     res.json({ success: true, token });
   } catch (err) {
     logger.error("❌ خطأ في التسجيل:", err.message);
@@ -1456,7 +1467,7 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
     res.cookie("token", token, {
       httpOnly: true,
       secure: NODE_ENV === "production",
-      sameSite: "lax",
+      sameSite: "none",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
     res.json({ success: true, token });
@@ -1470,7 +1481,10 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
 app.get("/api/user/screen-token", authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ success: false, message: "مستخدم غير موجود" });
+    if (!user)
+      return res
+        .status(404)
+        .json({ success: false, message: "مستخدم غير موجود" });
     let token = user.screenToken;
     if (!token) {
       token = crypto.randomBytes(32).toString("hex");
@@ -1498,7 +1512,7 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       return res.status(404).send("Screen not found");
     const user = await User.findOne({ screenToken: token });
     if (!user) return res.status(404).send("Invalid screen token");
-    
+
     const html = `<!DOCTYPE html><html lang="ar"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>Screen ${screenNum} - ${user.email}</title><style>html,body{ margin:0;padding:0;width:100%;height:100%; background:transparent; overflow:hidden; } video{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:transparent; display:none; }</style></head><body><video id="videoPlayer" autoplay playsinline></video><script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script><script>(function(){ const SCREEN_NUMBER = ${screenNum}; const USER_TOKEN = '${token}'; console.log('🎬 Screen ' + SCREEN_NUMBER + ' loaded for user ' + USER_TOKEN); const socket = io(window.location.origin, { query: { token: USER_TOKEN }, transports: ['websocket', 'polling'] }); let audioUnlocked = false; let currentAudioElement = null; function getAudioElement(){ if (currentAudioElement) { currentAudioElement.pause(); currentAudioElement.currentTime = 0; currentAudioElement.src = ''; currentAudioElement.load(); } const a = new Audio(); a.preload = 'auto'; a.crossOrigin = 'anonymous'; a.onended = () => { a.src = ''; a.load(); if (currentAudioElement === a) currentAudioElement = null; }; currentAudioElement = a; return a; } async function tryUnlockAudio(){ if(audioUnlocked) return true; try { if (typeof AudioContext !== 'undefined') { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const o = ctx.createOscillator(); const g = ctx.createGain(); g.gain.value = 0; o.connect(g); g.connect(ctx.destination); o.start(0); setTimeout(()=>{ try{ o.stop(); ctx.close(); }catch(e){} }, 50); } const silent = getAudioElement(); silent.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA='; silent.volume = 0; await silent.play().catch(()=>{}); silent.pause(); silent.src = ''; audioUnlocked = true; return true; } catch (e) { console.warn('audio unlock failed', e); return false; } } window.addEventListener('load', ()=>{ tryUnlockAudio(); }); socket.on('play-sound', async (payload) => { try { if (!payload || !payload.filename) return; if (!audioUnlocked) await tryUnlockAudio(); const filename = payload.filename; const vol100 = typeof payload.volume !== 'undefined' ? Number(payload.volume) : 100; const vol = Math.min(100, Math.max(0, vol100)) / 100; const a = getAudioElement(); a.src = filename; a.volume = vol; a.currentTime = 0; a.play().catch(err => console.warn('audio play blocked', err)); } catch (err) { console.error('play-sound handler error', err); } }); const video = document.getElementById('videoPlayer'); const videoQueue = []; let isPlaying = false; let videoVolume = 1; function playNextVideo(){ if (isPlaying || videoQueue.length === 0) return; const src = videoQueue.shift(); isPlaying = true; video.src = src; video.volume = videoVolume; video.style.display = 'block'; video.muted = false; video.play().catch(e => console.warn('video autoplay blocked', e)); video.onended = () => { isPlaying = false; video.style.display = 'none'; video.src = ''; playNextVideo(); }; } socket.on('gift-video', (data) => { try { if (data.screen !== SCREEN_NUMBER) return; if (data.volume !== undefined) { videoVolume = Math.min(1, Math.max(0, Number(data.volume) / 100)); } const vidName = data.videoId; console.log('🎬 Screen ' + SCREEN_NUMBER + ' playing:', vidName); videoQueue.push(vidName); playNextVideo(); } catch (err) { console.error('gift-video handler error', err); } }); socket.on('connect_error', (err) => console.warn('socket connect_error', err)); socket.on('connect', () => console.log('✅ Socket connected')); })();</script></body></html>`;
     res.send(html);
   } catch (err) {
@@ -1748,7 +1762,7 @@ app.post("/api/auth/refresh", authenticateToken, async (req, res) => {
     res.cookie("token", newToken, {
       httpOnly: true,
       secure: NODE_ENV === "production",
-      sameSite: "lax",
+      sameSite: "none",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
     res.json({ success: true });
