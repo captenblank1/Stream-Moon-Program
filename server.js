@@ -208,7 +208,6 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
   }),
 );
-app.options("*", cors({ origin: FRONTEND_URL, credentials: true }));
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
