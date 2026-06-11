@@ -74,6 +74,8 @@ const MAX_VIDEO_MB = 1000;
 const WARNING_HOURS = 24;
 const GRACE_HOURS = 48;
 
+const { ipKeyGenerator } = require("express-rate-limit");
+
 // ================ المتغيرات العامة ================
 let userTikTokConnections = new Map();
 let userRconInstances = new Map();
@@ -185,7 +187,8 @@ const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
   message: { success: false, message: "تم تجاوز حد المحاولات، حاول لاحقاً" },
-  keyGenerator: (req) => req.ip,
+  // الدالة دي بتقرأ الـ IPv4 والـ IPv6 وبتتعامل معاهم بشكل آمن تماماً
+  keyGenerator: ipKeyGenerator(), 
 });
 
 // ================ إعدادات Express ================
