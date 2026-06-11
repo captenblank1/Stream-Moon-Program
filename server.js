@@ -185,10 +185,12 @@ const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
   message: { success: false, message: "تم تجاوز حد المحاولات، حاول لاحقاً" },
+  keyGenerator: (req) => req.ip,
 });
 
 // ================ إعدادات Express ================
 const app = express();
+app.set("trust proxy", 1);
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: FRONTEND_URL, credentials: true },
@@ -198,7 +200,15 @@ const io = new Server(server, {
 
 // Middleware
 app.use(compression());
-app.use(cors({ origin: FRONTEND_URL, credentials: true }));
+app.use(
+  cors({
+    origin: FRONTEND_URL,
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
+  }),
+);
+app.options("*", cors({ origin: FRONTEND_URL, credentials: true }));
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
@@ -3413,7 +3423,7 @@ app.post("/api/agent/exchange-binding", async (req, res) => {
 });
 
 // ================ بدء الخادم ================
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, "0.0.0.0", () => {
   logger.info(`✅ السيرفر يعمل على المنفذ ${PORT}`);
   logger.info(`🎵 الصوت عبر Cloudinary`);
   logger.info(`🎬 الفيديو عبر Cloudinary`);
