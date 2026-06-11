@@ -1407,9 +1407,7 @@ app.post("/api/auth/register", authLimiter, async (req, res) => {
     );
     res.cookie("token", token, {
       httpOnly: true,
-      // طالما أنت على ريندر أونلاين (HTTPS)، لازم تكون true عشان المتصفح يقبلها
       secure: true,
-      // 🔥 التعديل الإجباري: يسمح بنقل الكوكي بين الدومينات المختلفة (Cross-site)
       sameSite: "none",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
