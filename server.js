@@ -3413,7 +3413,7 @@ app.post("/api/agent/exchange-binding", async (req, res) => {
 });
 
 // ================ بدء الخادم ================
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   logger.info(`✅ السيرفر يعمل على المنفذ ${PORT}`);
   logger.info(`🎵 الصوت عبر Cloudinary`);
   logger.info(`🎬 الفيديو عبر Cloudinary`);
