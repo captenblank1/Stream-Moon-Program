@@ -201,30 +201,30 @@ const io = new Server(server, {
 });
 
 
+// قائمة المواقع المسموح بها
+const allowedOrigins = [
+  "https://streammoon.net",
+  "https://www.streammoon.net",
+  "https://streammoon.onrender.com",
+  "http://localhost:3000",
+  "http://localhost:5500",
+  "http://127.0.0.1:5500",
+];
+
+// أضف FRONTEND_URL من البيئة إذا كان موجوداً
+if (process.env.FRONTEND_URL) {
+  allowedOrigins.push(process.env.FRONTEND_URL);
+}
+
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin) return callback(null, true); // السماح للطلبات من Postman أو بدون origin
-
-      const allowedOrigins = [
-        "https://streammoon.net",
-        "https://www.streammoon.net",  // أضف النسخة مع www
-        "https://streammoon.onrender.com", // في حال استخدام النطاق الافتراضي لـ Render (اختياري)
-        "http://localhost:3000",       // للتجربة المحلية
-        "http://localhost:5500",
-        "http://127.0.0.1:5500",
-      ];
-
-      // أضف FRONTEND_URL من البيئة إذا كان موجوداً
-      if (process.env.FRONTEND_URL) {
-        allowedOrigins.push(process.env.FRONTEND_URL);
-      }
-
+      // السماح للطلبات بدون origin (مثل Postman)
+      if (!origin) return callback(null, true);
       // السماح لأي طلب localhost أثناء التطوير
       if (origin.includes("localhost") || origin.includes("127.0.0.1")) {
         return callback(null, true);
       }
-
       if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
@@ -237,6 +237,7 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
   })
 );
+
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
