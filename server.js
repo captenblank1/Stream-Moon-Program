@@ -48,6 +48,8 @@ if (!JWT_SECRET) throw new Error("JWT_SECRET must be set in .env");
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "30d";
 const MONGODB_URI =
   process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/tiktokApp_new";
+const PLUGIN_SECRET = process.env.PLUGIN_SECRET;
+if (!PLUGIN_SECRET) throw new Error("PLUGIN_SECRET must be set in .env");
 const BLACKMOON_KEY = process.env.BLACKMOON_KEY || null;
 
 // إعدادات RCON الافتراضية
@@ -198,6 +200,7 @@ const io = new Server(server, {
   transports: ["websocket", "polling"],
 });
 
+
 // قائمة المواقع المسموح بها
 const allowedOrigins = [
   "https://streammoon.net",
@@ -232,7 +235,7 @@ app.use(
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
-  }),
+  })
 );
 
 app.use(bodyParser.json({ limit: "10mb" }));
@@ -3209,40 +3212,25 @@ app.get("/admin", authenticateToken, isAdmin, (req, res) => {
 
 // ================ Socket.IO للبلوجن والشاشات ================
 const pluginNamespace = io.of("/plugin");
-pluginNamespace.use(async (socket, next) => {
-  // جلب التوكن من query أو auth
+pluginNamespace.use((socket, next) => {
+  // جلب التوكن من المصادقة (طريقة Socket.IO v4) أو من الـ query string (طريقة Java client)
   const token = socket.handshake.auth?.token || socket.handshake.query.token;
-  if (!token) {
-    console.warn("❌ No token provided");
-    return next(new Error("Missing token"));
+  if (token === PLUGIN_SECRET) {
+    console.log("✅ Plugin authenticated successfully");
+    return next();
   }
-
-  try {
-    // التحقق من صحة التوكن (مثلما تفعل authenticateToken)
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const userId = decoded.id;
-    // يمكنك هنا التحقق من وجود المستخدم في قاعدة البيانات
-    const user = await User.findById(userId);
-    if (!user) throw new Error("User not found");
-
-    // ربط userId بالـ socket لاستخدامه لاحقاً
-    socket.userId = userId;
-    console.log(`✅ Authenticated plugin for user ${userId}`);
-    next();
-  } catch (err) {
-    console.warn(`❌ Authentication failed: ${err.message}`);
-    next(new Error("Invalid token"));
-  }
+  console.warn(`❌ Authentication failed for token: ${token}`);
+  return next(new Error("خطأ في المصادقة"));
 });
+
 pluginNamespace.on("connection", (socket) => {
-  const userId = socket.userId;
-  logger.info(
-    `✅ بلوجن ماينكرافت متصل للمستخدم ${userId}, socket id: ${socket.id}`,
-  );
+  logger.info("✅ بلوجن ماينكرافت متصل:", socket.id);
   pluginSockets.add(socket);
-  // يمكنك إرسال إعدادات خاصة بالمستخدم إن وجدت
   socket.emit("config", { player: "default" });
-  // إلخ...
+  socket.on("disconnect", () => {
+    logger.info("❌ بلوجن ماينكرافت قطع الاتصال:", socket.id);
+    pluginSockets.delete(socket);
+  });
 });
 
 const agentNamespace = io.of("/agent");
