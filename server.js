@@ -3211,30 +3211,38 @@ app.get("/admin", authenticateToken, isAdmin, (req, res) => {
 
 // ================ Socket.IO للبلوجن والشاشات ================
 const pluginNamespace = io.of("/plugin");
-pluginNamespace.use((socket, next) => {
-    console.log("🔍 New connection attempt");
-    console.log("  - auth:", socket.handshake.auth);
-    console.log("  - query:", socket.handshake.query);
-    console.log("  - headers:", socket.handshake.headers);
-    
+pluginNamespace.use(async (socket, next) => {
+    // جلب التوكن من query أو auth
     const token = socket.handshake.auth?.token || socket.handshake.query.token;
-    console.log(`  - Extracted token: ${token}`);
-    
-    if (token === PLUGIN_SECRET) {
-        console.log("✅ Authentication successful");
-        return next();
+    if (!token) {
+        console.warn("❌ No token provided");
+        return next(new Error("Missing token"));
     }
-    console.warn(`❌ Authentication failed - token mismatch or missing`);
-    return next(new Error("خطأ في المصادقة"));
+
+    try {
+        // التحقق من صحة التوكن (مثلما تفعل authenticateToken)
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const userId = decoded.id;
+        // يمكنك هنا التحقق من وجود المستخدم في قاعدة البيانات
+        const user = await User.findById(userId);
+        if (!user) throw new Error("User not found");
+        
+        // ربط userId بالـ socket لاستخدامه لاحقاً
+        socket.userId = userId;
+        console.log(`✅ Authenticated plugin for user ${userId}`);
+        next();
+    } catch (err) {
+        console.warn(`❌ Authentication failed: ${err.message}`);
+        next(new Error("Invalid token"));
+    }
 });
 pluginNamespace.on("connection", (socket) => {
-  logger.info("✅ بلوجن ماينكرافت متصل:", socket.id);
-  pluginSockets.add(socket);
-  socket.emit("config", { player: "default" });
-  socket.on("disconnect", () => {
-    logger.info("❌ بلوجن ماينكرافت قطع الاتصال:", socket.id);
-    pluginSockets.delete(socket);
-  });
+    const userId = socket.userId;
+    logger.info(`✅ بلوجن ماينكرافت متصل للمستخدم ${userId}, socket id: ${socket.id}`);
+    pluginSockets.add(socket);
+    // يمكنك إرسال إعدادات خاصة بالمستخدم إن وجدت
+    socket.emit("config", { player: "default" });
+    // إلخ...
 });
 
 const agentNamespace = io.of("/agent");
