@@ -3212,16 +3212,21 @@ app.get("/admin", authenticateToken, isAdmin, (req, res) => {
 // ================ Socket.IO للبلوجن والشاشات ================
 const pluginNamespace = io.of("/plugin");
 pluginNamespace.use((socket, next) => {
-  // جلب التوكن من المصادقة (طريقة Socket.IO v4) أو من الـ query string (طريقة Java client)
-  const token = socket.handshake.auth?.token || socket.handshake.query.token;
-  if (token === PLUGIN_SECRET) {
-    console.log("✅ Plugin authenticated successfully");
-    return next();
-  }
-  console.warn(`❌ Authentication failed for token: ${token}`);
-  return next(new Error("خطأ في المصادقة"));
+    console.log("🔍 New connection attempt");
+    console.log("  - auth:", socket.handshake.auth);
+    console.log("  - query:", socket.handshake.query);
+    console.log("  - headers:", socket.handshake.headers);
+    
+    const token = socket.handshake.auth?.token || socket.handshake.query.token;
+    console.log(`  - Extracted token: ${token}`);
+    
+    if (token === PLUGIN_SECRET) {
+        console.log("✅ Authentication successful");
+        return next();
+    }
+    console.warn(`❌ Authentication failed - token mismatch or missing`);
+    return next(new Error("خطأ في المصادقة"));
 });
-
 pluginNamespace.on("connection", (socket) => {
   logger.info("✅ بلوجن ماينكرافت متصل:", socket.id);
   pluginSockets.add(socket);
