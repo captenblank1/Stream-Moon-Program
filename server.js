@@ -1111,6 +1111,11 @@ function getUserRealName(data) {
     user.uniqueId,
     user.unique_id,
     user.username,
+    // إضافات
+    user.name,
+    user.userName,
+    data.nickname,
+    data.displayName,
     getSenderFromEvent(data)
   ];
   for (let c of candidates) {
@@ -1120,9 +1125,11 @@ function getUserRealName(data) {
 }
 
 function getUserAvatar(data) {
+  // المصادر المحتملة للصورة حسب هيكل tiktok-live-connector
   const user = data.user || {};
-  // قائمة بالمسارات المحتملة لصورة المستخدم
-  const avatarPaths = [
+  
+  // قائمة بالمسارات المحتملة (مرتبة حسب الأكثر شيوعاً)
+  const possiblePaths = [
     user.avatarThumb?.url_list?.[0],
     user.avatar_thumb?.url_list?.[0],
     user.avatarThumbMedium?.url_list?.[0],
@@ -1134,11 +1141,35 @@ function getUserAvatar(data) {
     user.profilePicture,
     user.profile_picture,
     data.avatarThumb?.url_list?.[0],
-    data.avatar_thumb?.url_list?.[0]
+    data.avatar_thumb?.url_list?.[0],
+    // مسارات إضافية من تجارب سابقة
+    user.avatarThumb?.url,
+    user.avatar_thumb?.url,
+    user.profilePicture?.url,
+    user.profile_picture?.url,
+    // إذا كانت الصورة في كائن منفصل
+    user.user?.avatarThumb?.url_list?.[0],
+    user.user?.avatar_thumb?.url_list?.[0],
+    // تجربة مسار آخر
+    data.userInfo?.avatarThumb?.url_list?.[0],
+    data.userInfo?.avatar_thumb?.url_list?.[0]
   ];
-  for (let path of avatarPaths) {
-    if (path && typeof path === "string" && path.startsWith("http")) return path;
+  
+  // نبحث عن أول رابط صالح يبدأ بـ http
+  for (let path of possiblePaths) {
+    if (path && typeof path === "string" && path.startsWith("http")) {
+      console.log(`✅ تم العثور على صورة للمستخدم: ${path}`);
+      return path;
+    }
   }
+  
+  console.warn("⚠️ لم يتم العثور على صورة للمستخدم، البيانات المتاحة:", 
+    JSON.stringify({
+      userKeys: Object.keys(user),
+      dataKeys: Object.keys(data),
+      sample: JSON.stringify(data).substring(0, 500)
+    }, null, 2));
+  
   return "";
 }
 
@@ -1174,10 +1205,13 @@ async function connectUser(userId, username) {
   
   connection.on(WebcastEvent.GIFT, async (data) => {
     // طباعة هيكل البيانات مرة واحدة فقط
-    if (!debugOnce) {
-      console.log("🔍 هيكل بيانات الهدية (GIFT) - أول مرة:", JSON.stringify(data, null, 2).substring(0, 1000));
-      debugOnce = true;
-    }
+if (!debugOnce) {
+  console.log("🔍 هيكل بيانات الهدية (GIFT) - أول مرة:");
+  console.log(JSON.stringify(data, null, 2).substring(0, 2000));
+  console.log("🔍 المفاتيح الرئيسية:", Object.keys(data));
+  console.log("🔍 مفاتيح user:", data.user ? Object.keys(data.user) : "لا يوجد user");
+  debugOnce = true;
+}
     
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
