@@ -1168,7 +1168,7 @@ function getUserAvatar(data) {
   console.warn("⚠️ لم يتم العثور على صورة للمستخدم");
   return "";
 }
-// جلب صورة المستخدم من TikTok باستخدام اسم المستخدم (fallback)
+// جلب صورة المستخدم من TikTok باستخدام API خارجي (بدون scraping)
 async function fetchUserAvatarFromTikTok(uniqueId) {
   if (!uniqueId) return "";
   // التحقق من الكاش
@@ -1176,42 +1176,32 @@ async function fetchUserAvatarFromTikTok(uniqueId) {
     return userAvatarCache.get(uniqueId);
   }
   try {
-    const url = `https://www.tiktok.com/@${uniqueId}`;
+    // استخدام API TikWM (موثوق وسريع)
+    const url = `https://www.tikwm.com/api/user/?unique_id=${uniqueId}`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     const response = await fetch(url, {
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json'
       },
-      signal: controller.signal,
+      signal: controller.signal
     });
     clearTimeout(timeoutId);
     if (!response.ok) return "";
-    const html = await response.text();
-    // البحث عن صورة البروفايل في الـ HTML (طريقة تقريبية لكنها تعمل)
-    // نمط: <img class="avatar" src="https://..."
-    // أو في meta property="og:image"
-    let avatarMatch = html.match(
-      /<img[^>]+class="[^"]*avatar[^"]*"[^>]+src="([^"]+)"/i,
-    );
-    if (!avatarMatch) {
-      avatarMatch = html.match(
-        /<meta[^>]+property="og:image"[^>]+content="([^"]+)"/i,
-      );
-    }
-    if (avatarMatch && avatarMatch[1]) {
-      let avatarUrl = avatarMatch[1];
+    const data = await response.json();
+    if (data && data.data && data.data.avatar) {
+      let avatarUrl = data.data.avatar;
       // تأكد من أنها https
       if (avatarUrl.startsWith("//")) avatarUrl = "https:" + avatarUrl;
       userAvatarCache.set(uniqueId, avatarUrl);
-      // تنظيف الكاش كل ساعة
+      // تنظيف الكاش بعد ساعة
       setTimeout(() => userAvatarCache.delete(uniqueId), 60 * 60 * 1000);
-      console.log(`✅ تم جلب صورة المستخدم ${uniqueId}: ${avatarUrl}`);
+      console.log(`✅ تم جلب صورة المستخدم ${uniqueId} عبر API: ${avatarUrl}`);
       return avatarUrl;
     }
   } catch (err) {
-    console.warn(`⚠️ فشل جلب صورة المستخدم ${uniqueId}:`, err.message);
+    console.warn(`⚠️ فشل جلب صورة المستخدم ${uniqueId} عبر API:`, err.message);
   }
   return "";
 }
