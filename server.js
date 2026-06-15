@@ -1129,9 +1129,8 @@ function getUserRealName(data) {
 function getUserAvatar(data) {
   const user = data.user || {};
 
-  // قائمة موسعة بالمسارات المحتملة
-  const possiblePaths = [
-    // من user
+  // قائمة بمسارات صورة المستخدم فقط (لا تشمل الهدايا)
+  const userAvatarPaths = [
     user.avatarThumb?.url_list?.[0],
     user.avatar_thumb?.url_list?.[0],
     user.avatarThumbMedium?.url_list?.[0],
@@ -1146,57 +1145,29 @@ function getUserAvatar(data) {
     user.avatar_thumb?.url,
     user.profilePicture?.url,
     user.profile_picture?.url,
-    // من data مباشرة
-    data.avatarThumb?.url_list?.[0],
-    data.avatar_thumb?.url_list?.[0],
-    data.profilePicture?.url_list?.[0],
-    data.profile_picture?.url_list?.[0],
-    data.avatar,
-    data.avatarUrl,
-    // من user.user
+    // حالات إضافية محتملة
     user.user?.avatarThumb?.url_list?.[0],
     user.user?.avatar_thumb?.url_list?.[0],
-    // من userInfo
     data.userInfo?.avatarThumb?.url_list?.[0],
     data.userInfo?.avatar_thumb?.url_list?.[0],
-    // من data.userDetails
     data.userDetails?.avatarThumb?.url_list?.[0],
     data.userDetails?.avatar_thumb?.url_list?.[0],
   ];
 
-  for (let path of possiblePaths) {
+  for (let path of userAvatarPaths) {
     if (path && typeof path === "string" && path.startsWith("http")) {
-      console.log(`✅ تم العثور على صورة للمستخدم: ${path}`);
-      return path;
+      // تأكد أن الرابط ليس لهدية (يمكن إضافة فلتر اختياري)
+      if (!path.includes("/gift/") && !path.includes("gift_")) {
+        console.log(`✅ تم العثور على صورة المستخدم: ${path}`);
+        return path;
+      }
     }
   }
 
-  // محاولة استخراج أي رابط صورة بشكل عام (regex فضفاض)
-  const dataStr = JSON.stringify(data);
-  const genericMatch = dataStr.match(
-    /"https?:\/\/[^"]+\.(jpg|jpeg|png|webp|avif)"/i,
-  );
-  if (genericMatch) {
-    let url = genericMatch[0].replace(/"/g, "");
-    console.log(`✅ تم العثور على صورة عبر البحث العام: ${url}`);
-    return url;
-  }
-
-  console.warn(
-    "⚠️ لم يتم العثور على صورة للمستخدم، البيانات المتاحة:",
-    JSON.stringify(
-      {
-        userKeys: Object.keys(user),
-        dataKeys: Object.keys(data),
-      },
-      null,
-      2,
-    ),
-  );
-
+  // إذا لم نجد صورة، نرجع سلسلة فارغة (ستظهر الصورة الافتراضية في التراكب)
+  console.warn("⚠️ لم يتم العثور على صورة للمستخدم");
   return "";
 }
-
 // جلب صورة المستخدم من TikTok باستخدام اسم المستخدم (fallback)
 async function fetchUserAvatarFromTikTok(uniqueId) {
   if (!uniqueId) return "";
@@ -3056,24 +3027,20 @@ app.post("/api/interaction-commands", authenticateToken, async (req, res) => {
     );
     const canAccess = await canAccessProfile(req.user.id, profile);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message:
-            "لا يمكنك إنشاء أوامر لهذا البروفايل في النسخة المجانية. قم بالترقية.",
-        });
+      return res.status(403).json({
+        success: false,
+        message:
+          "لا يمكنك إنشاء أوامر لهذا البروفايل في النسخة المجانية. قم بالترقية.",
+      });
     const plan = await getUserPlan(req.user.id);
     if (plan === "free") {
       const total = await getTotalCommandsForUser(req.user.id);
       if (total >= 7)
-        return res
-          .status(403)
-          .json({
-            success: false,
-            message:
-              "لقد وصلت للحد الأقصى للأوامر (7) في النسخة المجانية. قم بالترقية لإضافة المزيد.",
-          });
+        return res.status(403).json({
+          success: false,
+          message:
+            "لقد وصلت للحد الأقصى للأوامر (7) في النسخة المجانية. قم بالترقية لإضافة المزيد.",
+        });
     }
     if (
       !payload.type ||
@@ -3081,12 +3048,10 @@ app.post("/api/interaction-commands", authenticateToken, async (req, res) => {
         payload.type,
       )
     )
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: `النوع غير مدعوم. الأنواع المسموحة: follow, like, comment, share, gift, all`,
-        });
+      return res.status(400).json({
+        success: false,
+        message: `النوع غير مدعوم. الأنواع المسموحة: follow, like, comment, share, gift, all`,
+      });
     if (payload.combo && payload.combo.trim() !== "") {
       const existingCombo = await InteractionCommand.findOne({
         userId: req.user.id,
@@ -3094,12 +3059,10 @@ app.post("/api/interaction-commands", authenticateToken, async (req, res) => {
         combo: payload.combo.trim(),
       });
       if (existingCombo)
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "هذا الاختصار موجود بالفعل في هذا البروفايل",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "هذا الاختصار موجود بالفعل في هذا البروفايل",
+        });
     }
     payload.profile = profile;
     payload.repeat = parseInt(payload.repeat || 1, 10) || 1;
