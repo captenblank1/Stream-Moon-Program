@@ -1101,6 +1101,47 @@ function getSenderFromEvent(data) {
   return "Unknown";
 }
 
+function getUserRealName(data) {
+  const user = data.user || {};
+  const candidates = [
+    user.nickname,
+    user.nickName,
+    user.displayName,
+    user.display_name,
+    user.uniqueId,
+    user.unique_id,
+    user.username,
+    getSenderFromEvent(data)
+  ];
+  for (let c of candidates) {
+    if (typeof c === "string" && c.trim()) return c.trim();
+  }
+  return getSenderFromEvent(data);
+}
+
+function getUserAvatar(data) {
+  const user = data.user || {};
+  // قائمة بالمسارات المحتملة لصورة المستخدم
+  const avatarPaths = [
+    user.avatarThumb?.url_list?.[0],
+    user.avatar_thumb?.url_list?.[0],
+    user.avatarThumbMedium?.url_list?.[0],
+    user.avatar_thumb_medium?.url_list?.[0],
+    user.profilePicture?.url_list?.[0],
+    user.profile_picture?.url_list?.[0],
+    user.avatar,
+    user.avatarUrl,
+    user.profilePicture,
+    user.profile_picture,
+    data.avatarThumb?.url_list?.[0],
+    data.avatar_thumb?.url_list?.[0]
+  ];
+  for (let path of avatarPaths) {
+    if (path && typeof path === "string" && path.startsWith("http")) return path;
+  }
+  return "";
+}
+
 function normalizeUser(u) {
   return u ? String(u).trim().toLowerCase() : "unknown";
 }
@@ -1127,7 +1168,17 @@ async function connectUser(userId, username) {
   const connection = new TikTokLiveConnection(username, {
     apiKey: BLACKMOON_KEY,
   });
+  
+  // متغير للطباعة لمرة واحدة لمعرفة هيكل البيانات
+  let debugOnce = false;
+  
   connection.on(WebcastEvent.GIFT, async (data) => {
+    // طباعة هيكل البيانات مرة واحدة فقط
+    if (!debugOnce) {
+      console.log("🔍 هيكل بيانات الهدية (GIFT) - أول مرة:", JSON.stringify(data, null, 2).substring(0, 1000));
+      debugOnce = true;
+    }
+    
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
       const rawGiftId =
@@ -1198,6 +1249,7 @@ async function connectUser(userId, username) {
       logger.error(`❌ خطأ في GIFT handler للمستخدم ${userId}:`, err.message);
     }
   });
+  
   async function processGiftDelta({
     userId,
     sender,
@@ -1240,8 +1292,8 @@ async function connectUser(userId, username) {
       }
       // إرسال التراكب إذا كان مفعلاً (باستخدام الصورة والاسم الحقيقي من data)
       if (giftCmd && giftCmd.showOverlay && userId) {
-        const avatar = data?.user?.avatarThumb?.url_list?.[0] || data?.user?.profilePicture?.url_list?.[0] || "";
-        const realName = data?.user?.nickname || data?.user?.displayName || sender;
+        const realName = getUserRealName(data);
+        const avatar = getUserAvatar(data);
         io.to(`user-${userId}`).emit("show-overlay", {
           username: realName,
           avatar: avatar,
@@ -1259,6 +1311,7 @@ async function connectUser(userId, username) {
       logger.error("❌ processGiftDelta error:", err.message);
     }
   }
+  
   connection.on(WebcastEvent.CHAT, async (data) => {
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
@@ -1278,8 +1331,8 @@ async function connectUser(userId, username) {
           continue;
         // إرسال التراكب إذا كان مفعلاً (صورة المستخدم واسمه الحقيقي)
         if (cmd.showOverlay && userId) {
-          const realName = data?.user?.nickname || data?.user?.displayName || sender;
-          const avatar = data?.user?.avatarThumb?.url_list?.[0] || "";
+          const realName = getUserRealName(data);
+          const avatar = getUserAvatar(data);
           io.to(`user-${userId}`).emit("show-overlay", {
             username: realName,
             avatar: avatar,
@@ -1298,11 +1351,10 @@ async function connectUser(userId, username) {
       logger.error("❌ CHAT handler error:", err.message);
     }
   });
+  
   connection.on(WebcastEvent.FOLLOW, async (data) => {
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
-      const realName = data?.user?.nickname || data?.user?.displayName || sender;
-      const avatar = data?.user?.avatarThumb?.url_list?.[0] || "";
       const userProfile = await getUserSelectedProfile(userId);
       const commands = getInteractionCommandsForProfile(
         userId,
@@ -1317,6 +1369,8 @@ async function connectUser(userId, username) {
           continue;
         // إرسال التراكب إذا كان مفعلاً
         if (cmd.showOverlay && userId) {
+          const realName = getUserRealName(data);
+          const avatar = getUserAvatar(data);
           io.to(`user-${userId}`).emit("show-overlay", {
             username: realName,
             avatar: avatar,
@@ -1337,6 +1391,7 @@ async function connectUser(userId, username) {
       logger.error("❌ FOLLOW handler error:", err.message);
     }
   });
+  
   connection.on(WebcastEvent.LIKE, async (data) => {
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
@@ -1364,8 +1419,8 @@ async function connectUser(userId, username) {
           continue;
         // إرسال التراكب إذا كان مفعلاً
         if (cmd.showOverlay && userId) {
-          const realName = data?.user?.nickname || data?.user?.displayName || sender;
-          const avatar = data?.user?.avatarThumb?.url_list?.[0] || "";
+          const realName = getUserRealName(data);
+          const avatar = getUserAvatar(data);
           io.to(`user-${userId}`).emit("show-overlay", {
             username: realName,
             avatar: avatar,
@@ -1393,6 +1448,7 @@ async function connectUser(userId, username) {
       logger.error("❌ LIKE handler error:", err.message);
     }
   });
+  
   connection.on(WebcastEvent.SHARE, async (data) => {
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
@@ -1410,8 +1466,8 @@ async function connectUser(userId, username) {
           continue;
         // إرسال التراكب إذا كان مفعلاً
         if (cmd.showOverlay && userId) {
-          const realName = data?.user?.nickname || data?.user?.displayName || sender;
-          const avatar = data?.user?.avatarThumb?.url_list?.[0] || "";
+          const realName = getUserRealName(data);
+          const avatar = getUserAvatar(data);
           io.to(`user-${userId}`).emit("show-overlay", {
             username: realName,
             avatar: avatar,
@@ -1425,6 +1481,7 @@ async function connectUser(userId, username) {
       logger.error("❌ SHARE handler error:", err.message);
     }
   });
+  
   connection.on(WebcastEvent.ROOM_UPDATE, (data) => {
     const prev = userTikTokConnections.get(userId)?.isLive;
     const newRoomId = data?.roomId ?? data?.room_id ?? null;
@@ -1439,6 +1496,7 @@ async function connectUser(userId, username) {
       userTikTokConnections.set(userId, conn);
     }
   });
+  
   connection.on(WebcastEvent.DISCONNECTED, () => {
     if (userTikTokConnections.has(userId)) {
       const conn = userTikTokConnections.get(userId);
@@ -1449,6 +1507,7 @@ async function connectUser(userId, username) {
     resetOncePerLiveForUser(userId);
     logger.info(`⚠️ تم قطع الاتصال بـ TikTok للمستخدم ${userId}`);
   });
+  
   connection.on(WebcastEvent.ERROR, (err) => {
     if (err?.message?.includes("illegal tag")) return;
     logger.error(`❌ خطأ في اتصال TikTok للمستخدم ${userId}:`, err.message);
@@ -1459,6 +1518,7 @@ async function connectUser(userId, username) {
       userTikTokConnections.set(userId, conn);
     }
   });
+  
   try {
     await connection.connect();
     userTikTokConnections.set(userId, {
