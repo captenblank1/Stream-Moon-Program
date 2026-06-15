@@ -1128,7 +1128,7 @@ function getUserRealName(data) {
 
 function getUserAvatar(data) {
   const user = data.user || {};
-  
+
   // قائمة مسارات صورة المستخدم (فقط من user)
   const userAvatarPaths = [
     user.avatarThumb?.url_list?.[0],
@@ -1148,14 +1148,14 @@ function getUserAvatar(data) {
     user.user?.avatarThumb?.url_list?.[0], // بعض النسخ
     user.user?.avatar_thumb?.url_list?.[0],
   ];
-  
+
   for (let path of userAvatarPaths) {
     if (path && typeof path === "string" && path.startsWith("http")) {
       console.log(`✅ تم العثور على صورة المستخدم: ${path}`);
       return path;
     }
   }
-  
+
   console.warn("⚠️ لم يتم العثور على صورة للمستخدم");
   return "";
 }
@@ -1173,10 +1173,11 @@ async function fetchUserAvatarFromTikTok(uniqueId) {
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json'
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        Accept: "application/json",
       },
-      signal: controller.signal
+      signal: controller.signal,
     });
     clearTimeout(timeoutId);
     if (!response.ok) return "";
@@ -3434,6 +3435,7 @@ app.post(
         return res
           .status(400)
           .json({ success: false, message: "لم يتم رفع أي ملف" });
+
       const type = await fileTypeFromBuffer(req.file.buffer);
       if (
         !type ||
@@ -3447,17 +3449,20 @@ app.post(
         return res
           .status(400)
           .json({ success: false, message: "نوع الملف غير مدعوم" });
+
       const fileSizeMB = req.file.buffer.length / (1024 * 1024);
       const user = await User.findById(req.user.id);
       if (!user)
         return res
           .status(404)
           .json({ success: false, message: "مستخدم غير موجود" });
+
       if (user.videoUsedMB + fileSizeMB > MAX_VIDEO_MB)
         return res.status(400).json({
           success: false,
           message: `لا يمكن رفع الفيديو، لقد تجاوزت حد التخزين (${MAX_VIDEO_MB} ميجا). المساحة المتبقية: ${Math.max(0, MAX_VIDEO_MB - user.videoUsedMB).toFixed(2)} ميجا`,
         });
+
       const originalName = path.parse(req.file.originalname).name;
       const safeName = originalName.replace(
         /[^a-zA-Z0-9\u0600-\u06FF\-]/g,
@@ -3485,6 +3490,8 @@ app.post(
       });
       user.videoUsedMB += fileSizeMB;
       await user.save();
+
+      // ✅ التعديل هنا: فقط نربط الفيديو إذا كان الأمر موجوداً، ولا ننشئ أمراً جديداً
       const { giftId, screen = 1 } = req.body;
       if (giftId) {
         const gift = await GiftCommand.findOne({ userId: req.user.id, giftId });
@@ -3492,14 +3499,9 @@ app.post(
           gift.video = filename;
           gift.screen = parseInt(screen, 10) || 1;
           await gift.save();
-        } else
-          await GiftCommand.create({
-            giftId,
-            video: filename,
-            screen: parseInt(screen, 10) || 1,
-            userId: req.user.id,
-          });
+        }
       }
+
       res.json({ success: true, filename, url: videoUrl, sizeMB: fileSizeMB });
     } catch (err) {
       logger.error("❌ خطأ في رفع الفيديو:", err);
