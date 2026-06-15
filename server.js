@@ -1638,15 +1638,28 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
     video.muted = !UNMUTED;
     video.volume = UNMUTED ? videoVolume : 0;
 
-    function playNextVideo(){
+    function playNextVideo() {
       if (isPlaying || videoQueue.length === 0) return;
       const src = videoQueue.shift();
       isPlaying = true;
       video.src = src;
-      video.muted = !UNMUTED;
-      video.volume = UNMUTED ? videoVolume : 0;
+      // نبدأ دائماً مكتوماً حتى يقبل المتصفح التشغيل
+      video.muted = true;
+      video.volume = 0;
       video.style.display = 'block';
-      video.play().catch(e => console.warn('video autoplay blocked', e));
+      
+      video.play().then(() => {
+        // بعد بدء التشغيل بنجاح، نطبق الإعداد المطلوب
+        if (UNMUTED) {
+          video.muted = false;
+          video.volume = videoVolume;
+          console.log('🔊 تم إلغاء كتم الفيديو بعد التشغيل');
+        } else {
+          video.muted = true;
+          video.volume = 0;
+        }
+      }).catch(e => console.warn('video autoplay blocked', e));
+      
       video.onended = () => {
         isPlaying = false;
         video.style.display = 'none';
