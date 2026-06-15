@@ -200,7 +200,6 @@ const io = new Server(server, {
   transports: ["websocket", "polling"],
 });
 
-
 // قائمة المواقع المسموح بها
 const allowedOrigins = [
   "https://streammoon.net",
@@ -235,7 +234,7 @@ app.use(
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
-  })
+  }),
 );
 
 app.use(bodyParser.json({ limit: "10mb" }));
@@ -940,7 +939,13 @@ async function executeAction(cmdObj, triggerUser = "Unknown", userId) {
   if (playSound && audio) playAudio(audio, volume, userId);
   if (playVideo && video && userId) {
     const room = `user-${userId}`;
-    const videoUrl = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload/${encodeURIComponent(video)}`;
+    // البحث عن الفيديو في قاعدة البيانات
+    const videoDoc = await Video.findOne({ file: video, userId });
+    let videoUrl = videoDoc?.cloudinaryUrl;
+    if (!videoUrl) {
+      // fallback فقط في حالة عدم وجود الرابط (قديم)
+      videoUrl = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload/${encodeURIComponent(video)}`;
+    }
     io.to(room).emit("gift-video", {
       videoId: videoUrl,
       user: triggerUser,
@@ -1528,9 +1533,16 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
     const user = await User.findOne({ screenToken: token });
     if (!user) return res.status(404).send("Invalid screen token");
 
-    // 🔐 هروب النصوص لمنع كسر الجافاسكريبت
+    // هروب النصوص لمنع كسر الجافاسكريبت و HTML
     const safeToken = JSON.stringify(token);
     const safeEmail = JSON.stringify(user.email);
+    // هروب HTML للعنوان
+    const safeEmailForTitle = user.email.replace(/[&<>]/g, function (m) {
+      if (m === "&") return "&amp;";
+      if (m === "<") return "&lt;";
+      if (m === ">") return "&gt;";
+      return m;
+    });
     const safeUnmuted = unmuted ? "true" : "false";
 
     const html = `<!DOCTYPE html>
@@ -1538,14 +1550,14 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Screen ${screenNum} - ${user.email}</title>
+  <title>Screen ${screenNum} - ${safeEmailForTitle}</title>
   <style>
     html,body{ margin:0;padding:0;width:100%;height:100%; background:transparent; overflow:hidden; }
     video{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:transparent; display:none; }
   </style>
 </head>
 <body>
-  <video id="videoPlayer" autoplay playsinline ${unmuted ? '' : 'muted'}></video>
+  <video id="videoPlayer" autoplay playsinline ${unmuted ? "" : "muted"}></video>
   <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
   <script>
   (function(){
@@ -2883,15 +2895,20 @@ app.post("/api/play-sound", authenticateToken, (req, res) => {
   playAudio(filename, volume, req.user.id);
   res.json({ success: true });
 });
-app.post("/api/play-video", authenticateToken, (req, res) => {
+app.post("/api/play-video", authenticateToken, async (req, res) => {
   const { filename, screen = 1, user = "Manual", volume = 100 } = req.body;
   if (!filename)
     return res.status(400).json({ success: false, message: "اسم الملف مطلوب" });
-  if (req.user.id) {
-    const room = `user-${req.user.id}`;
-    const videoUrl = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload/${encodeURIComponent(filename)}`;
-    io.to(room).emit("gift-video", { videoId: videoUrl, user, screen, volume });
-  }
+  const videoDoc = await Video.findOne({ file: filename, userId: req.user.id });
+  let videoUrl = videoDoc?.cloudinaryUrl;
+  if (!videoUrl)
+    videoUrl = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload/${encodeURIComponent(filename)}`;
+  io.to(`user-${req.user.id}`).emit("gift-video", {
+    videoId: videoUrl,
+    user,
+    screen,
+    volume,
+  });
   res.json({ success: true });
 });
 app.post("/api/reset-live-state", authenticateToken, (req, res) => {
