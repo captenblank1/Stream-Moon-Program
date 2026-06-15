@@ -97,7 +97,7 @@ let agentRegistrationTokens = new Map(); // key: token, value: { userId, expires
 let bindingTokens = new Map(); // key: token, value: { userId, expires }
 let agentSessions = new Map(); // تخزين رموز جلسات العملاء (صلاحية طويلة)
 
-let userAvatarCache = new Map(); 
+let userAvatarCache = new Map();
 
 // ================ إعدادات السجلات (خفيفة) ================
 const logger = winston.createLogger({
@@ -1118,7 +1118,7 @@ function getUserRealName(data) {
     user.userName,
     data.nickname,
     data.displayName,
-    getSenderFromEvent(data)
+    getSenderFromEvent(data),
   ];
   for (let c of candidates) {
     if (typeof c === "string" && c.trim()) return c.trim();
@@ -1128,7 +1128,7 @@ function getUserRealName(data) {
 
 function getUserAvatar(data) {
   const user = data.user || {};
-  
+
   // قائمة موسعة بالمسارات المحتملة
   const possiblePaths = [
     // من user
@@ -1163,29 +1163,37 @@ function getUserAvatar(data) {
     data.userDetails?.avatarThumb?.url_list?.[0],
     data.userDetails?.avatar_thumb?.url_list?.[0],
   ];
-  
+
   for (let path of possiblePaths) {
     if (path && typeof path === "string" && path.startsWith("http")) {
       console.log(`✅ تم العثور على صورة للمستخدم: ${path}`);
       return path;
     }
   }
-  
+
   // محاولة استخراج أي رابط صورة بشكل عام (regex فضفاض)
   const dataStr = JSON.stringify(data);
-  const genericMatch = dataStr.match(/"https?:\/\/[^"]+\.(jpg|jpeg|png|webp|avif)"/i);
+  const genericMatch = dataStr.match(
+    /"https?:\/\/[^"]+\.(jpg|jpeg|png|webp|avif)"/i,
+  );
   if (genericMatch) {
     let url = genericMatch[0].replace(/"/g, "");
     console.log(`✅ تم العثور على صورة عبر البحث العام: ${url}`);
     return url;
   }
-  
-  console.warn("⚠️ لم يتم العثور على صورة للمستخدم، البيانات المتاحة:", 
-    JSON.stringify({
-      userKeys: Object.keys(user),
-      dataKeys: Object.keys(data),
-    }, null, 2));
-  
+
+  console.warn(
+    "⚠️ لم يتم العثور على صورة للمستخدم، البيانات المتاحة:",
+    JSON.stringify(
+      {
+        userKeys: Object.keys(user),
+        dataKeys: Object.keys(data),
+      },
+      null,
+      2,
+    ),
+  );
+
   return "";
 }
 
@@ -1202,19 +1210,24 @@ async function fetchUserAvatarFromTikTok(uniqueId) {
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       },
-      signal: controller.signal
+      signal: controller.signal,
     });
     clearTimeout(timeoutId);
     if (!response.ok) return "";
     const html = await response.text();
     // البحث عن صورة البروفايل في الـ HTML (طريقة تقريبية لكنها تعمل)
-    // نمط: <img class="avatar" src="https://..." 
+    // نمط: <img class="avatar" src="https://..."
     // أو في meta property="og:image"
-    let avatarMatch = html.match(/<img[^>]+class="[^"]*avatar[^"]*"[^>]+src="([^"]+)"/i);
+    let avatarMatch = html.match(
+      /<img[^>]+class="[^"]*avatar[^"]*"[^>]+src="([^"]+)"/i,
+    );
     if (!avatarMatch) {
-      avatarMatch = html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/i);
+      avatarMatch = html.match(
+        /<meta[^>]+property="og:image"[^>]+content="([^"]+)"/i,
+      );
     }
     if (avatarMatch && avatarMatch[1]) {
       let avatarUrl = avatarMatch[1];
@@ -1248,7 +1261,7 @@ async function getAvatarWithFallback(data, uniqueId, timeoutMs = 800) {
     try {
       const fetchPromise = fetchUserAvatarFromTikTok(uniqueId);
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("timeout")), timeoutMs)
+        setTimeout(() => reject(new Error("timeout")), timeoutMs),
       );
       avatar = await Promise.race([fetchPromise, timeoutPromise]);
       if (avatar) return avatar;
@@ -1285,20 +1298,23 @@ async function connectUser(userId, username) {
   const connection = new TikTokLiveConnection(username, {
     apiKey: BLACKMOON_KEY,
   });
-  
+
   // متغير للطباعة لمرة واحدة لمعرفة هيكل البيانات
   let debugOnce = false;
-  
+
   connection.on(WebcastEvent.GIFT, async (data) => {
     // طباعة هيكل البيانات مرة واحدة فقط
-if (!debugOnce) {
-  console.log("🔍 هيكل بيانات الهدية (GIFT) - أول مرة:");
-  console.log(JSON.stringify(data, null, 2).substring(0, 2000));
-  console.log("🔍 المفاتيح الرئيسية:", Object.keys(data));
-  console.log("🔍 مفاتيح user:", data.user ? Object.keys(data.user) : "لا يوجد user");
-  debugOnce = true;
-}
-    
+    if (!debugOnce) {
+      console.log("🔍 هيكل بيانات الهدية (GIFT) - أول مرة:");
+      console.log(JSON.stringify(data, null, 2).substring(0, 2000));
+      console.log("🔍 المفاتيح الرئيسية:", Object.keys(data));
+      console.log(
+        "🔍 مفاتيح user:",
+        data.user ? Object.keys(data.user) : "لا يوجد user",
+      );
+      debugOnce = true;
+    }
+
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
       const rawGiftId =
@@ -1369,7 +1385,7 @@ if (!debugOnce) {
       logger.error(`❌ خطأ في GIFT handler للمستخدم ${userId}:`, err.message);
     }
   });
-  
+
   async function processGiftDelta({
     userId,
     sender,
@@ -1410,19 +1426,19 @@ if (!debugOnce) {
           await executeAction(cmdObj, sender, userId);
         }
       }
-// إرسال التراكب إذا كان مفعلاً (باستخدام الصورة والاسم الحقيقي)
-if (giftCmd && giftCmd.showOverlay && userId) {
-  const realName = getUserRealName(data);
-  const uniqueId = getSenderFromEvent(data); // المعرف الفريد للمستخدم
-  const avatar = await getAvatarWithFallback(data, uniqueId, 800);
-  
-  io.to(`user-${userId}`).emit("show-overlay", {
-    username: realName,
-    avatar: avatar,
-    text: giftCmd.overlayText || "",
-    duration: (giftCmd.duration || 5) * 1000,
-  });
-}
+      // إرسال التراكب إذا كان مفعلاً (باستخدام الصورة والاسم الحقيقي)
+      if (giftCmd && giftCmd.showOverlay && userId) {
+        const realName = getUserRealName(data);
+        const uniqueId = getSenderFromEvent(data); // المعرف الفريد للمستخدم
+        const avatar = await getAvatarWithFallback(data, uniqueId, 800);
+
+        io.to(`user-${userId}`).emit("show-overlay", {
+          username: realName,
+          avatar: avatar,
+          text: giftCmd.overlayText || "",
+          duration: (giftCmd.duration || 5) * 1000,
+        });
+      }
       const giftInteractions = getInteractionCommandsForProfile(
         userId,
         userProfile,
@@ -1433,7 +1449,7 @@ if (giftCmd && giftCmd.showOverlay && userId) {
       logger.error("❌ processGiftDelta error:", err.message);
     }
   }
-  
+
   connection.on(WebcastEvent.CHAT, async (data) => {
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
@@ -1452,17 +1468,17 @@ if (giftCmd && giftCmd.showOverlay && userId) {
         )
           continue;
         // إرسال التراكب إذا كان مفعلاً (صورة المستخدم واسمه الحقيقي)
-if (cmd.showOverlay && userId) {
-  const realName = getUserRealName(data);
-  const uniqueId = getSenderFromEvent(data);
-  const avatar = await getAvatarWithFallback(data, uniqueId, 800);
-  io.to(`user-${userId}`).emit("show-overlay", {
-    username: realName,
-    avatar: avatar,
-    text: cmd.overlayText || "",
-    duration: (cmd.duration || 5) * 1000,
-  });
-}
+        if (cmd.showOverlay && userId) {
+          const realName = getUserRealName(data);
+          const uniqueId = getSenderFromEvent(data);
+          const avatar = await getAvatarWithFallback(data, uniqueId, 800);
+          io.to(`user-${userId}`).emit("show-overlay", {
+            username: realName,
+            avatar: avatar,
+            text: cmd.overlayText || "",
+            duration: (cmd.duration || 5) * 1000,
+          });
+        }
         if (cmd.keyword && cmd.keyword.trim()) {
           if (comment.toLowerCase().includes(cmd.keyword.trim().toLowerCase()))
             await executeAction(addKeystrokeToCommand(cmd), sender, userId);
@@ -1474,7 +1490,7 @@ if (cmd.showOverlay && userId) {
       logger.error("❌ CHAT handler error:", err.message);
     }
   });
-  
+
   connection.on(WebcastEvent.FOLLOW, async (data) => {
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
@@ -1491,17 +1507,17 @@ if (cmd.showOverlay && userId) {
         )
           continue;
         // إرسال التراكب إذا كان مفعلاً
-if (cmd.showOverlay && userId) {
-  const realName = getUserRealName(data);
-  const uniqueId = getSenderFromEvent(data);
-  const avatar = await getAvatarWithFallback(data, uniqueId, 800);
-  io.to(`user-${userId}`).emit("show-overlay", {
-    username: realName,
-    avatar: avatar,
-    text: cmd.overlayText || "",
-    duration: (cmd.duration || 5) * 1000,
-  });
-}
+        if (cmd.showOverlay && userId) {
+          const realName = getUserRealName(data);
+          const uniqueId = getSenderFromEvent(data);
+          const avatar = await getAvatarWithFallback(data, uniqueId, 800);
+          io.to(`user-${userId}`).emit("show-overlay", {
+            username: realName,
+            avatar: avatar,
+            text: cmd.overlayText || "",
+            duration: (cmd.duration || 5) * 1000,
+          });
+        }
         if (cmd.oncePerLive) {
           const key = `${userId}:follow:${String(cmd._id)}:${sender}`;
           if (followExecutedUsers.has(key)) continue;
@@ -1515,7 +1531,7 @@ if (cmd.showOverlay && userId) {
       logger.error("❌ FOLLOW handler error:", err.message);
     }
   });
-  
+
   connection.on(WebcastEvent.LIKE, async (data) => {
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
@@ -1542,17 +1558,17 @@ if (cmd.showOverlay && userId) {
         )
           continue;
         // إرسال التراكب إذا كان مفعلاً
-if (cmd.showOverlay && userId) {
-  const realName = getUserRealName(data);
-  const uniqueId = getSenderFromEvent(data);
-  const avatar = await getAvatarWithFallback(data, uniqueId, 800);
-  io.to(`user-${userId}`).emit("show-overlay", {
-    username: realName,
-    avatar: avatar,
-    text: cmd.overlayText || "",
-    duration: (cmd.duration || 5) * 1000,
-  });
-}
+        if (cmd.showOverlay && userId) {
+          const realName = getUserRealName(data);
+          const uniqueId = getSenderFromEvent(data);
+          const avatar = await getAvatarWithFallback(data, uniqueId, 800);
+          io.to(`user-${userId}`).emit("show-overlay", {
+            username: realName,
+            avatar: avatar,
+            text: cmd.overlayText || "",
+            duration: (cmd.duration || 5) * 1000,
+          });
+        }
         const threshold = parseInt(cmd.threshold || 0, 10) || 0;
         const keyUser = `${userId}:${String(cmd._id)}:${sender}`;
         likeCounters.set(keyUser, (likeCounters.get(keyUser) || 0) + delta);
@@ -1573,7 +1589,7 @@ if (cmd.showOverlay && userId) {
       logger.error("❌ LIKE handler error:", err.message);
     }
   });
-  
+
   connection.on(WebcastEvent.SHARE, async (data) => {
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
@@ -1590,24 +1606,24 @@ if (cmd.showOverlay && userId) {
         )
           continue;
         // إرسال التراكب إذا كان مفعلاً
-if (cmd.showOverlay && userId) {
-  const realName = getUserRealName(data);
-  const uniqueId = getSenderFromEvent(data);
-  const avatar = await getAvatarWithFallback(data, uniqueId, 800);
-  io.to(`user-${userId}`).emit("show-overlay", {
-    username: realName,
-    avatar: avatar,
-    text: cmd.overlayText || "",
-    duration: (cmd.duration || 5) * 1000,
-  });
-}
+        if (cmd.showOverlay && userId) {
+          const realName = getUserRealName(data);
+          const uniqueId = getSenderFromEvent(data);
+          const avatar = await getAvatarWithFallback(data, uniqueId, 800);
+          io.to(`user-${userId}`).emit("show-overlay", {
+            username: realName,
+            avatar: avatar,
+            text: cmd.overlayText || "",
+            duration: (cmd.duration || 5) * 1000,
+          });
+        }
         await executeAction(addKeystrokeToCommand(cmd), sender, userId);
       }
     } catch (err) {
       logger.error("❌ SHARE handler error:", err.message);
     }
   });
-  
+
   connection.on(WebcastEvent.ROOM_UPDATE, (data) => {
     const prev = userTikTokConnections.get(userId)?.isLive;
     const newRoomId = data?.roomId ?? data?.room_id ?? null;
@@ -1622,7 +1638,7 @@ if (cmd.showOverlay && userId) {
       userTikTokConnections.set(userId, conn);
     }
   });
-  
+
   connection.on(WebcastEvent.DISCONNECTED, () => {
     if (userTikTokConnections.has(userId)) {
       const conn = userTikTokConnections.get(userId);
@@ -1633,7 +1649,7 @@ if (cmd.showOverlay && userId) {
     resetOncePerLiveForUser(userId);
     logger.info(`⚠️ تم قطع الاتصال بـ TikTok للمستخدم ${userId}`);
   });
-  
+
   connection.on(WebcastEvent.ERROR, (err) => {
     if (err?.message?.includes("illegal tag")) return;
     logger.error(`❌ خطأ في اتصال TikTok للمستخدم ${userId}:`, err.message);
@@ -1644,7 +1660,7 @@ if (cmd.showOverlay && userId) {
       userTikTokConnections.set(userId, conn);
     }
   });
-  
+
   try {
     await connection.connect();
     userTikTokConnections.set(userId, {
@@ -3031,19 +3047,59 @@ app.post("/api/interaction-commands", authenticateToken, async (req, res) => {
   try {
     const payload = req.body;
     const user = await User.findById(req.user.id);
-    const profile = Math.max(1, Math.min(MAX_PROFILES, parseInt(payload.profile || user.selectedProfile, 10) || 1));
+    const profile = Math.max(
+      1,
+      Math.min(
+        MAX_PROFILES,
+        parseInt(payload.profile || user.selectedProfile, 10) || 1,
+      ),
+    );
     const canAccess = await canAccessProfile(req.user.id, profile);
-    if (!canAccess) return res.status(403).json({ success: false, message: "لا يمكنك إنشاء أوامر لهذا البروفايل في النسخة المجانية. قم بالترقية." });
+    if (!canAccess)
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message:
+            "لا يمكنك إنشاء أوامر لهذا البروفايل في النسخة المجانية. قم بالترقية.",
+        });
     const plan = await getUserPlan(req.user.id);
     if (plan === "free") {
       const total = await getTotalCommandsForUser(req.user.id);
-      if (total >= 7) return res.status(403).json({ success: false, message: "لقد وصلت للحد الأقصى للأوامر (7) في النسخة المجانية. قم بالترقية لإضافة المزيد." });
+      if (total >= 7)
+        return res
+          .status(403)
+          .json({
+            success: false,
+            message:
+              "لقد وصلت للحد الأقصى للأوامر (7) في النسخة المجانية. قم بالترقية لإضافة المزيد.",
+          });
     }
-    if (!payload.type || !["follow", "like", "comment", "share", "gift", "all"].includes(payload.type))
-      return res.status(400).json({ success: false, message: `النوع غير مدعوم. الأنواع المسموحة: follow, like, comment, share, gift, all` });
+    if (
+      !payload.type ||
+      !["follow", "like", "comment", "share", "gift", "all"].includes(
+        payload.type,
+      )
+    )
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: `النوع غير مدعوم. الأنواع المسموحة: follow, like, comment, share, gift, all`,
+        });
     if (payload.combo && payload.combo.trim() !== "") {
-      const existingCombo = await InteractionCommand.findOne({ userId: req.user.id, profile, combo: payload.combo.trim() });
-      if (existingCombo) return res.status(400).json({ success: false, message: "هذا الاختصار موجود بالفعل في هذا البروفايل" });
+      const existingCombo = await InteractionCommand.findOne({
+        userId: req.user.id,
+        profile,
+        combo: payload.combo.trim(),
+      });
+      if (existingCombo)
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "هذا الاختصار موجود بالفعل في هذا البروفايل",
+          });
     }
     payload.profile = profile;
     payload.repeat = parseInt(payload.repeat || 1, 10) || 1;
@@ -3058,7 +3114,10 @@ app.post("/api/interaction-commands", authenticateToken, async (req, res) => {
     payload.playVideo = payload.playVideo !== false;
     payload.oncePerLive = !!payload.oncePerLive;
     payload.userId = req.user.id;
-    payload.combo = payload.combo && payload.combo.trim() !== "" ? payload.combo.trim() : null;
+    payload.combo =
+      payload.combo && payload.combo.trim() !== ""
+        ? payload.combo.trim()
+        : null;
 
     // ✅ إضافة الحقول الجديدة للتراكب والمدة
     payload.showOverlay = payload.showOverlay === true;
