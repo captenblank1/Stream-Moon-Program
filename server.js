@@ -939,11 +939,9 @@ async function executeAction(cmdObj, triggerUser = "Unknown", userId) {
   if (playSound && audio) playAudio(audio, volume, userId);
   if (playVideo && video && userId) {
     const room = `user-${userId}`;
-    // البحث عن الفيديو في قاعدة البيانات
     const videoDoc = await Video.findOne({ file: video, userId });
     let videoUrl = videoDoc?.cloudinaryUrl;
     if (!videoUrl) {
-      // fallback فقط في حالة عدم وجود الرابط (قديم)
       videoUrl = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload/${encodeURIComponent(video)}`;
     }
     io.to(room).emit("gift-video", {
@@ -1520,12 +1518,12 @@ app.get("/admin", authenticateToken, isAdmin, (req, res) => {
   res.redirect(`${FRONTEND_URL}/admin`);
 });
 
-// ================ نقطة نهاية لعرض صفحة الشاشة الفعلية (مطلوبة لـ OBS) ================
+// ================ نقطة نهاية لعرض صفحة الشاشة الفعلية (مطلوبة لـ OBS و TikTok Live Studio) ================
 app.get("/screens/:token/:screenNumber", async (req, res) => {
   try {
     const { token, screenNumber } = req.params;
     const screenNum = parseInt(screenNumber.replace(".html", ""), 10);
-    const unmuted = req.query.unmuted === "1";
+    const unmuted = req.query.unmuted === "1"; // دعم الصوت في TikTok Live Studio
 
     if (isNaN(screenNum) || screenNum < 1 || screenNum > 10)
       return res.status(404).send("Screen not found");
@@ -1535,8 +1533,6 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
 
     // هروب النصوص لمنع كسر الجافاسكريبت و HTML
     const safeToken = JSON.stringify(token);
-    const safeEmail = JSON.stringify(user.email);
-    // هروب HTML للعنوان
     const safeEmailForTitle = user.email.replace(/[&<>]/g, function (m) {
       if (m === "&") return "&amp;";
       if (m === "<") return "&lt;";
