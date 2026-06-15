@@ -1128,8 +1128,8 @@ function getUserRealName(data) {
 
 function getUserAvatar(data) {
   const user = data.user || {};
-
-  // قائمة بمسارات صورة المستخدم فقط (لا تشمل الهدايا)
+  
+  // قائمة مسارات صورة المستخدم (فقط من user)
   const userAvatarPaths = [
     user.avatarThumb?.url_list?.[0],
     user.avatar_thumb?.url_list?.[0],
@@ -1145,26 +1145,17 @@ function getUserAvatar(data) {
     user.avatar_thumb?.url,
     user.profilePicture?.url,
     user.profile_picture?.url,
-    // حالات إضافية محتملة
-    user.user?.avatarThumb?.url_list?.[0],
+    user.user?.avatarThumb?.url_list?.[0], // بعض النسخ
     user.user?.avatar_thumb?.url_list?.[0],
-    data.userInfo?.avatarThumb?.url_list?.[0],
-    data.userInfo?.avatar_thumb?.url_list?.[0],
-    data.userDetails?.avatarThumb?.url_list?.[0],
-    data.userDetails?.avatar_thumb?.url_list?.[0],
   ];
-
+  
   for (let path of userAvatarPaths) {
     if (path && typeof path === "string" && path.startsWith("http")) {
-      // تأكد أن الرابط ليس لهدية (يمكن إضافة فلتر اختياري)
-      if (!path.includes("/gift/") && !path.includes("gift_")) {
-        console.log(`✅ تم العثور على صورة المستخدم: ${path}`);
-        return path;
-      }
+      console.log(`✅ تم العثور على صورة المستخدم: ${path}`);
+      return path;
     }
   }
-
-  // إذا لم نجد صورة، نرجع سلسلة فارغة (ستظهر الصورة الافتراضية في التراكب)
+  
   console.warn("⚠️ لم يتم العثور على صورة للمستخدم");
   return "";
 }
