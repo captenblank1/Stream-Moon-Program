@@ -2741,7 +2741,7 @@ app.post(
           keystrokeText,
           combo: cmdObj.combo,
         };
-        await executeAction(one, "ManualTest", req.user.id);
+        await executeAction(one, "StreamMoon", req.user.id);
         if (t < timesToRun - 1 && cmdObj.interval > 0)
           await new Promise((r) => setTimeout(r, cmdObj.interval));
       }
@@ -2815,7 +2815,7 @@ app.post(
           repeat: configuredRepeat,
           screen: requestedScreen || cmdObj.screen || 1,
         };
-        await executeAction(one, "ManualTest", req.user.id);
+        await executeAction(one, "StreamMoon", req.user.id);
       }
       res.json({ success: true, message: "تم التنفيذ", count: timesToRun });
     } catch (err) {
