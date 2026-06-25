@@ -242,6 +242,8 @@ app.use(
 
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
+// خدمة ملفات الصوت الافتراضية من مجلد audios
+app.use("/audios", express.static(path.join(__dirname, "audios")));
 app.use(cookieParser());
 app.use((req, res, next) => {
   req.setTimeout(30 * 1000);
@@ -851,12 +853,30 @@ async function sendWebhook(webhookUrl, data, userId = null) {
 
 // ================ تشغيل الصوت ================
 function playAudio(file, volume = 100, targetUserId = null) {
+  // إذا كان الملف محلي (من مجلد /audios/)، شغّله مباشرة
+  if (file && file.startsWith('/audios/')) {
+    const payload = {
+      filename: file, // الرابط النسبي الصحيح
+      volume: Math.min(100, Math.max(0, parseInt(volume) || 100)),
+      timestamp: Date.now(),
+      isDefault: true
+    };
+    if (targetUserId) {
+      io.to(`user-${targetUserId}`).emit("play-sound", payload);
+    } else {
+      io.emit("play-sound", payload);
+    }
+    return; // خلاص، ما نكملش
+  }
+
+  // غير كده (ملف مرفوع من المستخدم)، نبحث عنه في قاعدة البيانات لنجيب رابط Cloudinary
   Audio.findOne({ file })
     .then((audio) => {
       let audioUrl = file;
       if (audio && audio.cloudinaryUrl) {
         audioUrl = audio.cloudinaryUrl;
       } else {
+        // fallback لو مش موجود في الداتابيز
         audioUrl = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/raw/upload/${encodeURIComponent(file)}`;
       }
       const payload = {
@@ -2536,6 +2556,22 @@ app.post(
     }
   },
 );
+
+async function getDefaultAudios() {
+  const audiosDir = path.join(__dirname, "audios");
+  if (!fs.existsSync(audiosDir)) return [];
+  const files = fs.readdirSync(audiosDir);
+  const audioFiles = files.filter(f => /\.(mp3|wav|ogg)$/i.test(f));
+  return audioFiles.map(filename => ({
+    name: path.parse(filename).name,
+    file: `/audios/${filename}`,
+    cloudinaryUrl: null,
+    sizeMB: null,
+    isDefault: true,
+    userId: null
+  }));
+}
+
 app.get("/api/gifts", async (req, res) => {
   try {
     let gifts = await Gift.find().sort({ diamond_count: 1 });
@@ -2559,8 +2595,16 @@ app.get("/api/gifts", async (req, res) => {
 });
 app.get("/api/audio", authenticateToken, async (req, res) => {
   try {
-    const audios = await Audio.find({ userId: req.user.id }).sort({ name: 1 });
-    res.json({ success: true, audios });
+    const userAudios = await Audio.find({ userId: req.user.id }).sort({ name: 1 });
+    const defaultAudios = await getDefaultAudios();
+    
+    // دمج القائمتين: الافتراضية الأول، ثم المرفوعة (مع تحويل الـ mongoose documents)
+    const combined = [
+      ...defaultAudios,
+      ...userAudios.map(a => ({ ...a.toObject(), isDefault: false }))
+    ];
+    
+    res.json({ success: true, audios: combined });
   } catch (err) {
     logger.error("❌ خطأ في جلب الأصوات:", err.message);
     res.status(500).json({ success: false, audios: [] });
