@@ -218,6 +218,9 @@ if (process.env.FRONTEND_URL) {
   allowedOrigins.push(process.env.FRONTEND_URL);
 }
 
+// خدمة ملفات الصور الثابتة من مجلد images
+app.use("/images", express.static(path.join(__dirname, "images")));
+
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -1148,9 +1151,7 @@ function getUserRealName(data) {
 
 function getUserAvatar(data) {
   const user = data.user || {};
-  // قائمة شاملة بكل المسارات المحتملة
   const candidates = [
-    // المسارات الأساسية (الأكثر شيوعاً)
     user.avatarThumb?.url_list?.[0],
     user.avatar_thumb?.url_list?.[0],
     user.avatarMedium?.url_list?.[0],
@@ -1159,27 +1160,27 @@ function getUserAvatar(data) {
     user.avatar_thumb_medium?.url_list?.[0],
     user.profilePicture?.url_list?.[0],
     user.profile_picture?.url_list?.[0],
-    // حقول مباشرة (قد تكون السلسلة نفسها)
     user.avatar,
     user.avatarUrl,
     user.avatar_url,
     user.profilePicture,
     user.profile_picture,
-    // ضمن user.user (في بعض الإصدارات)
     user.user?.avatarThumb?.url_list?.[0],
     user.user?.avatar_thumb?.url_list?.[0],
     user.user?.avatarMedium?.url_list?.[0],
     user.user?.avatar_medium?.url_list?.[0],
-    // من data نفسها (نادر)
     data.avatar,
     data.avatarUrl,
     data.profilePicture,
     data.profile_picture,
-    // صور إضافية (قد تكون في قائمة)
     user.avatarThumb?.url_list?.[1],
     user.avatar_thumb?.url_list?.[1],
     user.avatarMedium?.url_list?.[1],
     user.avatar_medium?.url_list?.[1],
+    // محاولة أي حقل يبدأ بـ avatar أو profile
+    ...Object.values(user).filter(v => 
+      typeof v === 'string' && v.startsWith('http') && (v.includes('avatar') || v.includes('profile'))
+    ),
   ];
   for (let path of candidates) {
     if (path && typeof path === 'string' && path.startsWith('http')) {
@@ -1230,8 +1231,8 @@ async function fetchUserAvatarFromTikTok(uniqueId) {
 }
 
 // دالة موحدة للحصول على رابط الصورة (مع fallback)
-function getAvatarWithFallback(data, uniqueId) {
-  // 1. حاول الحصول على الصورة من البيانات مباشرة
+async function getAvatarWithFallback(data, uniqueId) {
+  // 1. حاول من البيانات المباشرة
   let avatar = getUserAvatar(data);
   if (avatar) {
     if (uniqueId) {
@@ -1241,13 +1242,30 @@ function getAvatarWithFallback(data, uniqueId) {
     return avatar;
   }
 
-  // 2. تحقق من الكاش باستخدام uniqueId
+  // 2. تحقق من الكاش
   if (uniqueId && userAvatarCache.has(uniqueId)) {
     return userAvatarCache.get(uniqueId);
   }
 
-  // 3. لا نستخدم API خارجي لتجنب التأخير، نعيد سلسلة فارغة
-  return "";
+  // 3. جلب من API (مع مهلة قصيرة جداً 1 ثانية)
+  if (uniqueId) {
+    try {
+      const fetchPromise = fetchUserAvatarFromTikTok(uniqueId);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), 1000) // 1 ثانية فقط
+      );
+      avatar = await Promise.race([fetchPromise, timeoutPromise]);
+      if (avatar) {
+        userAvatarCache.set(uniqueId, avatar);
+        setTimeout(() => userAvatarCache.delete(uniqueId), 60 * 60 * 1000);
+        return avatar;
+      }
+    } catch (err) {
+      console.warn(`⚠️ فشل جلب صورة ${uniqueId} من API:`, err.message);
+    }
+  }
+
+  return ""; // لا صورة
 }
 
 function normalizeUser(u) {
@@ -1408,7 +1426,7 @@ async function connectUser(userId, username) {
       if (giftCmd && giftCmd.showOverlay && userId) {
         const realName = getUserRealName(data);
         const uniqueId = getSenderFromEvent(data); // المعرف الفريد للمستخدم
-        const avatar = getAvatarWithFallback(data, uniqueId);
+        const avatar = await getAvatarWithFallback(data, uniqueId);
 
         io.to(`user-${userId}`).emit("show-overlay", {
           username: realName,
@@ -1449,7 +1467,7 @@ async function connectUser(userId, username) {
         if (cmd.showOverlay && userId) {
           const realName = getUserRealName(data);
           const uniqueId = getSenderFromEvent(data);
-          const avatar = getAvatarWithFallback(data, uniqueId);
+          const avatar = await getAvatarWithFallback(data, uniqueId);
           io.to(`user-${userId}`).emit("show-overlay", {
             username: realName,
             avatar: avatar,
@@ -1488,7 +1506,7 @@ async function connectUser(userId, username) {
         if (cmd.showOverlay && userId) {
           const realName = getUserRealName(data);
           const uniqueId = getSenderFromEvent(data);
-          const avatar = getAvatarWithFallback(data, uniqueId);
+          const avatar = await getAvatarWithFallback(data, uniqueId);
           io.to(`user-${userId}`).emit("show-overlay", {
             username: realName,
             avatar: avatar,
@@ -1539,7 +1557,7 @@ async function connectUser(userId, username) {
         if (cmd.showOverlay && userId) {
           const realName = getUserRealName(data);
           const uniqueId = getSenderFromEvent(data);
-          const avatar = getAvatarWithFallback(data, uniqueId);
+          const avatar = await getAvatarWithFallback(data, uniqueId);
           io.to(`user-${userId}`).emit("show-overlay", {
             username: realName,
             avatar: avatar,
@@ -1587,7 +1605,7 @@ async function connectUser(userId, username) {
         if (cmd.showOverlay && userId) {
           const realName = getUserRealName(data);
           const uniqueId = getSenderFromEvent(data);
-          const avatar = getAvatarWithFallback(data, uniqueId);
+          const avatar = await getAvatarWithFallback(data, uniqueId);
           io.to(`user-${userId}`).emit("show-overlay", {
             username: realName,
             avatar: avatar,
@@ -2025,8 +2043,10 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       try {
         if (!data) return;
         console.log('📢 استقبال تراكب:', data);
-        overlayAvatar.src = data.avatar || 'https://via.placeholder.com/70?text=User';
-        overlayUsername.textContent = data.username || 'مستخدم';
+        const username = data.username || 'مستخدم';
+        const defaultAvatar = '/images/defaultuser.png';
+        overlayAvatar.src = data.avatar || defaultAvatar;
+        overlayUsername.textContent = username;
         overlayText.textContent = data.text || '';
         overlayDiv.style.display = 'flex';
         
