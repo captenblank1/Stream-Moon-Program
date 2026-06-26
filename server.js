@@ -2359,7 +2359,12 @@ app.get("/api/auth/me", authenticateToken, async (req, res) => {
   });
 });
 app.post("/api/auth/logout", (req, res) => {
-  res.clearCookie("token");
+  res.clearCookie("token", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "none",
+    path: "/",
+  });
   res.json({ success: true, message: "تم تسجيل الخروج" });
 });
 app.delete("/api/auth/delete", authenticateToken, async (req, res) => {
