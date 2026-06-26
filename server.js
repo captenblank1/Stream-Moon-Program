@@ -1145,16 +1145,22 @@ function getUserRealName(data) {
   }
   return getSenderFromEvent(data);
 }
+// ============================================================
+// دوال جلب صورة المستخدم (محسنة مع fallback)
+// ============================================================
+
+// ============================================================
+// دوال جلب صورة المستخدم – فورية من بيانات TikTok مباشرة
+// ============================================================
 
 function getUserAvatar(data) {
   const user = data.user || {};
-
-  // قائمة مسارات صورة المستخدم (فقط من user)
-  const userAvatarPaths = [
+  // جميع المسارات المحتملة لصورة المستخدم في بيانات TikTok
+  const possiblePaths = [
     user.avatarThumb?.url_list?.[0],
     user.avatar_thumb?.url_list?.[0],
     user.avatarThumbMedium?.url_list?.[0],
-    user.avatar_thumb_medium?.url_list?.[0],
+    user.avatar_medium?.url_list?.[0],
     user.profilePicture?.url_list?.[0],
     user.profile_picture?.url_list?.[0],
     user.avatar,
@@ -1163,86 +1169,32 @@ function getUserAvatar(data) {
     user.profile_picture,
     user.avatarThumb?.url,
     user.avatar_thumb?.url,
-    user.profilePicture?.url,
-    user.profile_picture?.url,
-    user.user?.avatarThumb?.url_list?.[0], // بعض النسخ
+    user.user?.avatarThumb?.url_list?.[0],
     user.user?.avatar_thumb?.url_list?.[0],
+    user.user?.profilePicture?.url_list?.[0],
+    user.user?.profile_picture?.url_list?.[0],
+    data.avatarThumb?.url_list?.[0],
+    data.profilePicture?.url_list?.[0],
+    data.avatar,
   ];
-
-  for (let path of userAvatarPaths) {
-    if (path && typeof path === "string" && path.startsWith("http")) {
-      console.log(`✅ تم العثور على صورة المستخدم: ${path}`);
-      return path;
+  for (let path of possiblePaths) {
+    if (path && typeof path === 'string' && path.startsWith('http')) {
+      console.log(`✅ صورة من بيانات TikTok: ${path.substring(0, 60)}...`);
+      return path; // نرجع فوراً
     }
   }
-
-  console.warn("⚠️ لم يتم العثور على صورة للمستخدم");
-  return "";
-}
-// جلب صورة المستخدم من TikTok باستخدام API خارجي (بدون scraping)
-async function fetchUserAvatarFromTikTok(uniqueId) {
-  if (!uniqueId) return "";
-  // التحقق من الكاش
-  if (userAvatarCache.has(uniqueId)) {
-    return userAvatarCache.get(uniqueId);
-  }
-  try {
-    // استخدام API TikWM (موثوق وسريع)
-    const url = `https://www.tikwm.com/api/user/?unique_id=${uniqueId}`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        Accept: "application/json",
-      },
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    if (!response.ok) return "";
-    const data = await response.json();
-    if (data && data.data && data.data.avatar) {
-      let avatarUrl = data.data.avatar;
-      // تأكد من أنها https
-      if (avatarUrl.startsWith("//")) avatarUrl = "https:" + avatarUrl;
-      userAvatarCache.set(uniqueId, avatarUrl);
-      // تنظيف الكاش بعد ساعة
-      setTimeout(() => userAvatarCache.delete(uniqueId), 60 * 60 * 1000);
-      console.log(`✅ تم جلب صورة المستخدم ${uniqueId} عبر API: ${avatarUrl}`);
-      return avatarUrl;
-    }
-  } catch (err) {
-    console.warn(`⚠️ فشل جلب صورة المستخدم ${uniqueId} عبر API:`, err.message);
-  }
-  return "";
+  return null; // لم نجد صورة
 }
 
-// دالة موحدة للحصول على رابط الصورة (مع fallback)
-async function getAvatarWithFallback(data, uniqueId, timeoutMs = 800) {
-  // 1. حاول الحصول على الصورة من البيانات مباشرة
-  let avatar = getUserAvatar(data);
+function getAvatarWithFallback(data, uniqueId) {
+  // 1. محاولة استخراج الصورة من البيانات المباشرة (فوري)
+  const avatar = getUserAvatar(data);
   if (avatar) return avatar;
 
-  // 2. إذا كان لدينا uniqueId، حاول الجلب من TikTok مع مهلة
-  if (uniqueId) {
-    // تحقق من الكاش أولاً
-    if (userAvatarCache.has(uniqueId)) {
-      return userAvatarCache.get(uniqueId);
-    }
-    // جلب غير متزامن مع مهلة
-    try {
-      const fetchPromise = fetchUserAvatarFromTikTok(uniqueId);
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("timeout")), timeoutMs),
-      );
-      avatar = await Promise.race([fetchPromise, timeoutPromise]);
-      if (avatar) return avatar;
-    } catch (err) {
-      console.warn(`⚠️ فشل جلب صورة ${uniqueId}:`, err.message);
-    }
-  }
-  return ""; // لا صورة
+  // 2. صورة افتراضية سريعة (تظهر في المتصفح فوراً)
+  const displayName = uniqueId || 'User';
+  console.log(`🖼️ استخدام صورة افتراضية للمستخدم: ${displayName}`);
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=4caf50&color=fff&size=128&bold=true`;
 }
 
 function normalizeUser(u) {
@@ -1403,7 +1355,7 @@ async function connectUser(userId, username) {
       if (giftCmd && giftCmd.showOverlay && userId) {
         const realName = getUserRealName(data);
         const uniqueId = getSenderFromEvent(data); // المعرف الفريد للمستخدم
-        const avatar = await getAvatarWithFallback(data, uniqueId, 800);
+        const avatar = getAvatarWithFallback(data, uniqueId);
 
         io.to(`user-${userId}`).emit("show-overlay", {
           username: realName,
@@ -1444,7 +1396,7 @@ async function connectUser(userId, username) {
         if (cmd.showOverlay && userId) {
           const realName = getUserRealName(data);
           const uniqueId = getSenderFromEvent(data);
-          const avatar = await getAvatarWithFallback(data, uniqueId, 800);
+          const avatar = getAvatarWithFallback(data, uniqueId);
           io.to(`user-${userId}`).emit("show-overlay", {
             username: realName,
             avatar: avatar,
@@ -1483,7 +1435,7 @@ async function connectUser(userId, username) {
         if (cmd.showOverlay && userId) {
           const realName = getUserRealName(data);
           const uniqueId = getSenderFromEvent(data);
-          const avatar = await getAvatarWithFallback(data, uniqueId, 800);
+          const avatar = getAvatarWithFallback(data, uniqueId);
           io.to(`user-${userId}`).emit("show-overlay", {
             username: realName,
             avatar: avatar,
@@ -1534,7 +1486,7 @@ async function connectUser(userId, username) {
         if (cmd.showOverlay && userId) {
           const realName = getUserRealName(data);
           const uniqueId = getSenderFromEvent(data);
-          const avatar = await getAvatarWithFallback(data, uniqueId, 800);
+          const avatar = getAvatarWithFallback(data, uniqueId);
           io.to(`user-${userId}`).emit("show-overlay", {
             username: realName,
             avatar: avatar,
@@ -1582,7 +1534,7 @@ async function connectUser(userId, username) {
         if (cmd.showOverlay && userId) {
           const realName = getUserRealName(data);
           const uniqueId = getSenderFromEvent(data);
-          const avatar = await getAvatarWithFallback(data, uniqueId, 800);
+          const avatar = getAvatarWithFallback(data, uniqueId);
           io.to(`user-${userId}`).emit("show-overlay", {
             username: realName,
             avatar: avatar,
