@@ -1735,7 +1735,7 @@ app.post("/api/auth/register", authLimiter, async (req, res) => {
     );
     res.cookie("token", token, {
       httpOnly: true,
-      secure: NODE_ENV === "production",
+      secure: true,
       sameSite: "none",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
@@ -1784,7 +1784,7 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
     );
     res.cookie("token", token, {
       httpOnly: true,
-      secure: NODE_ENV === "production",
+      secure: true,
       sameSite: "none",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
@@ -2409,7 +2409,7 @@ app.post("/api/auth/refresh", authenticateToken, async (req, res) => {
     );
     res.cookie("token", newToken, {
       httpOnly: true,
-      secure: NODE_ENV === "production",
+      secure: true,
       sameSite: "none",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
