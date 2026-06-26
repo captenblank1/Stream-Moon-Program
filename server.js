@@ -1146,15 +1146,19 @@ function getUserRealName(data) {
   return getSenderFromEvent(data);
 }
 
+// ============================================================
+// دوال جلب صورة المستخدم (نسخة واحدة موحدة)
+// ============================================================
+
+let userAvatarDebugLogged = false;
+
 function getUserAvatar(data) {
   const user = data.user || {};
-
-  // قائمة مسارات صورة المستخدم (فقط من user)
-  const userAvatarPaths = [
+  const possiblePaths = [
     user.avatarThumb?.url_list?.[0],
     user.avatar_thumb?.url_list?.[0],
     user.avatarThumbMedium?.url_list?.[0],
-    user.avatar_thumb_medium?.url_list?.[0],
+    user.avatar_medium?.url_list?.[0],
     user.profilePicture?.url_list?.[0],
     user.profile_picture?.url_list?.[0],
     user.avatar,
@@ -1163,86 +1167,79 @@ function getUserAvatar(data) {
     user.profile_picture,
     user.avatarThumb?.url,
     user.avatar_thumb?.url,
-    user.profilePicture?.url,
-    user.profile_picture?.url,
-    user.user?.avatarThumb?.url_list?.[0], // بعض النسخ
+    user.user?.avatarThumb?.url_list?.[0],
     user.user?.avatar_thumb?.url_list?.[0],
+    user.user?.profilePicture?.url_list?.[0],
+    user.user?.profile_picture?.url_list?.[0],
+    data.avatarThumb?.url_list?.[0],
+    data.profilePicture?.url_list?.[0],
+    data.avatar,
   ];
-
-  for (let path of userAvatarPaths) {
+  for (let path of possiblePaths) {
     if (path && typeof path === "string" && path.startsWith("http")) {
-      console.log(`✅ تم العثور على صورة المستخدم: ${path}`);
+      console.log(
+        `✅ تم العثور على صورة المستخدم: ${path.substring(0, 60)}...`,
+      );
       return path;
     }
   }
-
-  console.warn("⚠️ لم يتم العثور على صورة للمستخدم");
-  return "";
-}
-// جلب صورة المستخدم من TikTok باستخدام API خارجي (بدون scraping)
-async function fetchUserAvatarFromTikTok(uniqueId) {
-  if (!uniqueId) return "";
-  // التحقق من الكاش
-  if (userAvatarCache.has(uniqueId)) {
-    return userAvatarCache.get(uniqueId);
-  }
-  try {
-    // استخدام API TikWM (موثوق وسريع)
-    const url = `https://www.tikwm.com/api/user/?unique_id=${uniqueId}`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        Accept: "application/json",
-      },
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    if (!response.ok) return "";
-    const data = await response.json();
-    if (data && data.data && data.data.avatar) {
-      let avatarUrl = data.data.avatar;
-      // تأكد من أنها https
-      if (avatarUrl.startsWith("//")) avatarUrl = "https:" + avatarUrl;
-      userAvatarCache.set(uniqueId, avatarUrl);
-      // تنظيف الكاش بعد ساعة
-      setTimeout(() => userAvatarCache.delete(uniqueId), 60 * 60 * 1000);
-      console.log(`✅ تم جلب صورة المستخدم ${uniqueId} عبر API: ${avatarUrl}`);
-      return avatarUrl;
-    }
-  } catch (err) {
-    console.warn(`⚠️ فشل جلب صورة المستخدم ${uniqueId} عبر API:`, err.message);
+  if (!userAvatarDebugLogged) {
+    console.warn("⚠️ لم يتم العثور على صورة للمستخدم. هيكل user المتاح:");
+    console.warn(JSON.stringify(user, null, 2).substring(0, 800));
+    console.warn("🔍 مفاتيح user:", Object.keys(user));
+    userAvatarDebugLogged = true;
   }
   return "";
 }
 
-// دالة موحدة للحصول على رابط الصورة (مع fallback)
-async function getAvatarWithFallback(data, uniqueId, timeoutMs = 800) {
-  // 1. حاول الحصول على الصورة من البيانات مباشرة
+async function getAvatarWithFallback(data, uniqueId, timeoutMs = 2000) {
+  // 1. المحاولة الأولى: من البيانات المباشرة
   let avatar = getUserAvatar(data);
   if (avatar) return avatar;
 
-  // 2. إذا كان لدينا uniqueId، حاول الجلب من TikTok مع مهلة
+  // 2. المحاولة الثانية: API خارجي (مع كاش)
   if (uniqueId) {
-    // تحقق من الكاش أولاً
     if (userAvatarCache.has(uniqueId)) {
       return userAvatarCache.get(uniqueId);
     }
-    // جلب غير متزامن مع مهلة
     try {
-      const fetchPromise = fetchUserAvatarFromTikTok(uniqueId);
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("timeout")), timeoutMs),
-      );
-      avatar = await Promise.race([fetchPromise, timeoutPromise]);
-      if (avatar) return avatar;
+      const url = `https://www.tikwm.com/api/user/?unique_id=${uniqueId}`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          Accept: "application/json",
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (response.ok) {
+        const result = await response.json();
+        if (result?.data?.avatar) {
+          let apiAvatar = result.data.avatar;
+          if (apiAvatar.startsWith("//")) apiAvatar = "https:" + apiAvatar;
+          userAvatarCache.set(uniqueId, apiAvatar);
+          setTimeout(() => userAvatarCache.delete(uniqueId), 60 * 60 * 1000);
+          console.log(`✅ تم جلب صورة المستخدم ${uniqueId} عبر API احتياطي`);
+          return apiAvatar;
+        }
+      }
     } catch (err) {
-      console.warn(`⚠️ فشل جلب صورة ${uniqueId}:`, err.message);
+      console.warn(`⚠️ فشل جلب صورة ${uniqueId} عبر API احتياطي:`, err.message);
     }
   }
-  return ""; // لا صورة
+
+  // 3. النهائي: صورة افتراضية (Placeholder)
+  const displayName = uniqueId || "User";
+  const fallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=4caf50&color=fff&size=128&bold=true`;
+  console.log(`🖼️ استخدام صورة افتراضية للمستخدم: ${displayName}`);
+  if (uniqueId) {
+    userAvatarCache.set(uniqueId, fallbackAvatar);
+    setTimeout(() => userAvatarCache.delete(uniqueId), 60 * 60 * 1000);
+  }
+  return fallbackAvatar;
 }
 
 function normalizeUser(u) {
