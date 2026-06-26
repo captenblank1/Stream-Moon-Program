@@ -218,9 +218,6 @@ if (process.env.FRONTEND_URL) {
   allowedOrigins.push(process.env.FRONTEND_URL);
 }
 
-// خدمة ملفات الصور الثابتة من مجلد images
-app.use("/images", express.static(path.join(__dirname, "images")));
-
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -706,6 +703,44 @@ async function refreshCachesForUser(userId) {
   }
 }
 
+// ================ دالة مساعدة لحذف ملفات الصوت والفيديو المرتبطة بأمر ================
+async function deleteFilesForCommand(cmd, userId) {
+  let audioSize = 0,
+    videoSize = 0;
+  if (cmd.video) {
+    const videoDoc = await Video.findOne({ file: cmd.video, userId });
+    if (videoDoc) {
+      videoSize = videoDoc.sizeMB || 0;
+      const basePublicId = path.parse(videoDoc.file).name;
+      await cloudinary.uploader.destroy(`blackmoon_videos/${basePublicId}`, {
+        resource_type: "video",
+      });
+      await Video.deleteOne({ file: cmd.video });
+    }
+  }
+  if (cmd.audio) {
+    const audioDoc = await Audio.findOne({ file: cmd.audio, userId });
+    if (audioDoc) {
+      audioSize = audioDoc.sizeMB || 0;
+      const basePublicId = path.parse(audioDoc.file).name;
+      await cloudinary.uploader.destroy(`blackmoon_audio/${basePublicId}`, {
+        resource_type: "raw",
+      });
+      await Audio.deleteOne({ file: cmd.audio });
+    }
+  }
+  // تحديث مساحة المستخدم
+  if (userId && (audioSize > 0 || videoSize > 0)) {
+    const user = await User.findById(userId);
+    if (user) {
+      user.audioUsedMB = Math.max(0, user.audioUsedMB - audioSize);
+      user.videoUsedMB = Math.max(0, user.videoUsedMB - videoSize);
+      await user.save();
+    }
+  }
+  return { audioSize, videoSize };
+}
+
 function getGiftCommandForProfile(userId, profile, giftIdStr) {
   const key = `${userId}:${profile}`;
   const map = giftCommandsCache.get(key);
@@ -1151,44 +1186,35 @@ function getUserRealName(data) {
 
 function getUserAvatar(data) {
   const user = data.user || {};
-  const candidates = [
+
+  // قائمة مسارات صورة المستخدم (فقط من user)
+  const userAvatarPaths = [
     user.avatarThumb?.url_list?.[0],
     user.avatar_thumb?.url_list?.[0],
-    user.avatarMedium?.url_list?.[0],
-    user.avatar_medium?.url_list?.[0],
     user.avatarThumbMedium?.url_list?.[0],
     user.avatar_thumb_medium?.url_list?.[0],
     user.profilePicture?.url_list?.[0],
     user.profile_picture?.url_list?.[0],
     user.avatar,
     user.avatarUrl,
-    user.avatar_url,
     user.profilePicture,
     user.profile_picture,
-    user.user?.avatarThumb?.url_list?.[0],
+    user.avatarThumb?.url,
+    user.avatar_thumb?.url,
+    user.profilePicture?.url,
+    user.profile_picture?.url,
+    user.user?.avatarThumb?.url_list?.[0], // بعض النسخ
     user.user?.avatar_thumb?.url_list?.[0],
-    user.user?.avatarMedium?.url_list?.[0],
-    user.user?.avatar_medium?.url_list?.[0],
-    data.avatar,
-    data.avatarUrl,
-    data.profilePicture,
-    data.profile_picture,
-    user.avatarThumb?.url_list?.[1],
-    user.avatar_thumb?.url_list?.[1],
-    user.avatarMedium?.url_list?.[1],
-    user.avatar_medium?.url_list?.[1],
-    // محاولة أي حقل يبدأ بـ avatar أو profile
-    ...Object.values(user).filter(v => 
-      typeof v === 'string' && v.startsWith('http') && (v.includes('avatar') || v.includes('profile'))
-    ),
   ];
-  for (let path of candidates) {
-    if (path && typeof path === 'string' && path.startsWith('http')) {
+
+  for (let path of userAvatarPaths) {
+    if (path && typeof path === "string" && path.startsWith("http")) {
       console.log(`✅ تم العثور على صورة المستخدم: ${path}`);
       return path;
     }
   }
-  console.warn('⚠️ لم يتم العثور على صورة للمستخدم');
+
+  console.warn("⚠️ لم يتم العثور على صورة للمستخدم");
   return "";
 }
 // جلب صورة المستخدم من TikTok باستخدام API خارجي (بدون scraping)
@@ -1231,40 +1257,29 @@ async function fetchUserAvatarFromTikTok(uniqueId) {
 }
 
 // دالة موحدة للحصول على رابط الصورة (مع fallback)
-async function getAvatarWithFallback(data, uniqueId) {
-  // 1. حاول من البيانات المباشرة
+async function getAvatarWithFallback(data, uniqueId, timeoutMs = 800) {
+  // 1. حاول الحصول على الصورة من البيانات مباشرة
   let avatar = getUserAvatar(data);
-  if (avatar) {
-    if (uniqueId) {
-      userAvatarCache.set(uniqueId, avatar);
-      setTimeout(() => userAvatarCache.delete(uniqueId), 60 * 60 * 1000);
-    }
-    return avatar;
-  }
+  if (avatar) return avatar;
 
-  // 2. تحقق من الكاش
-  if (uniqueId && userAvatarCache.has(uniqueId)) {
-    return userAvatarCache.get(uniqueId);
-  }
-
-  // 3. جلب من API (مع مهلة قصيرة جداً 1 ثانية)
+  // 2. إذا كان لدينا uniqueId، حاول الجلب من TikTok مع مهلة
   if (uniqueId) {
+    // تحقق من الكاش أولاً
+    if (userAvatarCache.has(uniqueId)) {
+      return userAvatarCache.get(uniqueId);
+    }
+    // جلب غير متزامن مع مهلة
     try {
       const fetchPromise = fetchUserAvatarFromTikTok(uniqueId);
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('timeout')), 1000) // 1 ثانية فقط
+        setTimeout(() => reject(new Error("timeout")), timeoutMs),
       );
       avatar = await Promise.race([fetchPromise, timeoutPromise]);
-      if (avatar) {
-        userAvatarCache.set(uniqueId, avatar);
-        setTimeout(() => userAvatarCache.delete(uniqueId), 60 * 60 * 1000);
-        return avatar;
-      }
+      if (avatar) return avatar;
     } catch (err) {
-      console.warn(`⚠️ فشل جلب صورة ${uniqueId} من API:`, err.message);
+      console.warn(`⚠️ فشل جلب صورة ${uniqueId}:`, err.message);
     }
   }
-
   return ""; // لا صورة
 }
 
@@ -1426,7 +1441,7 @@ async function connectUser(userId, username) {
       if (giftCmd && giftCmd.showOverlay && userId) {
         const realName = getUserRealName(data);
         const uniqueId = getSenderFromEvent(data); // المعرف الفريد للمستخدم
-        const avatar = await getAvatarWithFallback(data, uniqueId);
+        const avatar = await getAvatarWithFallback(data, uniqueId, 800);
 
         io.to(`user-${userId}`).emit("show-overlay", {
           username: realName,
@@ -1467,7 +1482,7 @@ async function connectUser(userId, username) {
         if (cmd.showOverlay && userId) {
           const realName = getUserRealName(data);
           const uniqueId = getSenderFromEvent(data);
-          const avatar = await getAvatarWithFallback(data, uniqueId);
+          const avatar = await getAvatarWithFallback(data, uniqueId, 800);
           io.to(`user-${userId}`).emit("show-overlay", {
             username: realName,
             avatar: avatar,
@@ -1506,7 +1521,7 @@ async function connectUser(userId, username) {
         if (cmd.showOverlay && userId) {
           const realName = getUserRealName(data);
           const uniqueId = getSenderFromEvent(data);
-          const avatar = await getAvatarWithFallback(data, uniqueId);
+          const avatar = await getAvatarWithFallback(data, uniqueId, 800);
           io.to(`user-${userId}`).emit("show-overlay", {
             username: realName,
             avatar: avatar,
@@ -1557,7 +1572,7 @@ async function connectUser(userId, username) {
         if (cmd.showOverlay && userId) {
           const realName = getUserRealName(data);
           const uniqueId = getSenderFromEvent(data);
-          const avatar = await getAvatarWithFallback(data, uniqueId);
+          const avatar = await getAvatarWithFallback(data, uniqueId, 800);
           io.to(`user-${userId}`).emit("show-overlay", {
             username: realName,
             avatar: avatar,
@@ -1605,7 +1620,7 @@ async function connectUser(userId, username) {
         if (cmd.showOverlay && userId) {
           const realName = getUserRealName(data);
           const uniqueId = getSenderFromEvent(data);
-          const avatar = await getAvatarWithFallback(data, uniqueId);
+          const avatar = await getAvatarWithFallback(data, uniqueId, 800);
           io.to(`user-${userId}`).emit("show-overlay", {
             username: realName,
             avatar: avatar,
@@ -2043,10 +2058,8 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       try {
         if (!data) return;
         console.log('📢 استقبال تراكب:', data);
-        const username = data.username || 'مستخدم';
-        const defaultAvatar = '/images/defaultuser.png';
-        overlayAvatar.src = data.avatar || defaultAvatar;
-        overlayUsername.textContent = username;
+        overlayAvatar.src = data.avatar || 'https://via.placeholder.com/70?text=User';
+        overlayUsername.textContent = data.username || 'مستخدم';
         overlayText.textContent = data.text || '';
         overlayDiv.style.display = 'flex';
         
@@ -2192,12 +2205,36 @@ app.delete("/api/audio/:filename", authenticateToken, async (req, res) => {
       await user.save();
     }
     await Audio.deleteOne({ file: filename });
-    res.json({ success: true, message: "تم حذف الصوت واسترجاع المساحة" });
+
+    // إرسال بيانات التخزين المحدثة
+    const updatedUser = await User.findById(req.user.id);
+    const storageData = {
+      audio: {
+        usedMB: updatedUser.audioUsedMB,
+        limitMB: MAX_AUDIO_MB,
+        remainingMB: Math.max(0, MAX_AUDIO_MB - updatedUser.audioUsedMB),
+      },
+      video: {
+        usedMB: updatedUser.videoUsedMB,
+        limitMB: MAX_VIDEO_MB,
+        remainingMB: Math.max(0, MAX_VIDEO_MB - updatedUser.videoUsedMB),
+      },
+    };
+
+    // بث عبر Socket.IO لتحديث جميع الشاشات
+    io.to(`user-${req.user.id}`).emit("storage-update", storageData);
+
+    res.json({
+      success: true,
+      message: "تم حذف الصوت واسترجاع المساحة",
+      storage: storageData,
+    });
   } catch (err) {
     logger.error("❌ خطأ في حذف الصوت:", err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 });
+// حذف ملف فيديو
 app.delete("/api/video/:filename", authenticateToken, async (req, res) => {
   try {
     const filename = req.params.filename;
@@ -2228,7 +2265,29 @@ app.delete("/api/video/:filename", authenticateToken, async (req, res) => {
       { video: filename },
       { $set: { video: null } },
     );
-    res.json({ success: true, message: "تم حذف الفيديو واسترجاع المساحة" });
+
+    // إرسال بيانات التخزين المحدثة
+    const updatedUser = await User.findById(req.user.id);
+    const storageData = {
+      audio: {
+        usedMB: updatedUser.audioUsedMB,
+        limitMB: MAX_AUDIO_MB,
+        remainingMB: Math.max(0, MAX_AUDIO_MB - updatedUser.audioUsedMB),
+      },
+      video: {
+        usedMB: updatedUser.videoUsedMB,
+        limitMB: MAX_VIDEO_MB,
+        remainingMB: Math.max(0, MAX_VIDEO_MB - updatedUser.videoUsedMB),
+      },
+    };
+
+    io.to(`user-${req.user.id}`).emit("storage-update", storageData);
+
+    res.json({
+      success: true,
+      message: "تم حذف الفيديو واسترجاع المساحة",
+      storage: storageData,
+    });
   } catch (err) {
     logger.error("❌ خطأ في حذف الفيديو:", err.message);
     res.status(500).json({ success: false, message: err.message });
@@ -2305,9 +2364,28 @@ app.post("/api/auth/logout", (req, res) => {
 });
 app.delete("/api/auth/delete", authenticateToken, async (req, res) => {
   try {
-    await User.findByIdAndDelete(req.user.id);
+    const userId = req.user.id;
+
+    const giftCommands = await GiftCommand.find({ userId });
+    const interactionCommands = await InteractionCommand.find({ userId });
+    const allCommands = [...giftCommands, ...interactionCommands];
+
+    for (const cmd of allCommands) {
+      await deleteFilesForCommand(cmd, userId);
+    }
+
+    await GiftCommand.deleteMany({ userId });
+    await InteractionCommand.deleteMany({ userId });
+    await Audio.deleteMany({ userId });
+    await Video.deleteMany({ userId });
+    await Profile.deleteMany({ owner: userId });
+    await User.findByIdAndDelete(userId);
+
     res.clearCookie("token");
-    res.json({ success: true, message: "تم حذف الحساب" });
+    res.json({
+      success: true,
+      message: "تم حذف الحساب وجميع البيانات المرتبطة",
+    });
   } catch (err) {
     logger.error("❌ خطأ في حذف الحساب:", err.message);
     res.status(500).json({ success: false, message: err.message });
@@ -3004,13 +3082,37 @@ app.delete("/api/gift-commands/:id", authenticateToken, async (req, res) => {
       return res.status(403).json({ success: false, message: "غير مصرح به" });
     const canAccess = await canAccessProfile(req.user.id, gift.profile);
     if (!canAccess)
-      return res.status(403).json({
-        success: false,
-        message: "لا يمكنك حذف أمر من بروفايل غير مصرح به",
-      });
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "لا يمكنك حذف أمر من بروفايل غير مصرح به",
+        });
+
+    // حذف الملفات وتحديث مساحة المستخدم
+    await deleteFilesForCommand(gift, req.user.id);
+
+    // حذف الأمر
     await GiftCommand.findByIdAndDelete(req.params.id);
     await refreshCachesForUser(req.user.id);
-    res.json({ success: true });
+
+    // إرسال بيانات التخزين المحدثة
+    const updatedUser = await User.findById(req.user.id);
+    const storageData = {
+      audio: {
+        usedMB: updatedUser.audioUsedMB,
+        limitMB: MAX_AUDIO_MB,
+        remainingMB: Math.max(0, MAX_AUDIO_MB - updatedUser.audioUsedMB),
+      },
+      video: {
+        usedMB: updatedUser.videoUsedMB,
+        limitMB: MAX_VIDEO_MB,
+        remainingMB: Math.max(0, MAX_VIDEO_MB - updatedUser.videoUsedMB),
+      },
+    };
+    io.to(`user-${req.user.id}`).emit("storage-update", storageData);
+
+    res.json({ success: true, storage: storageData });
   } catch (err) {
     logger.error("❌ خطأ في حذف أمر الهدية:", err.message);
     res.status(500).json({ success: false, error: err.message });
@@ -3025,16 +3127,53 @@ app.delete("/api/gift-commands", authenticateToken, async (req, res) => {
         .json({ success: false, message: "profile مطلوب وصحيح" });
     const canAccess = await canAccessProfile(req.user.id, profile);
     if (!canAccess)
-      return res.status(403).json({
-        success: false,
-        message: "لا يمكنك حذف أوامر من بروفايل غير مصرح به",
-      });
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "لا يمكنك حذف أوامر من بروفايل غير مصرح به",
+        });
+
+    const commands = await GiftCommand.find({ userId: req.user.id, profile });
+    let totalAudioSize = 0,
+      totalVideoSize = 0;
+
+    for (const cmd of commands) {
+      const { audioSize, videoSize } = await deleteFilesForCommand(
+        cmd,
+        req.user.id,
+      );
+      totalAudioSize += audioSize;
+      totalVideoSize += videoSize;
+    }
+
     const result = await GiftCommand.deleteMany({
       userId: req.user.id,
       profile,
     });
     await refreshCachesForUser(req.user.id);
-    res.json({ success: true, deletedCount: result.deletedCount, profile });
+
+    const updatedUser = await User.findById(req.user.id);
+    const storageData = {
+      audio: {
+        usedMB: updatedUser.audioUsedMB,
+        limitMB: MAX_AUDIO_MB,
+        remainingMB: Math.max(0, MAX_AUDIO_MB - updatedUser.audioUsedMB),
+      },
+      video: {
+        usedMB: updatedUser.videoUsedMB,
+        limitMB: MAX_VIDEO_MB,
+        remainingMB: Math.max(0, MAX_VIDEO_MB - updatedUser.videoUsedMB),
+      },
+    };
+    io.to(`user-${req.user.id}`).emit("storage-update", storageData);
+
+    res.json({
+      success: true,
+      deletedCount: result.deletedCount,
+      profile,
+      storage: storageData,
+    });
   } catch (err) {
     logger.error("❌ خطأ في حذف جميع أوامر الهدايا:", err.message);
     res.status(500).json({ success: false, message: err.message });
@@ -3235,22 +3374,61 @@ app.delete("/api/interaction-commands", authenticateToken, async (req, res) => {
         .json({ success: false, message: "profile مطلوب وصحيح" });
     const canAccess = await canAccessProfile(req.user.id, profile);
     if (!canAccess)
-      return res.status(403).json({
-        success: false,
-        message: "لا يمكنك حذف أوامر من بروفايل غير مصرح به",
-      });
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "لا يمكنك حذف أوامر من بروفايل غير مصرح به",
+        });
+
+    const commands = await InteractionCommand.find({
+      userId: req.user.id,
+      profile,
+    });
+    let totalAudioSize = 0,
+      totalVideoSize = 0;
+
+    for (const cmd of commands) {
+      const { audioSize, videoSize } = await deleteFilesForCommand(
+        cmd,
+        req.user.id,
+      );
+      totalAudioSize += audioSize;
+      totalVideoSize += videoSize;
+    }
+
     const result = await InteractionCommand.deleteMany({
       userId: req.user.id,
       profile,
     });
     await refreshCachesForUser(req.user.id);
-    res.json({ success: true, deletedCount: result.deletedCount, profile });
+
+    const updatedUser = await User.findById(req.user.id);
+    const storageData = {
+      audio: {
+        usedMB: updatedUser.audioUsedMB,
+        limitMB: MAX_AUDIO_MB,
+        remainingMB: Math.max(0, MAX_AUDIO_MB - updatedUser.audioUsedMB),
+      },
+      video: {
+        usedMB: updatedUser.videoUsedMB,
+        limitMB: MAX_VIDEO_MB,
+        remainingMB: Math.max(0, MAX_VIDEO_MB - updatedUser.videoUsedMB),
+      },
+    };
+    io.to(`user-${req.user.id}`).emit("storage-update", storageData);
+
+    res.json({
+      success: true,
+      deletedCount: result.deletedCount,
+      profile,
+      storage: storageData,
+    });
   } catch (err) {
     logger.error("❌ خطأ في حذف جميع أوامر التفاعل:", err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
 // ================ نقطة نهاية تنفيذ الاختصار (keystroke) ================
 app.post("/api/execute-keystroke", authenticateToken, async (req, res) => {
   try {
