@@ -1145,56 +1145,109 @@ function getUserRealName(data) {
   }
   return getSenderFromEvent(data);
 }
-// ============================================================
-// دوال جلب صورة المستخدم (محسنة مع fallback)
-// ============================================================
-
-// ============================================================
-// دوال جلب صورة المستخدم – فورية من بيانات TikTok مباشرة
-// ============================================================
 
 function getUserAvatar(data) {
   const user = data.user || {};
-  // جميع المسارات المحتملة لصورة المستخدم في بيانات TikTok
-  const possiblePaths = [
+  // قائمة شاملة بكل المسارات المحتملة
+  const candidates = [
+    // المسارات الأساسية (الأكثر شيوعاً)
     user.avatarThumb?.url_list?.[0],
     user.avatar_thumb?.url_list?.[0],
-    user.avatarThumbMedium?.url_list?.[0],
+    user.avatarMedium?.url_list?.[0],
     user.avatar_medium?.url_list?.[0],
+    user.avatarThumbMedium?.url_list?.[0],
+    user.avatar_thumb_medium?.url_list?.[0],
     user.profilePicture?.url_list?.[0],
     user.profile_picture?.url_list?.[0],
+    // حقول مباشرة (قد تكون السلسلة نفسها)
     user.avatar,
     user.avatarUrl,
+    user.avatar_url,
     user.profilePicture,
     user.profile_picture,
-    user.avatarThumb?.url,
-    user.avatar_thumb?.url,
+    // ضمن user.user (في بعض الإصدارات)
     user.user?.avatarThumb?.url_list?.[0],
     user.user?.avatar_thumb?.url_list?.[0],
-    user.user?.profilePicture?.url_list?.[0],
-    user.user?.profile_picture?.url_list?.[0],
-    data.avatarThumb?.url_list?.[0],
-    data.profilePicture?.url_list?.[0],
+    user.user?.avatarMedium?.url_list?.[0],
+    user.user?.avatar_medium?.url_list?.[0],
+    // من data نفسها (نادر)
     data.avatar,
+    data.avatarUrl,
+    data.profilePicture,
+    data.profile_picture,
+    // صور إضافية (قد تكون في قائمة)
+    user.avatarThumb?.url_list?.[1],
+    user.avatar_thumb?.url_list?.[1],
+    user.avatarMedium?.url_list?.[1],
+    user.avatar_medium?.url_list?.[1],
   ];
-  for (let path of possiblePaths) {
+  for (let path of candidates) {
     if (path && typeof path === 'string' && path.startsWith('http')) {
-      console.log(`✅ صورة من بيانات TikTok: ${path.substring(0, 60)}...`);
-      return path; // نرجع فوراً
+      console.log(`✅ تم العثور على صورة المستخدم: ${path}`);
+      return path;
     }
   }
-  return null; // لم نجد صورة
+  console.warn('⚠️ لم يتم العثور على صورة للمستخدم');
+  return "";
+}
+// جلب صورة المستخدم من TikTok باستخدام API خارجي (بدون scraping)
+async function fetchUserAvatarFromTikTok(uniqueId) {
+  if (!uniqueId) return "";
+  // التحقق من الكاش
+  if (userAvatarCache.has(uniqueId)) {
+    return userAvatarCache.get(uniqueId);
+  }
+  try {
+    // استخدام API TikWM (موثوق وسريع)
+    const url = `https://www.tikwm.com/api/user/?unique_id=${uniqueId}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) return "";
+    const data = await response.json();
+    if (data && data.data && data.data.avatar) {
+      let avatarUrl = data.data.avatar;
+      // تأكد من أنها https
+      if (avatarUrl.startsWith("//")) avatarUrl = "https:" + avatarUrl;
+      userAvatarCache.set(uniqueId, avatarUrl);
+      // تنظيف الكاش بعد ساعة
+      setTimeout(() => userAvatarCache.delete(uniqueId), 60 * 60 * 1000);
+      console.log(`✅ تم جلب صورة المستخدم ${uniqueId} عبر API: ${avatarUrl}`);
+      return avatarUrl;
+    }
+  } catch (err) {
+    console.warn(`⚠️ فشل جلب صورة المستخدم ${uniqueId} عبر API:`, err.message);
+  }
+  return "";
 }
 
+// دالة موحدة للحصول على رابط الصورة (مع fallback)
 function getAvatarWithFallback(data, uniqueId) {
-  // 1. محاولة استخراج الصورة من البيانات المباشرة (فوري)
-  const avatar = getUserAvatar(data);
-  if (avatar) return avatar;
+  // 1. حاول الحصول على الصورة من البيانات مباشرة
+  let avatar = getUserAvatar(data);
+  if (avatar) {
+    if (uniqueId) {
+      userAvatarCache.set(uniqueId, avatar);
+      setTimeout(() => userAvatarCache.delete(uniqueId), 60 * 60 * 1000);
+    }
+    return avatar;
+  }
 
-  // 2. صورة افتراضية سريعة (تظهر في المتصفح فوراً)
-  const displayName = uniqueId || 'User';
-  console.log(`🖼️ استخدام صورة افتراضية للمستخدم: ${displayName}`);
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=4caf50&color=fff&size=128&bold=true`;
+  // 2. تحقق من الكاش باستخدام uniqueId
+  if (uniqueId && userAvatarCache.has(uniqueId)) {
+    return userAvatarCache.get(uniqueId);
+  }
+
+  // 3. لا نستخدم API خارجي لتجنب التأخير، نعيد سلسلة فارغة
+  return "";
 }
 
 function normalizeUser(u) {
