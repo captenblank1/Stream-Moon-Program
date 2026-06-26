@@ -2465,6 +2465,22 @@ app.post("/api/tiktok-user", authenticateToken, async (req, res) => {
   res.json({ success: true });
 });
 
+app.post("/api/tiktok-user", authenticateToken, async (req, res) => {
+  const { username, connect = true } = req.body; // افتراضي true للتوافق مع السلوك القديم
+  if (!username)
+    return res
+      .status(400)
+      .json({ success: false, message: "اسم المستخدم مطلوب" });
+  const userId = req.user.id;
+  const user = await User.findById(userId);
+  user.tiktokUsername = username;
+  await user.save();
+  if (connect) {
+    await connectUser(userId, username);
+  }
+  res.json({ success: true });
+});
+
 // ================ نقاط نهاية API العامة ================
 app.get("/api/live-status", authenticateToken, async (req, res) => {
   const userId = req.user.id;
@@ -3082,12 +3098,10 @@ app.delete("/api/gift-commands/:id", authenticateToken, async (req, res) => {
       return res.status(403).json({ success: false, message: "غير مصرح به" });
     const canAccess = await canAccessProfile(req.user.id, gift.profile);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "لا يمكنك حذف أمر من بروفايل غير مصرح به",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك حذف أمر من بروفايل غير مصرح به",
+      });
 
     // حذف الملفات وتحديث مساحة المستخدم
     await deleteFilesForCommand(gift, req.user.id);
@@ -3127,12 +3141,10 @@ app.delete("/api/gift-commands", authenticateToken, async (req, res) => {
         .json({ success: false, message: "profile مطلوب وصحيح" });
     const canAccess = await canAccessProfile(req.user.id, profile);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "لا يمكنك حذف أوامر من بروفايل غير مصرح به",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك حذف أوامر من بروفايل غير مصرح به",
+      });
 
     const commands = await GiftCommand.find({ userId: req.user.id, profile });
     let totalAudioSize = 0,
@@ -3374,12 +3386,10 @@ app.delete("/api/interaction-commands", authenticateToken, async (req, res) => {
         .json({ success: false, message: "profile مطلوب وصحيح" });
     const canAccess = await canAccessProfile(req.user.id, profile);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "لا يمكنك حذف أوامر من بروفايل غير مصرح به",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك حذف أوامر من بروفايل غير مصرح به",
+      });
 
     const commands = await InteractionCommand.find({
       userId: req.user.id,
