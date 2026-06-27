@@ -708,36 +708,58 @@ async function deleteFilesForCommand(cmd, userId) {
   let audioSize = 0,
     videoSize = 0;
 
-  // حذف الفيديو (فقط من قاعدة البيانات، بدون حذف من Cloudinary)
-  if (cmd.video) {
-    const videoDoc = await Video.findOne({ file: cmd.video, userId });
-    if (videoDoc) {
-      videoSize = videoDoc.sizeMB || 0;
-      // لا نحذف من Cloudinary
-      // await cloudinary.uploader.destroy(...);
-      await Video.deleteOne({ file: cmd.video });
+  try {
+    if (cmd.video) {
+      const videoDoc = await Video.findOne({ file: cmd.video, userId });
+      if (videoDoc) {
+        videoSize = videoDoc.sizeMB || 0;
+        await Video.deleteOne({ file: cmd.video });
+      }
     }
+  } catch (err) {
+    logger.error(`❌ فشل حذف الفيديو ${cmd.video}:`, err.message);
   }
 
-  // حذف الصوت (فقط من قاعدة البيانات، بدون حذف من Cloudinary)
-  if (cmd.audio) {
-    const audioDoc = await Audio.findOne({ file: cmd.audio, userId });
-    if (audioDoc) {
-      audioSize = audioDoc.sizeMB || 0;
-      // لا نحذف من Cloudinary
-      await Audio.deleteOne({ file: cmd.audio });
+  try {
+    if (cmd.audio) {
+      const audioDoc = await Audio.findOne({ file: cmd.audio, userId });
+      if (audioDoc) {
+        audioSize = audioDoc.sizeMB || 0;
+        await Audio.deleteOne({ file: cmd.audio });
+      }
     }
+  } catch (err) {
+    logger.error(`❌ فشل حذف الصوت ${cmd.audio}:`, err.message);
   }
 
-  // تحديث مساحة المستخدم
   if (userId && (audioSize > 0 || videoSize > 0)) {
-    const user = await User.findById(userId);
-    if (user) {
-      user.audioUsedMB = Math.max(0, user.audioUsedMB - audioSize);
-      user.videoUsedMB = Math.max(0, user.videoUsedMB - videoSize);
-      await user.save();
+    try {
+      const user = await User.findById(userId);
+      if (user) {
+        user.audioUsedMB = Math.max(0, user.audioUsedMB - audioSize);
+        user.videoUsedMB = Math.max(0, user.videoUsedMB - videoSize);
+        await user.save();
+
+        // إرسال تحديث فوري للواجهة
+        const storageData = {
+          audio: {
+            usedMB: user.audioUsedMB,
+            limitMB: MAX_AUDIO_MB,
+            remainingMB: Math.max(0, MAX_AUDIO_MB - user.audioUsedMB),
+          },
+          video: {
+            usedMB: user.videoUsedMB,
+            limitMB: MAX_VIDEO_MB,
+            remainingMB: Math.max(0, MAX_VIDEO_MB - user.videoUsedMB),
+          },
+        };
+        io.to(`user-${userId}`).emit("storage-update", storageData);
+      }
+    } catch (err) {
+      logger.error(`❌ فشل تحديث مساحة المستخدم ${userId}:`, err.message);
     }
   }
+
   return { audioSize, videoSize };
 }
 function getGiftCommandForProfile(userId, profile, giftIdStr) {
@@ -3360,24 +3382,51 @@ app.delete(
   authenticateToken,
   async (req, res) => {
     try {
-      if (!mongoose.Types.ObjectId.isValid(req.params.id))
+      // 1. التحقق من صحة المعرف
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
         return res
           .status(400)
           .json({ success: false, message: "معرف غير صالح" });
+      }
+
+      // 2. جلب الأمر من قاعدة البيانات
       const cmd = await InteractionCommand.findById(req.params.id);
-      if (!cmd)
-        return res.status(404).json({ success: false, message: "غير موجود" });
-      if (cmd.userId.toString() !== req.user.id)
-        return res.status(403).json({ success: false, message: "غير مصرح به" });
+      if (!cmd) {
+        return res
+          .status(404)
+          .json({ success: false, message: "الأمر غير موجود" });
+      }
+
+      // 3. التحقق من ملكية الأمر
+      if (cmd.userId.toString() !== req.user.id) {
+        return res
+          .status(403)
+          .json({ success: false, message: "غير مصرح لك بحذف هذا الأمر" });
+      }
+
+      // 4. التحقق من صلاحية البروفايل (للمستخدمين المجانيين)
       const canAccess = await canAccessProfile(req.user.id, cmd.profile);
-      if (!canAccess)
+      if (!canAccess) {
         return res.status(403).json({
           success: false,
-          message: "لا يمكنك حذف أمر من بروفايل غير مصرح به",
+          message: "لا يمكنك حذف أمر من بروفايل غير مصرح به في النسخة المجانية",
         });
+      }
+
+      await deleteFilesForCommand(cmd, req.user.id);
+      // ====================================================
+
+      // 6. حذف الأمر نفسه من قاعدة البيانات
       await InteractionCommand.findByIdAndDelete(req.params.id);
+
+      // 7. تحديث الكاش الخاص بالمستخدم
       await refreshCachesForUser(req.user.id);
-      res.json({ success: true });
+
+      // 8. الرد بنجاح (تم حذف الأمر والملفات)
+      res.json({
+        success: true,
+        message: "تم حذف الأمر والملفات المرتبطة بنجاح",
+      });
     } catch (err) {
       logger.error("❌ خطأ في حذف أمر التفاعل:", err.message);
       res.status(500).json({ success: false, error: err.message });
