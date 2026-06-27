@@ -1864,7 +1864,7 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
   try {
     const { token, screenNumber } = req.params;
     const screenNum = parseInt(screenNumber.replace(".html", ""), 10);
-    const unmuted = req.query.unmuted === "1";
+    const unmuted = true; // req.query.unmuted === "1";
 
     if (isNaN(screenNum) || screenNum < 1 || screenNum > 10)
       return res.status(404).send("Screen not found");
