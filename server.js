@@ -71,6 +71,23 @@ const GIFT_STREAK_TTL_MS = 15 * 1000;
 const MAX_AUDIO_MB = 100;
 const MAX_VIDEO_MB = 1000;
 
+const videoStorage = multer.memoryStorage();
+const uploadVideo = multer({
+  storage: videoStorage,
+  limits: { fileSize: MAX_VIDEO_MB * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    // أضف الامتدادات التي تريد دعمها
+    if (
+      [".mp4", ".mov", ".webm", ".mkv", ".avi", ".flv", ".3gp"].includes(ext)
+    ) {
+      cb(null, true);
+    } else {
+      cb(new Error("امتداد غير مسموح"));
+    }
+  },
+});
+
 // ================ إعدادات الاشتراكات ================
 const WARNING_HOURS = 24;
 const GRACE_HOURS = 48;
@@ -2549,105 +2566,7 @@ app.get("/api/profiles", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-app.post(
-  "/api/upload-video",
-  authenticateToken,
-  uploadVideo.single("video"),
-  async (req, res) => {
-    try {
-      if (!req.file)
-        return res
-          .status(400)
-          .json({ success: false, message: "لم يتم رفع أي ملف" });
 
-      const type = await fileTypeFromBuffer(req.file.buffer);
-      if (
-        !type ||
-        ![
-          "video/mp4",
-          "video/quicktime",
-          "video/webm",
-          "video/x-matroska",
-        ].includes(type.mime)
-      )
-        return res
-          .status(400)
-          .json({ success: false, message: "نوع الملف غير مدعوم" });
-
-      const fileSizeMB = req.file.buffer.length / (1024 * 1024);
-      const user = await User.findById(req.user.id);
-      if (!user)
-        return res
-          .status(404)
-          .json({ success: false, message: "مستخدم غير موجود" });
-
-      if (user.videoUsedMB + fileSizeMB > MAX_VIDEO_MB)
-        return res.status(400).json({
-          success: false,
-          message: `لا يمكن رفع الفيديو، لقد تجاوزت حد التخزين (${MAX_VIDEO_MB} ميجا). المساحة المتبقية: ${Math.max(0, MAX_VIDEO_MB - user.videoUsedMB).toFixed(2)} ميجا`,
-        });
-
-      const originalName = path.parse(req.file.originalname).name;
-      const safeName = originalName.replace(
-        /[^a-zA-Z0-9\u0600-\u06FF\-]/g,
-        "-",
-      );
-      const publicId = `${safeName}-${Date.now()}`;
-      const filename = `${publicId}${path.extname(req.file.originalname)}`;
-      const uploadResult = await cloudinary.uploader.upload(
-        `data:${type.mime};base64,${req.file.buffer.toString("base64")}`,
-        {
-          public_id: publicId,
-          resource_type: "video",
-          folder: "blackmoon_videos",
-          access_mode: "public",
-          timeout: 120000,
-        },
-      );
-      const videoUrl = uploadResult.secure_url;
-      await Video.create({
-        name: safeName,
-        file: filename,
-        cloudinaryUrl: videoUrl,
-        sizeMB: fileSizeMB,
-        userId: req.user.id,
-      });
-      user.videoUsedMB += fileSizeMB;
-      await user.save();
-
-      // ===================== التعديل الجديد =====================
-      // ربط الفيديو بالأمر إذا تم إرسال giftId أو commandId
-      const { giftId, commandId, screen = 1 } = req.body;
-
-      if (giftId) {
-        const gift = await GiftCommand.findOne({ userId: req.user.id, giftId });
-        if (gift) {
-          gift.video = filename;
-          gift.screen = parseInt(screen, 10) || 1;
-          await gift.save();
-        }
-      }
-
-      if (commandId) {
-        const interaction = await InteractionCommand.findOne({
-          _id: commandId,
-          userId: req.user.id,
-        });
-        if (interaction) {
-          interaction.video = filename;
-          interaction.screen = parseInt(screen, 10) || 1;
-          await interaction.save();
-        }
-      }
-      // ===================== نهاية التعديل =====================
-
-      res.json({ success: true, filename, url: videoUrl, sizeMB: fileSizeMB });
-    } catch (err) {
-      logger.error("❌ خطأ في رفع الفيديو:", err);
-      res.status(500).json({ success: false, message: err.message });
-    }
-  },
-);
 app.post(
   "/api/profiles/copy/:sourceId",
   authenticateToken,
@@ -3648,22 +3567,7 @@ app.post("/api/test-webhook", authenticateToken, async (req, res) => {
 });
 
 // ================ رفع الملفات ================
-const videoStorage = multer.memoryStorage();
-const uploadVideo = multer({
-  storage: videoStorage,
-  limits: { fileSize: MAX_VIDEO_MB * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    // أضف الامتدادات التي تريد دعمها هنا
-    if (
-      [".mp4", ".mov", ".webm", ".mkv", ".avi", ".flv", ".3gp"].includes(ext)
-    ) {
-      cb(null, true);
-    } else {
-      cb(new Error("امتداد غير مسموح"));
-    }
-  },
-});
+
 const uploadTFC = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
