@@ -708,32 +708,28 @@ async function deleteFilesForCommand(cmd, userId) {
   let audioSize = 0,
     videoSize = 0;
 
-  // حذف الفيديو (يبقى كما هو: يحذف من Cloudinary)
+  // حذف الفيديو (فقط من قاعدة البيانات، بدون حذف من Cloudinary)
   if (cmd.video) {
     const videoDoc = await Video.findOne({ file: cmd.video, userId });
     if (videoDoc) {
       videoSize = videoDoc.sizeMB || 0;
-      // حذف من Cloudinary
-      const basePublicId = path.parse(videoDoc.file).name;
-      await cloudinary.uploader.destroy(`blackmoon_videos/${basePublicId}`, {
-        resource_type: "video",
-      });
+      // لا نحذف من Cloudinary
+      // await cloudinary.uploader.destroy(...);
       await Video.deleteOne({ file: cmd.video });
     }
   }
 
-  // حذف الصوت (فقط من قاعدة البيانات، لا نمسحه من Cloudinary)
+  // حذف الصوت (فقط من قاعدة البيانات، بدون حذف من Cloudinary)
   if (cmd.audio) {
     const audioDoc = await Audio.findOne({ file: cmd.audio, userId });
     if (audioDoc) {
       audioSize = audioDoc.sizeMB || 0;
-      // لا نحذف من Cloudinary (نترك الملف)
-      // نكتفي بحذف السجل من قاعدة البيانات
+      // لا نحذف من Cloudinary
       await Audio.deleteOne({ file: cmd.audio });
     }
   }
 
-  // تحديث مساحة المستخدم (نطرح حجم الصوت والفيديو)
+  // تحديث مساحة المستخدم
   if (userId && (audioSize > 0 || videoSize > 0)) {
     const user = await User.findById(userId);
     if (user) {
@@ -2236,33 +2232,33 @@ app.delete("/api/video/:filename", authenticateToken, async (req, res) => {
     const filename = req.params.filename;
     const videoDoc = await Video.findOne({ file: filename });
     if (!videoDoc)
-      return res
-        .status(404)
-        .json({ success: false, message: "الملف غير موجود" });
+      return res.status(404).json({ success: false, message: "الملف غير موجود" });
     if (videoDoc.userId.toString() !== req.user.id)
-      return res
-        .status(403)
-        .json({ success: false, message: "غير مصرح لك بحذف هذا الملف" });
-    const basePublicId = path.parse(filename).name;
-    await cloudinary.uploader.destroy(`blackmoon_videos/${basePublicId}`, {
-      resource_type: "video",
-    });
+      return res.status(403).json({ success: false, message: "غير مصرح لك بحذف هذا الملف" });
+
+    // لا نحذف من Cloudinary مطلقاً
+    // const basePublicId = path.parse(filename).name;
+    // await cloudinary.uploader.destroy(`blackmoon_videos/${basePublicId}`, {
+    //   resource_type: "video",
+    // });
+
     const user = await User.findById(req.user.id);
     if (user) {
       user.videoUsedMB = Math.max(0, user.videoUsedMB - videoDoc.sizeMB);
       await user.save();
     }
     await Video.deleteOne({ file: filename });
+
+    // إزالة الفيديو من الأوامر التي تستخدمه
     await GiftCommand.updateMany(
       { video: filename },
-      { $set: { video: null } },
+      { $set: { video: null } }
     );
     await InteractionCommand.updateMany(
       { video: filename },
-      { $set: { video: null } },
+      { $set: { video: null } }
     );
 
-    // إرسال بيانات التخزين المحدثة
     const updatedUser = await User.findById(req.user.id);
     const storageData = {
       audio: {
@@ -2281,7 +2277,7 @@ app.delete("/api/video/:filename", authenticateToken, async (req, res) => {
 
     res.json({
       success: true,
-      message: "تم حذف الفيديو واسترجاع المساحة",
+      message: "تم حذف الفيديو من قاعدة البيانات وتحرير المساحة، والملف لا يزال موجوداً في السحابة",
       storage: storageData,
     });
   } catch (err) {
