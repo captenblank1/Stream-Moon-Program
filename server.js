@@ -2187,9 +2187,13 @@ app.delete("/api/audio/:filename", authenticateToken, async (req, res) => {
     const filename = req.params.filename;
     const audioDoc = await Audio.findOne({ file: filename });
     if (!audioDoc)
-      return res.status(404).json({ success: false, message: "الملف غير موجود" });
+      return res
+        .status(404)
+        .json({ success: false, message: "الملف غير موجود" });
     if (audioDoc.userId.toString() !== req.user.id)
-      return res.status(403).json({ success: false, message: "غير مصرح لك بحذف هذا الملف" });
+      return res
+        .status(403)
+        .json({ success: false, message: "غير مصرح لك بحذف هذا الملف" });
 
     // لا نحذف من Cloudinary، فقط نحذف السجل
     // await cloudinary.uploader.destroy(...);  // <-- نعلق هذا السطر
@@ -2218,7 +2222,8 @@ app.delete("/api/audio/:filename", authenticateToken, async (req, res) => {
 
     res.json({
       success: true,
-      message: "تم حذف الصوت من حسابك، والملف لا يزال موجوداً في السحابة للمستخدمين الآخرين",
+      message:
+        "تم حذف الصوت من حسابك، والملف لا يزال موجوداً في السحابة للمستخدمين الآخرين",
       storage: storageData,
     });
   } catch (err) {
@@ -2232,9 +2237,13 @@ app.delete("/api/video/:filename", authenticateToken, async (req, res) => {
     const filename = req.params.filename;
     const videoDoc = await Video.findOne({ file: filename });
     if (!videoDoc)
-      return res.status(404).json({ success: false, message: "الملف غير موجود" });
+      return res
+        .status(404)
+        .json({ success: false, message: "الملف غير موجود" });
     if (videoDoc.userId.toString() !== req.user.id)
-      return res.status(403).json({ success: false, message: "غير مصرح لك بحذف هذا الملف" });
+      return res
+        .status(403)
+        .json({ success: false, message: "غير مصرح لك بحذف هذا الملف" });
 
     // لا نحذف من Cloudinary مطلقاً
     // const basePublicId = path.parse(filename).name;
@@ -2252,11 +2261,11 @@ app.delete("/api/video/:filename", authenticateToken, async (req, res) => {
     // إزالة الفيديو من الأوامر التي تستخدمه
     await GiftCommand.updateMany(
       { video: filename },
-      { $set: { video: null } }
+      { $set: { video: null } },
     );
     await InteractionCommand.updateMany(
       { video: filename },
-      { $set: { video: null } }
+      { $set: { video: null } },
     );
 
     const updatedUser = await User.findById(req.user.id);
@@ -2277,7 +2286,8 @@ app.delete("/api/video/:filename", authenticateToken, async (req, res) => {
 
     res.json({
       success: true,
-      message: "تم حذف الفيديو من قاعدة البيانات وتحرير المساحة، والملف لا يزال موجوداً في السحابة",
+      message:
+        "تم حذف الفيديو من قاعدة البيانات وتحرير المساحة، والملف لا يزال موجوداً في السحابة",
       storage: storageData,
     });
   } catch (err) {
