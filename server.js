@@ -2211,9 +2211,13 @@ app.delete("/api/audio/:filename", authenticateToken, async (req, res) => {
 
     const audioDoc = await Audio.findOne({ file: filename });
     if (!audioDoc)
-      return res.status(404).json({ success: false, message: "الملف غير موجود" });
+      return res
+        .status(404)
+        .json({ success: false, message: "الملف غير موجود" });
     if (audioDoc.userId.toString() !== req.user.id)
-      return res.status(403).json({ success: false, message: "غير مصرح لك بحذف هذا الملف" });
+      return res
+        .status(403)
+        .json({ success: false, message: "غير مصرح لك بحذف هذا الملف" });
 
     // حذف من Cloudinary فقط إذا لم يكن keep=true
     if (!keep) {
@@ -2248,7 +2252,9 @@ app.delete("/api/audio/:filename", authenticateToken, async (req, res) => {
 
     res.json({
       success: true,
-      message: keep ? "تم حذف الصوت من قاعدة البيانات (مع الاحتفاظ بالنسخة في السحابة)" : "تم حذف الصوت بالكامل",
+      message: keep
+        ? "تم حذف الصوت من قاعدة البيانات (مع الاحتفاظ بالنسخة في السحابة)"
+        : "تم حذف الصوت بالكامل",
       storage: storageData,
     });
   } catch (err) {
@@ -2263,9 +2269,14 @@ app.delete("/api/video/:filename", authenticateToken, async (req, res) => {
     const keep = req.query.keep === "true"; // قراءة المعامل keep
 
     const videoDoc = await Video.findOne({ file: filename });
-    if (!videoDoc) return res.status(404).json({ success: false, message: "الملف غير موجود" });
+    if (!videoDoc)
+      return res
+        .status(404)
+        .json({ success: false, message: "الملف غير موجود" });
     if (videoDoc.userId.toString() !== req.user.id)
-      return res.status(403).json({ success: false, message: "غير مصرح لك بحذف هذا الملف" });
+      return res
+        .status(403)
+        .json({ success: false, message: "غير مصرح لك بحذف هذا الملف" });
 
     // حذف من Cloudinary فقط إذا لم يكن keep=true
     if (!keep) {
@@ -2284,8 +2295,14 @@ app.delete("/api/video/:filename", authenticateToken, async (req, res) => {
     await Video.deleteOne({ file: filename });
 
     // إزالة الفيديو من الأوامر التي تستخدمه
-    await GiftCommand.updateMany({ video: filename }, { $set: { video: null } });
-    await InteractionCommand.updateMany({ video: filename }, { $set: { video: null } });
+    await GiftCommand.updateMany(
+      { video: filename },
+      { $set: { video: null } },
+    );
+    await InteractionCommand.updateMany(
+      { video: filename },
+      { $set: { video: null } },
+    );
 
     const updatedUser = await User.findById(req.user.id);
     const storageData = {
@@ -2304,7 +2321,9 @@ app.delete("/api/video/:filename", authenticateToken, async (req, res) => {
 
     res.json({
       success: true,
-      message: keep ? "تم حذف الفيديو من قاعدة البيانات (مع الاحتفاظ بالنسخة في السحابة)" : "تم حذف الفيديو بالكامل",
+      message: keep
+        ? "تم حذف الفيديو من قاعدة البيانات (مع الاحتفاظ بالنسخة في السحابة)"
+        : "تم حذف الفيديو بالكامل",
       storage: storageData,
     });
   } catch (err) {
@@ -2530,94 +2549,105 @@ app.get("/api/profiles", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-app.post("/api/profiles/import", authenticateToken, async (req, res) => {
-  try {
-    const { commands, replace, profile: reqProfile } = req.body;
-    let profile = reqProfile ? parseInt(reqProfile) : null;
-    if (!profile) {
+app.post(
+  "/api/upload-video",
+  authenticateToken,
+  uploadVideo.single("video"),
+  async (req, res) => {
+    try {
+      if (!req.file)
+        return res
+          .status(400)
+          .json({ success: false, message: "لم يتم رفع أي ملف" });
+
+      const type = await fileTypeFromBuffer(req.file.buffer);
+      if (
+        !type ||
+        ![
+          "video/mp4",
+          "video/quicktime",
+          "video/webm",
+          "video/x-matroska",
+        ].includes(type.mime)
+      )
+        return res
+          .status(400)
+          .json({ success: false, message: "نوع الملف غير مدعوم" });
+
+      const fileSizeMB = req.file.buffer.length / (1024 * 1024);
       const user = await User.findById(req.user.id);
-      profile = user.selectedProfile;
-    }
-    const canAccess = await canAccessProfile(req.user.id, profile);
-    if (!canAccess)
-      return res.status(403).json({
-        success: false,
-        message: "لا يمكنك استيراد أوامر لهذا البروفايل في النسخة المجانية",
-      });
-    if (!Array.isArray(commands))
-      return res
-        .status(400)
-        .json({ success: false, message: "يجب إرسال مصفوفة من الأوامر" });
-    const plan = await getUserPlan(req.user.id);
-    if (plan === "free") {
-      const currentTotal = await getTotalCommandsForUser(req.user.id);
-      const newCommandsCount = commands.length;
-      if (currentTotal + newCommandsCount > 7)
-        return res.status(403).json({
+      if (!user)
+        return res
+          .status(404)
+          .json({ success: false, message: "مستخدم غير موجود" });
+
+      if (user.videoUsedMB + fileSizeMB > MAX_VIDEO_MB)
+        return res.status(400).json({
           success: false,
-          message: `لا يمكن استيراد ${newCommandsCount} أمر لأن الحد الأقصى للمجاني هو 7. لديك حاليًا ${currentTotal} أمر.`,
+          message: `لا يمكن رفع الفيديو، لقد تجاوزت حد التخزين (${MAX_VIDEO_MB} ميجا). المساحة المتبقية: ${Math.max(0, MAX_VIDEO_MB - user.videoUsedMB).toFixed(2)} ميجا`,
         });
-    }
-    const results = { added: 0, replaced: 0, skipped: 0, errors: [] };
-    for (const cmd of commands) {
-      try {
-        if (cmd.giftId !== undefined && cmd.giftId !== null) {
-          const giftId = String(cmd.giftId);
-          const existing = await GiftCommand.findOne({
-            giftId,
-            profile,
-            userId: req.user.id,
-          });
-          if (existing) {
-            if (replace) {
-              await GiftCommand.findByIdAndUpdate(
-                existing._id,
-                { ...cmd, profile, userId: req.user.id },
-                { new: true },
-              );
-              results.replaced++;
-            } else results.skipped++;
-          } else {
-            await GiftCommand.create({ ...cmd, profile, userId: req.user.id });
-            results.added++;
-          }
-        } else if (
-          cmd.type &&
-          [
-            "follow",
-            "like",
-            "comment",
-            "share",
-            "gift",
-            "all",
-            "keystroke",
-          ].includes(cmd.type)
-        ) {
-          let finalCmd = { ...cmd };
-          if (cmd.type === "keystroke" && cmd.combo) {
-            finalCmd.type = "all";
-            finalCmd.combo = cmd.combo;
-          }
-          await InteractionCommand.create({
-            ...finalCmd,
-            profile,
-            userId: req.user.id,
-          });
-          results.added++;
-        } else {
-          results.errors.push({ command: cmd, error: "نوع أمر غير معروف" });
+
+      const originalName = path.parse(req.file.originalname).name;
+      const safeName = originalName.replace(
+        /[^a-zA-Z0-9\u0600-\u06FF\-]/g,
+        "-",
+      );
+      const publicId = `${safeName}-${Date.now()}`;
+      const filename = `${publicId}${path.extname(req.file.originalname)}`;
+      const uploadResult = await cloudinary.uploader.upload(
+        `data:${type.mime};base64,${req.file.buffer.toString("base64")}`,
+        {
+          public_id: publicId,
+          resource_type: "video",
+          folder: "blackmoon_videos",
+          access_mode: "public",
+          timeout: 120000,
+        },
+      );
+      const videoUrl = uploadResult.secure_url;
+      await Video.create({
+        name: safeName,
+        file: filename,
+        cloudinaryUrl: videoUrl,
+        sizeMB: fileSizeMB,
+        userId: req.user.id,
+      });
+      user.videoUsedMB += fileSizeMB;
+      await user.save();
+
+      // ===================== التعديل الجديد =====================
+      // ربط الفيديو بالأمر إذا تم إرسال giftId أو commandId
+      const { giftId, commandId, screen = 1 } = req.body;
+
+      if (giftId) {
+        const gift = await GiftCommand.findOne({ userId: req.user.id, giftId });
+        if (gift) {
+          gift.video = filename;
+          gift.screen = parseInt(screen, 10) || 1;
+          await gift.save();
         }
-      } catch (err) {
-        results.errors.push({ command: cmd, error: err.message });
       }
+
+      if (commandId) {
+        const interaction = await InteractionCommand.findOne({
+          _id: commandId,
+          userId: req.user.id,
+        });
+        if (interaction) {
+          interaction.video = filename;
+          interaction.screen = parseInt(screen, 10) || 1;
+          await interaction.save();
+        }
+      }
+      // ===================== نهاية التعديل =====================
+
+      res.json({ success: true, filename, url: videoUrl, sizeMB: fileSizeMB });
+    } catch (err) {
+      logger.error("❌ خطأ في رفع الفيديو:", err);
+      res.status(500).json({ success: false, message: err.message });
     }
-    await refreshCachesForUser(req.user.id);
-    res.json({ success: true, results });
-  } catch (err) {
-    logger.error("❌ خطأ في استيراد الأوامر:", err.message);
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
+  },
+);
 app.post(
   "/api/profiles/copy/:sourceId",
   authenticateToken,
