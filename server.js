@@ -707,10 +707,13 @@ async function refreshCachesForUser(userId) {
 async function deleteFilesForCommand(cmd, userId) {
   let audioSize = 0,
     videoSize = 0;
+
+  // حذف الفيديو (يبقى كما هو: يحذف من Cloudinary)
   if (cmd.video) {
     const videoDoc = await Video.findOne({ file: cmd.video, userId });
     if (videoDoc) {
       videoSize = videoDoc.sizeMB || 0;
+      // حذف من Cloudinary
       const basePublicId = path.parse(videoDoc.file).name;
       await cloudinary.uploader.destroy(`blackmoon_videos/${basePublicId}`, {
         resource_type: "video",
@@ -718,18 +721,19 @@ async function deleteFilesForCommand(cmd, userId) {
       await Video.deleteOne({ file: cmd.video });
     }
   }
+
+  // حذف الصوت (فقط من قاعدة البيانات، لا نمسحه من Cloudinary)
   if (cmd.audio) {
     const audioDoc = await Audio.findOne({ file: cmd.audio, userId });
     if (audioDoc) {
       audioSize = audioDoc.sizeMB || 0;
-      const basePublicId = path.parse(audioDoc.file).name;
-      await cloudinary.uploader.destroy(`blackmoon_audio/${basePublicId}`, {
-        resource_type: "raw",
-      });
+      // لا نحذف من Cloudinary (نترك الملف)
+      // نكتفي بحذف السجل من قاعدة البيانات
       await Audio.deleteOne({ file: cmd.audio });
     }
   }
-  // تحديث مساحة المستخدم
+
+  // تحديث مساحة المستخدم (نطرح حجم الصوت والفيديو)
   if (userId && (audioSize > 0 || videoSize > 0)) {
     const user = await User.findById(userId);
     if (user) {
@@ -740,7 +744,6 @@ async function deleteFilesForCommand(cmd, userId) {
   }
   return { audioSize, videoSize };
 }
-
 function getGiftCommandForProfile(userId, profile, giftIdStr) {
   const key = `${userId}:${profile}`;
   const map = giftCommandsCache.get(key);
@@ -2188,17 +2191,12 @@ app.delete("/api/audio/:filename", authenticateToken, async (req, res) => {
     const filename = req.params.filename;
     const audioDoc = await Audio.findOne({ file: filename });
     if (!audioDoc)
-      return res
-        .status(404)
-        .json({ success: false, message: "الملف غير موجود" });
+      return res.status(404).json({ success: false, message: "الملف غير موجود" });
     if (audioDoc.userId.toString() !== req.user.id)
-      return res
-        .status(403)
-        .json({ success: false, message: "غير مصرح لك بحذف هذا الملف" });
-    const basePublicId = path.parse(filename).name;
-    await cloudinary.uploader.destroy(`blackmoon_audio/${basePublicId}`, {
-      resource_type: "raw",
-    });
+      return res.status(403).json({ success: false, message: "غير مصرح لك بحذف هذا الملف" });
+
+    // لا نحذف من Cloudinary، فقط نحذف السجل
+    // await cloudinary.uploader.destroy(...);  // <-- نعلق هذا السطر
     const user = await User.findById(req.user.id);
     if (user) {
       user.audioUsedMB = Math.max(0, user.audioUsedMB - audioDoc.sizeMB);
@@ -2206,7 +2204,6 @@ app.delete("/api/audio/:filename", authenticateToken, async (req, res) => {
     }
     await Audio.deleteOne({ file: filename });
 
-    // إرسال بيانات التخزين المحدثة
     const updatedUser = await User.findById(req.user.id);
     const storageData = {
       audio: {
@@ -2221,12 +2218,11 @@ app.delete("/api/audio/:filename", authenticateToken, async (req, res) => {
       },
     };
 
-    // بث عبر Socket.IO لتحديث جميع الشاشات
     io.to(`user-${req.user.id}`).emit("storage-update", storageData);
 
     res.json({
       success: true,
-      message: "تم حذف الصوت واسترجاع المساحة",
+      message: "تم حذف الصوت من حسابك، والملف لا يزال موجوداً في السحابة للمستخدمين الآخرين",
       storage: storageData,
     });
   } catch (err) {
