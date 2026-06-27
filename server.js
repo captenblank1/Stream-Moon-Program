@@ -3654,8 +3654,14 @@ const uploadVideo = multer({
   limits: { fileSize: MAX_VIDEO_MB * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    if ([".mp4", ".mov", ".webm", ".mkv"].includes(ext)) cb(null, true);
-    else cb(new Error("امتداد غير مسموح"));
+    // أضف الامتدادات التي تريد دعمها هنا
+    if (
+      [".mp4", ".mov", ".webm", ".mkv", ".avi", ".flv", ".3gp"].includes(ext)
+    ) {
+      cb(null, true);
+    } else {
+      cb(new Error("امتداد غير مسموح"));
+    }
   },
 });
 const uploadTFC = multer({
