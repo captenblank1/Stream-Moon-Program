@@ -3741,8 +3741,10 @@ app.post(
       user.videoUsedMB += fileSizeMB;
       await user.save();
 
-      // ✅ التعديل هنا: فقط نربط الفيديو إذا كان الأمر موجوداً، ولا ننشئ أمراً جديداً
-      const { giftId, screen = 1 } = req.body;
+      // ===================== التعديل الجديد =====================
+      // ربط الفيديو بالأمر إذا تم إرسال giftId أو commandId
+      const { giftId, commandId, screen = 1 } = req.body;
+
       if (giftId) {
         const gift = await GiftCommand.findOne({ userId: req.user.id, giftId });
         if (gift) {
@@ -3751,6 +3753,19 @@ app.post(
           await gift.save();
         }
       }
+
+      if (commandId) {
+        const interaction = await InteractionCommand.findOne({
+          _id: commandId,
+          userId: req.user.id,
+        });
+        if (interaction) {
+          interaction.video = filename;
+          interaction.screen = parseInt(screen, 10) || 1;
+          await interaction.save();
+        }
+      }
+      // ===================== نهاية التعديل =====================
 
       res.json({ success: true, filename, url: videoUrl, sizeMB: fileSizeMB });
     } catch (err) {
