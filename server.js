@@ -3675,6 +3675,129 @@ app.post(
   },
 );
 
+// ================ استيراد الأوامر (JSON) ================
+app.post("/api/profiles/import", authenticateToken, async (req, res) => {
+  try {
+    const { commands, replace, profile: reqProfile } = req.body;
+    let profile = reqProfile ? parseInt(reqProfile) : null;
+    if (!profile) {
+      const user = await User.findById(req.user.id);
+      profile = user.selectedProfile;
+    }
+    const canAccess = await canAccessProfile(req.user.id, profile);
+    if (!canAccess)
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك استيراد أوامر لهذا البروفايل في النسخة المجانية",
+      });
+    if (!Array.isArray(commands))
+      return res
+        .status(400)
+        .json({ success: false, message: "يجب إرسال مصفوفة من الأوامر" });
+    const plan = await getUserPlan(req.user.id);
+    if (plan === "free") {
+      const currentTotal = await getTotalCommandsForUser(req.user.id);
+      const newCommandsCount = commands.length;
+      if (currentTotal + newCommandsCount > 7)
+        return res.status(403).json({
+          success: false,
+          message: `لا يمكن استيراد ${newCommandsCount} أمر لأن الحد الأقصى للمجاني هو 7. لديك حاليًا ${currentTotal} أمر.`,
+        });
+    }
+
+    const results = { added: 0, replaced: 0, skipped: 0, errors: [] };
+
+    // ===== التحقق من وجود ملفات الصوت والفيديو =====
+    for (const cmd of commands) {
+      if (cmd.audio) {
+        const audioExists = await Audio.findOne({
+          file: cmd.audio,
+          userId: req.user.id,
+        });
+        if (!audioExists) {
+          cmd.audio = null;
+          results.errors.push({
+            command: cmd,
+            error: `الملف الصوتي "${cmd.audio}" غير موجود في حسابك، تم تعطيل الصوت.`,
+          });
+        }
+      }
+      if (cmd.video) {
+        const videoExists = await Video.findOne({
+          file: cmd.video,
+          userId: req.user.id,
+        });
+        if (!videoExists) {
+          cmd.video = null;
+          results.errors.push({
+            command: cmd,
+            error: `ملف الفيديو "${cmd.video}" غير موجود في حسابك، تم تعطيل الفيديو.`,
+          });
+        }
+      }
+    }
+    // ===== نهاية التحقق =====
+
+    for (const cmd of commands) {
+      try {
+        if (cmd.giftId !== undefined && cmd.giftId !== null) {
+          const giftId = String(cmd.giftId);
+          const existing = await GiftCommand.findOne({
+            giftId,
+            profile,
+            userId: req.user.id,
+          });
+          if (existing) {
+            if (replace) {
+              await GiftCommand.findByIdAndUpdate(
+                existing._id,
+                { ...cmd, profile, userId: req.user.id },
+                { new: true },
+              );
+              results.replaced++;
+            } else results.skipped++;
+          } else {
+            await GiftCommand.create({ ...cmd, profile, userId: req.user.id });
+            results.added++;
+          }
+        } else if (
+          cmd.type &&
+          [
+            "follow",
+            "like",
+            "comment",
+            "share",
+            "gift",
+            "all",
+            "keystroke",
+          ].includes(cmd.type)
+        ) {
+          let finalCmd = { ...cmd };
+          if (cmd.type === "keystroke" && cmd.combo) {
+            finalCmd.type = "all";
+            finalCmd.combo = cmd.combo;
+          }
+          await InteractionCommand.create({
+            ...finalCmd,
+            profile,
+            userId: req.user.id,
+          });
+          results.added++;
+        } else {
+          results.errors.push({ command: cmd, error: "نوع أمر غير معروف" });
+        }
+      } catch (err) {
+        results.errors.push({ command: cmd, error: err.message });
+      }
+    }
+    await refreshCachesForUser(req.user.id);
+    res.json({ success: true, results });
+  } catch (err) {
+    logger.error("❌ خطأ في استيراد الأوامر:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 app.post(
   "/api/upload-video",
   authenticateToken,
