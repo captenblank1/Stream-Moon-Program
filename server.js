@@ -2207,18 +2207,23 @@ app.post(
 app.delete("/api/audio/:filename", authenticateToken, async (req, res) => {
   try {
     const filename = req.params.filename;
+    const keep = req.query.keep === "true"; // إضافة معامل keep
+
     const audioDoc = await Audio.findOne({ file: filename });
     if (!audioDoc)
-      return res
-        .status(404)
-        .json({ success: false, message: "الملف غير موجود" });
+      return res.status(404).json({ success: false, message: "الملف غير موجود" });
     if (audioDoc.userId.toString() !== req.user.id)
-      return res
-        .status(403)
-        .json({ success: false, message: "غير مصرح لك بحذف هذا الملف" });
+      return res.status(403).json({ success: false, message: "غير مصرح لك بحذف هذا الملف" });
 
-    // لا نحذف من Cloudinary، فقط نحذف السجل
-    // await cloudinary.uploader.destroy(...);  // <-- نعلق هذا السطر
+    // حذف من Cloudinary فقط إذا لم يكن keep=true
+    if (!keep) {
+      const basePublicId = path.parse(filename).name;
+      await cloudinary.uploader.destroy(`blackmoon_audio/${basePublicId}`, {
+        resource_type: "raw",
+      });
+    }
+
+    // تحديث مساحة المستخدم وحذف السجل
     const user = await User.findById(req.user.id);
     if (user) {
       user.audioUsedMB = Math.max(0, user.audioUsedMB - audioDoc.sizeMB);
@@ -2239,13 +2244,11 @@ app.delete("/api/audio/:filename", authenticateToken, async (req, res) => {
         remainingMB: Math.max(0, MAX_VIDEO_MB - updatedUser.videoUsedMB),
       },
     };
-
     io.to(`user-${req.user.id}`).emit("storage-update", storageData);
 
     res.json({
       success: true,
-      message:
-        "تم حذف الصوت من حسابك، والملف لا يزال موجوداً في السحابة للمستخدمين الآخرين",
+      message: keep ? "تم حذف الصوت من قاعدة البيانات (مع الاحتفاظ بالنسخة في السحابة)" : "تم حذف الصوت بالكامل",
       storage: storageData,
     });
   } catch (err) {
@@ -2257,22 +2260,22 @@ app.delete("/api/audio/:filename", authenticateToken, async (req, res) => {
 app.delete("/api/video/:filename", authenticateToken, async (req, res) => {
   try {
     const filename = req.params.filename;
+    const keep = req.query.keep === "true"; // قراءة المعامل keep
+
     const videoDoc = await Video.findOne({ file: filename });
-    if (!videoDoc)
-      return res
-        .status(404)
-        .json({ success: false, message: "الملف غير موجود" });
+    if (!videoDoc) return res.status(404).json({ success: false, message: "الملف غير موجود" });
     if (videoDoc.userId.toString() !== req.user.id)
-      return res
-        .status(403)
-        .json({ success: false, message: "غير مصرح لك بحذف هذا الملف" });
+      return res.status(403).json({ success: false, message: "غير مصرح لك بحذف هذا الملف" });
 
-    // لا نحذف من Cloudinary مطلقاً
-    // const basePublicId = path.parse(filename).name;
-    // await cloudinary.uploader.destroy(`blackmoon_videos/${basePublicId}`, {
-    //   resource_type: "video",
-    // });
+    // حذف من Cloudinary فقط إذا لم يكن keep=true
+    if (!keep) {
+      const basePublicId = path.parse(filename).name;
+      await cloudinary.uploader.destroy(`blackmoon_videos/${basePublicId}`, {
+        resource_type: "video",
+      });
+    }
 
+    // حذف السجل من قاعدة البيانات وتحديث مساحة المستخدم
     const user = await User.findById(req.user.id);
     if (user) {
       user.videoUsedMB = Math.max(0, user.videoUsedMB - videoDoc.sizeMB);
@@ -2281,14 +2284,8 @@ app.delete("/api/video/:filename", authenticateToken, async (req, res) => {
     await Video.deleteOne({ file: filename });
 
     // إزالة الفيديو من الأوامر التي تستخدمه
-    await GiftCommand.updateMany(
-      { video: filename },
-      { $set: { video: null } },
-    );
-    await InteractionCommand.updateMany(
-      { video: filename },
-      { $set: { video: null } },
-    );
+    await GiftCommand.updateMany({ video: filename }, { $set: { video: null } });
+    await InteractionCommand.updateMany({ video: filename }, { $set: { video: null } });
 
     const updatedUser = await User.findById(req.user.id);
     const storageData = {
@@ -2303,13 +2300,11 @@ app.delete("/api/video/:filename", authenticateToken, async (req, res) => {
         remainingMB: Math.max(0, MAX_VIDEO_MB - updatedUser.videoUsedMB),
       },
     };
-
     io.to(`user-${req.user.id}`).emit("storage-update", storageData);
 
     res.json({
       success: true,
-      message:
-        "تم حذف الفيديو من قاعدة البيانات وتحرير المساحة، والملف لا يزال موجوداً في السحابة",
+      message: keep ? "تم حذف الفيديو من قاعدة البيانات (مع الاحتفاظ بالنسخة في السحابة)" : "تم حذف الفيديو بالكامل",
       storage: storageData,
     });
   } catch (err) {
