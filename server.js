@@ -779,6 +779,84 @@ async function deleteFilesForCommand(cmd, userId) {
 
   return { audioSize, videoSize };
 }
+
+// ================ رفع ملف من رابط URL إلى Cloudinary ================
+async function uploadFileFromUrl(url, userId, type) {
+  // type: 'audio' or 'video'
+  try {
+    // التحقق من أن الرابط صحيح
+    if (!url.startsWith("http://") && !url.startsWith("https://")) return null;
+
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`فشل تحميل الملف: ${response.status}`);
+
+    const buffer = await response.arrayBuffer();
+    const mime =
+      response.headers.get("content-type") ||
+      (type === "video" ? "video/mp4" : "audio/mpeg");
+    const fileSizeMB = buffer.byteLength / (1024 * 1024);
+
+    // تحديد المجلد والـ resource_type حسب النوع
+    const folder = type === "video" ? "blackmoon_videos" : "blackmoon_audio";
+    const resourceType = type === "video" ? "video" : "raw";
+
+    // استخراج اسم الملف الأصلي من الرابط
+    const urlPath = new URL(url).pathname;
+    const originalName =
+      path.parse(urlPath).name || (type === "video" ? "video" : "audio");
+    const ext = path.extname(urlPath) || (type === "video" ? ".mp4" : ".mp3");
+    const publicId = `${originalName.replace(/[^a-zA-Z0-9\u0600-\u06FF\-]/g, "-")}-${Date.now()}`;
+    const filename = `${publicId}${ext}`;
+
+    // رفع إلى Cloudinary
+    const uploadResult = await cloudinary.uploader.upload(
+      `data:${mime};base64,${Buffer.from(buffer).toString("base64")}`,
+      {
+        public_id: publicId,
+        resource_type: resourceType,
+        folder: folder,
+        access_mode: "public",
+        timeout: 120000,
+      },
+    );
+
+    // حفظ في قاعدة البيانات
+    if (type === "audio") {
+      await Audio.create({
+        name: originalName,
+        file: filename,
+        cloudinaryUrl: uploadResult.secure_url,
+        sizeMB: fileSizeMB,
+        userId: userId,
+      });
+    } else {
+      await Video.create({
+        name: originalName,
+        file: filename,
+        cloudinaryUrl: uploadResult.secure_url,
+        sizeMB: fileSizeMB,
+        userId: userId,
+      });
+    }
+
+    // تحديث مساحة المستخدم
+    const user = await User.findById(userId);
+    if (user) {
+      if (type === "audio") {
+        user.audioUsedMB += fileSizeMB;
+      } else {
+        user.videoUsedMB += fileSizeMB;
+      }
+      await user.save();
+    }
+
+    return filename;
+  } catch (err) {
+    logger.error(`❌ فشل رفع الملف من URL ${url}:`, err.message);
+    return null;
+  }
+}
+
 function getGiftCommandForProfile(userId, profile, giftIdStr) {
   const key = `${userId}:${profile}`;
   const map = giftCommandsCache.get(key);
@@ -3615,6 +3693,79 @@ app.post(
       }
       const results = { added: 0, replaced: 0, skipped: 0, errors: [] };
       const replace = req.body.replace === "true";
+
+      // ===== رفع الملفات من الروابط (الصوت والفيديو) =====
+      for (const cmd of commands) {
+        if (cmd.audio) {
+          const audioExists = await Audio.findOne({
+            file: cmd.audio,
+            userId: req.user.id,
+          });
+          if (!audioExists) {
+            // إذا كان الرابط يبدأ بـ http، حاول رفعه
+            if (
+              cmd.audio.startsWith("http://") ||
+              cmd.audio.startsWith("https://")
+            ) {
+              const newFilename = await uploadFileFromUrl(
+                cmd.audio,
+                req.user.id,
+                "audio",
+              );
+              if (newFilename) {
+                cmd.audio = newFilename;
+              } else {
+                cmd.audio = null;
+                results.errors.push({
+                  command: cmd,
+                  error: `فشل رفع الملف الصوتي من الرابط: ${cmd.audio}`,
+                });
+              }
+            } else {
+              cmd.audio = null;
+              results.errors.push({
+                command: cmd,
+                error: `الملف الصوتي "${cmd.audio}" غير موجود في حسابك ولم يكن رابطاً صحيحاً، تم تعطيل الصوت.`,
+              });
+            }
+          }
+        }
+        if (cmd.video) {
+          const videoExists = await Video.findOne({
+            file: cmd.video,
+            userId: req.user.id,
+          });
+          if (!videoExists) {
+            if (
+              cmd.video.startsWith("http://") ||
+              cmd.video.startsWith("https://")
+            ) {
+              const newFilename = await uploadFileFromUrl(
+                cmd.video,
+                req.user.id,
+                "video",
+              );
+              if (newFilename) {
+                cmd.video = newFilename;
+              } else {
+                cmd.video = null;
+                results.errors.push({
+                  command: cmd,
+                  error: `فشل رفع ملف الفيديو من الرابط: ${cmd.video}`,
+                });
+              }
+            } else {
+              cmd.video = null;
+              results.errors.push({
+                command: cmd,
+                error: `ملف الفيديو "${cmd.video}" غير موجود في حسابك ولم يكن رابطاً صحيحاً، تم تعطيل الفيديو.`,
+              });
+            }
+          }
+        }
+      }
+      // ===== نهاية رفع الملفات =====
+
       for (const cmd of commands) {
         try {
           cmd.profile = targetProfile;
@@ -3707,7 +3858,7 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
 
     const results = { added: 0, replaced: 0, skipped: 0, errors: [] };
 
-    // ===== التحقق من وجود ملفات الصوت والفيديو =====
+    // ===== رفع الملفات من الروابط (الصوت والفيديو) =====
     for (const cmd of commands) {
       if (cmd.audio) {
         const audioExists = await Audio.findOne({
@@ -3715,11 +3866,31 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
           userId: req.user.id,
         });
         if (!audioExists) {
-          cmd.audio = null;
-          results.errors.push({
-            command: cmd,
-            error: `الملف الصوتي "${cmd.audio}" غير موجود في حسابك، تم تعطيل الصوت.`,
-          });
+          if (
+            cmd.audio.startsWith("http://") ||
+            cmd.audio.startsWith("https://")
+          ) {
+            const newFilename = await uploadFileFromUrl(
+              cmd.audio,
+              req.user.id,
+              "audio",
+            );
+            if (newFilename) {
+              cmd.audio = newFilename;
+            } else {
+              cmd.audio = null;
+              results.errors.push({
+                command: cmd,
+                error: `فشل رفع الملف الصوتي من الرابط: ${cmd.audio}`,
+              });
+            }
+          } else {
+            cmd.audio = null;
+            results.errors.push({
+              command: cmd,
+              error: `الملف الصوتي "${cmd.audio}" غير موجود في حسابك ولم يكن رابطاً صحيحاً، تم تعطيل الصوت.`,
+            });
+          }
         }
       }
       if (cmd.video) {
@@ -3728,15 +3899,35 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
           userId: req.user.id,
         });
         if (!videoExists) {
-          cmd.video = null;
-          results.errors.push({
-            command: cmd,
-            error: `ملف الفيديو "${cmd.video}" غير موجود في حسابك، تم تعطيل الفيديو.`,
-          });
+          if (
+            cmd.video.startsWith("http://") ||
+            cmd.video.startsWith("https://")
+          ) {
+            const newFilename = await uploadFileFromUrl(
+              cmd.video,
+              req.user.id,
+              "video",
+            );
+            if (newFilename) {
+              cmd.video = newFilename;
+            } else {
+              cmd.video = null;
+              results.errors.push({
+                command: cmd,
+                error: `فشل رفع ملف الفيديو من الرابط: ${cmd.video}`,
+              });
+            }
+          } else {
+            cmd.video = null;
+            results.errors.push({
+              command: cmd,
+              error: `ملف الفيديو "${cmd.video}" غير موجود في حسابك ولم يكن رابطاً صحيحاً، تم تعطيل الفيديو.`,
+            });
+          }
         }
       }
     }
-    // ===== نهاية التحقق =====
+    // ===== نهاية رفع الملفات =====
 
     for (const cmd of commands) {
       try {
