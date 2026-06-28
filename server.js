@@ -1108,7 +1108,9 @@ async function executeAction(
   if (data) {
     realName = getUserRealName(data) || triggerUser;
     const uniqueId = getSenderFromEvent(data);
-    avatar = await getAvatarWithFallback(data, uniqueId, 300);
+    avatar = getUserAvatar(data);
+    // لو الصورة مش موجودة في الحدث، نجيبها من الإنترنت
+    if (!avatar) avatar = await getAvatarWithFallback(data, uniqueId);
   }
 
   if (oncePerLive && _id && userId) {
@@ -1326,8 +1328,17 @@ function getUserRealName(data) {
 function getUserAvatar(data) {
   if (!data) return "";
   const user = data.user || {};
+
+  // دالة مساعدة لتطبيع الروابط
+  const normalizeUrl = (url) => {
+    if (!url || typeof url !== "string") return null;
+    if (url.startsWith("http")) return url; // مكتملة
+    if (url.startsWith("//")) return "https:" + url; // نسبية البروتوكول
+    return null; // أي صيغة أخرى يتم تجاهلها
+  };
+
+  // كل المسارات الممكنة للصورة
   const paths = [
-    // المسارات الأكثر شيوعاً أولاً
     user.avatar_thumb?.url_list?.[0],
     user.avatarThumb?.url_list?.[0],
     user.avatar_thumb_medium?.url_list?.[0],
@@ -1342,31 +1353,32 @@ function getUserAvatar(data) {
     user.avatarThumb?.url,
     user.profilePicture?.url,
     user.profile_picture?.url,
-    // محاولة الوصول من user.user (في بعض الأحداث تكون الصورة أعمق)
     user.user?.avatar_thumb?.url_list?.[0],
     user.user?.avatarThumb?.url_list?.[0],
     user.user?.profile_picture?.url_list?.[0],
     user.user?.profilePicture?.url_list?.[0],
-    // مسارات إضافية من البيانات المباشرة
     data.avatar_thumb?.url_list?.[0],
     data.avatarThumb?.url_list?.[0],
     data.profile_picture?.url_list?.[0],
     data.profilePicture?.url_list?.[0],
     data.avatar,
     data.avatarUrl,
-    // بعض الأحداث تحتوي على الصورة في data.userInfo
     user.userInfo?.avatar_thumb?.url_list?.[0],
     user.userInfo?.avatarThumb?.url_list?.[0],
     user.userInfo?.profile_picture?.url_list?.[0],
     user.userInfo?.profilePicture?.url_list?.[0],
   ];
-  for (let path of paths) {
-    if (path && typeof path === "string" && path.startsWith("http")) {
-      console.log(`✅ تم العثور على صورة المستخدم: ${path}`);
-      return path;
+
+  // جرب كل المسارات
+  for (let raw of paths) {
+    const url = normalizeUrl(raw);
+    if (url) {
+      console.log(`✅ تم العثور على صورة المستخدم: ${url}`);
+      return url;
     }
   }
-  // إذا لم نجد، نبحث في data.userInfo إن وجد
+
+  // افحص data.userInfo بشكل منفصل لو موجود
   if (data.userInfo) {
     const info = data.userInfo;
     const infoPaths = [
@@ -1377,17 +1389,18 @@ function getUserAvatar(data) {
       info.avatar,
       info.avatarUrl,
     ];
-    for (let path of infoPaths) {
-      if (path && typeof path === "string" && path.startsWith("http")) {
-        console.log(`✅ تم العثور على صورة المستخدم من userInfo: ${path}`);
-        return path;
+    for (let raw of infoPaths) {
+      const url = normalizeUrl(raw);
+      if (url) {
+        console.log(`✅ تم العثور على صورة المستخدم من userInfo: ${url}`);
+        return url;
       }
     }
   }
+
   console.warn("⚠️ لم يتم العثور على صورة للمستخدم");
   return "";
 }
-
 async function fetchUserAvatarFromTikTok(uniqueId) {
   if (!uniqueId) return "";
   if (userAvatarCache.has(uniqueId)) {
@@ -1497,7 +1510,7 @@ async function fetchTikTokUserInfo(uniqueId) {
   return { nickname: uniqueId, avatar: null };
 }
 
-async function getAvatarWithFallback(data, uniqueId, timeoutMs = 300) {
+async function getAvatarWithFallback(data, uniqueId) {
   let avatar = getUserAvatar(data);
   if (avatar) return avatar;
   if (uniqueId) {
@@ -1507,7 +1520,7 @@ async function getAvatarWithFallback(data, uniqueId, timeoutMs = 300) {
     try {
       const fetchPromise = fetchUserAvatarFromTikTok(uniqueId);
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("timeout")), timeoutMs),
+        setTimeout(() => reject(new Error("timeout")), 0),
       );
       avatar = await Promise.race([fetchPromise, timeoutPromise]);
       if (avatar) return avatar;
@@ -2272,10 +2285,20 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       try {
         if (!data) return;
         console.log('📢 استقبال تراكب:', data);
-        overlayAvatar.src = data.avatar || 'https://via.placeholder.com/70?text=User';
+
+        // رابط الصورة، مع fallback لو فاضي
+        const avatarSrc = data.avatar || 'https://via.placeholder.com/70?text=User';
+        overlayAvatar.src = avatarSrc;
+
+        // لو الصورة فشل تحميلها، نعرض placeholder
+        overlayAvatar.onerror = () => {
+          overlayAvatar.src = 'https://via.placeholder.com/70?text=User';
+        };
+
         overlayUsername.textContent = data.username || 'مستخدم';
         overlayText.textContent = data.text || '';
         overlayDiv.style.display = 'flex';
+
         if (overlayTimeout) clearTimeout(overlayTimeout);
         overlayTimeout = setTimeout(() => {
           overlayDiv.style.display = 'none';
