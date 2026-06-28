@@ -1458,6 +1458,49 @@ function addKeystrokeToCommand(cmd) {
   return cmdObj;
 }
 
+// تعريف الدالة
+function startLiveHeartbeat(userId) {
+  // نستخدم خريطة لتخزين المؤقتات
+  if (!global.liveHeartbeats) global.liveHeartbeats = new Map();
+  // إيقاف أي مؤقت سابق
+  if (global.liveHeartbeats.has(userId)) {
+    clearInterval(global.liveHeartbeats.get(userId));
+  }
+  const interval = setInterval(async () => {
+    const conn = userTikTokConnections.get(userId);
+    if (!conn || !conn.connection || !conn.isLive) {
+      clearInterval(interval);
+      global.liveHeartbeats.delete(userId);
+      return;
+    }
+    try {
+      // محاولة جلب معلومات الغرفة (استخدم أي endpoint متاح في المكتبة)
+      // إذا لم توجد طريقة، يمكننا الاعتماد على حدث ROOM_UPDATE فقط
+      // بدلاً من ذلك، نقوم بفحص الوقت منذ آخر تحديث للغرفة
+      const now = Date.now();
+      const lastUpdate = conn.lastRoomUpdate || now;
+      if (now - lastUpdate > 60000) {
+        // أكثر من دقيقة بدون تحديث
+        conn.isLive = false;
+        userTikTokConnections.set(userId, conn);
+        resetOncePerLiveForUser(userId);
+        clearInterval(interval);
+        global.liveHeartbeats.delete(userId);
+        logger.info(`🔄 انتهاء البث للمستخدم ${userId} (لا توجد تحديثات)`);
+      }
+    } catch (err) {
+      // في حالة خطأ، نعتبر البث منتهياً
+      conn.isLive = false;
+      userTikTokConnections.set(userId, conn);
+      resetOncePerLiveForUser(userId);
+      clearInterval(interval);
+      global.liveHeartbeats.delete(userId);
+      logger.warn(`⚠️ خطأ في heartbeat للمستخدم ${userId}: ${err.message}`);
+    }
+  }, 30000); // كل 30 ثانية
+  global.liveHeartbeats.set(userId, interval);
+}
+
 // ================ إدارة اتصالات TikTok ================
 async function connectUser(userId, username) {
   if (userTikTokConnections.has(userId)) {
@@ -1805,6 +1848,7 @@ async function connectUser(userId, username) {
       const conn = userTikTokConnections.get(userId);
       conn.isLive = newIsLive;
       conn.roomId = newIsLive ? newRoomId : null;
+      conn.lastRoomUpdate = Date.now();
       userTikTokConnections.set(userId, conn);
     }
   });
@@ -1812,10 +1856,13 @@ async function connectUser(userId, username) {
   connection.on(WebcastEvent.DISCONNECTED, () => {
     if (userTikTokConnections.has(userId)) {
       const conn = userTikTokConnections.get(userId);
+      // ضبط الحالة
       conn.isLive = false;
       conn.roomId = null;
+      // يمكن أيضاً حذف الكائن بالكامل، لكن الأفضل الاحتفاظ به للرجوع إليه
       userTikTokConnections.set(userId, conn);
     }
+    // إعادة تعيين الحالات المرتبطة بالبث
     resetOncePerLiveForUser(userId);
     logger.info(`⚠️ تم قطع الاتصال بـ TikTok للمستخدم ${userId}`);
   });
@@ -1823,11 +1870,12 @@ async function connectUser(userId, username) {
   connection.on(WebcastEvent.ERROR, (err) => {
     if (err?.message?.includes("illegal tag")) return;
     logger.error(`❌ خطأ في اتصال TikTok للمستخدم ${userId}:`, err.message);
-    if (userTikTokConnections.has(userId)) {
-      const conn = userTikTokConnections.get(userId);
+    const conn = userTikTokConnections.get(userId);
+    if (conn) {
       conn.isLive = false;
       conn.roomId = null;
       userTikTokConnections.set(userId, conn);
+      resetOncePerLiveForUser(userId);
     }
   });
 
@@ -1842,7 +1890,9 @@ async function connectUser(userId, username) {
       username,
       isLive: true,
       roomId: null,
+      lastRoomUpdate: Date.now(),
     });
+    startLiveHeartbeat(userId);
     logger.info(`✅ متصل بحساب @${username} للمستخدم ${userId}`);
     return true;
   } catch (err) {
@@ -2569,16 +2619,20 @@ app.post("/api/auth/refresh", authenticateToken, async (req, res) => {
 app.post("/api/tiktok-disconnect", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
-    if (userTikTokConnections.has(userId)) {
-      const conn = userTikTokConnections.get(userId);
-      if (conn.connection) conn.connection.disconnect();
-      userTikTokConnections.delete(userId);
+    if (global.liveHeartbeats && global.liveHeartbeats.has(userId)) {
+      clearInterval(global.liveHeartbeats.get(userId));
+      global.liveHeartbeats.delete(userId);
     }
-    const user = await User.findById(userId);
-    await user.save();
+    const conn = userTikTokConnections.get(userId);
+    if (conn && conn.connection) {
+      try {
+        conn.connection.disconnect();
+      } catch (e) {}
+    }
+    userTikTokConnections.delete(userId);
+    resetOncePerLiveForUser(userId);
     res.json({ success: true, message: "تم قطع الاتصال" });
   } catch (err) {
-    logger.error("❌ خطأ في قطع الاتصال:", err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -2961,6 +3015,28 @@ app.get("/api/gift-commands", authenticateToken, async (req, res) => {
   }
 });
 
+// إضافة بعد app.get("/api/gift-commands", ...) وقبل app.post("/api/gift-commands/:id/execute", ...)
+app.get("/api/gift-commands/:id", authenticateToken, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: "معرف غير صالح" });
+    }
+    const gift = await GiftCommand.findById(req.params.id);
+    if (!gift) {
+      return res
+        .status(404)
+        .json({ success: false, message: "الأمر غير موجود" });
+    }
+    if (gift.userId.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: "غير مصرح به" });
+    }
+    res.json({ success: true, gift });
+  } catch (err) {
+    logger.error("❌ خطأ في جلب أمر الهدية:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 app.post(
   "/api/gift-commands/:id/execute",
   authenticateToken,
@@ -3010,6 +3086,33 @@ app.post(
       res.json({ success: true, message: "تم التنفيذ", count: timesToRun });
     } catch (err) {
       logger.error("❌ خطأ في تنفيذ أمر الهدية:", err.message);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  },
+);
+
+app.get(
+  "/api/interaction-commands/:id",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res
+          .status(400)
+          .json({ success: false, message: "معرف غير صالح" });
+      }
+      const cmd = await InteractionCommand.findById(req.params.id);
+      if (!cmd) {
+        return res
+          .status(404)
+          .json({ success: false, message: "الأمر غير موجود" });
+      }
+      if (cmd.userId.toString() !== req.user.id) {
+        return res.status(403).json({ success: false, message: "غير مصرح به" });
+      }
+      res.json({ success: true, command: cmd });
+    } catch (err) {
+      logger.error("❌ خطأ في جلب أمر التفاعل:", err.message);
       res.status(500).json({ success: false, message: err.message });
     }
   },
@@ -3189,24 +3292,24 @@ app.put("/api/gift-commands/:id", authenticateToken, async (req, res) => {
 // ================ DELETE /api/gift-commands/:id ================
 app.delete("/api/gift-commands/:id", authenticateToken, async (req, res) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id))
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ success: false, message: "معرف غير صالح" });
+    }
     const gift = await GiftCommand.findById(req.params.id);
-    if (!gift)
-      return res.status(404).json({ success: false, message: "غير موجود" });
-    if (gift.userId.toString() !== req.user.id)
-      return res.status(403).json({ success: false, message: "غير مصرح به" });
-    const canAccess = await canAccessProfile(req.user.id, gift.profile);
-    if (!canAccess)
-      return res.status(403).json({
-        success: false,
-        message: "لا يمكنك حذف أمر من بروفايل غير مصرح به",
+    if (!gift) {
+      // الأمر غير موجود، نعتبره محذوفاً بالفعل
+      return res.status(200).json({
+        success: true,
+        message: "الأمر غير موجود، تم اعتباره محذوفاً",
+        alreadyDeleted: true,
       });
-
+    }
+    if (gift.userId.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: "غير مصرح به" });
+    }
     await deleteFilesForCommand(gift, req.user.id);
     await GiftCommand.findByIdAndDelete(req.params.id);
     await refreshCachesForUser(req.user.id);
-
     const updatedUser = await User.findById(req.user.id);
     const storageData = {
       audio: {
@@ -3227,7 +3330,6 @@ app.delete("/api/gift-commands/:id", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-
 // ================ DELETE /api/gift-commands ================
 app.delete("/api/gift-commands", authenticateToken, async (req, res) => {
   try {
@@ -3443,26 +3545,22 @@ app.delete(
   authenticateToken,
   async (req, res) => {
     try {
-      if (!mongoose.Types.ObjectId.isValid(req.params.id))
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
         return res
           .status(400)
           .json({ success: false, message: "معرف غير صالح" });
+      }
       const cmd = await InteractionCommand.findById(req.params.id);
-      if (!cmd)
-        return res
-          .status(404)
-          .json({ success: false, message: "الأمر غير موجود" });
-      if (cmd.userId.toString() !== req.user.id)
-        return res
-          .status(403)
-          .json({ success: false, message: "غير مصرح لك بحذف هذا الأمر" });
-      const canAccess = await canAccessProfile(req.user.id, cmd.profile);
-      if (!canAccess)
-        return res.status(403).json({
-          success: false,
-          message: "لا يمكنك حذف أمر من بروفايل غير مصرح به في النسخة المجانية",
+      if (!cmd) {
+        return res.status(200).json({
+          success: true,
+          message: "الأمر غير موجود، تم اعتباره محذوفاً",
+          alreadyDeleted: true,
         });
-
+      }
+      if (cmd.userId.toString() !== req.user.id) {
+        return res.status(403).json({ success: false, message: "غير مصرح به" });
+      }
       await deleteFilesForCommand(cmd, req.user.id);
       await InteractionCommand.findByIdAndDelete(req.params.id);
       await refreshCachesForUser(req.user.id);
@@ -3476,65 +3574,6 @@ app.delete(
     }
   },
 );
-
-app.delete("/api/interaction-commands", authenticateToken, async (req, res) => {
-  try {
-    const profile = parseInt(req.query.profile);
-    if (!profile || profile < 1 || profile > MAX_PROFILES)
-      return res
-        .status(400)
-        .json({ success: false, message: "profile مطلوب وصحيح" });
-    const canAccess = await canAccessProfile(req.user.id, profile);
-    if (!canAccess)
-      return res.status(403).json({
-        success: false,
-        message: "لا يمكنك حذف أوامر من بروفايل غير مصرح به",
-      });
-
-    const commands = await InteractionCommand.find({
-      userId: req.user.id,
-      profile,
-    });
-    let totalAudioSize = 0,
-      totalVideoSize = 0;
-    for (const cmd of commands) {
-      const { audioSize, videoSize } = await deleteFilesForCommand(
-        cmd,
-        req.user.id,
-      );
-      totalAudioSize += audioSize;
-      totalVideoSize += videoSize;
-    }
-    const result = await InteractionCommand.deleteMany({
-      userId: req.user.id,
-      profile,
-    });
-    await refreshCachesForUser(req.user.id);
-    const updatedUser = await User.findById(req.user.id);
-    const storageData = {
-      audio: {
-        usedMB: updatedUser.audioUsedMB,
-        limitMB: MAX_AUDIO_MB,
-        remainingMB: Math.max(0, MAX_AUDIO_MB - updatedUser.audioUsedMB),
-      },
-      video: {
-        usedMB: updatedUser.videoUsedMB,
-        limitMB: MAX_VIDEO_MB,
-        remainingMB: Math.max(0, MAX_VIDEO_MB - updatedUser.videoUsedMB),
-      },
-    };
-    io.to(`user-${req.user.id}`).emit("storage-update", storageData);
-    res.json({
-      success: true,
-      deletedCount: result.deletedCount,
-      profile,
-      storage: storageData,
-    });
-  } catch (err) {
-    logger.error("❌ خطأ في حذف جميع أوامر التفاعل:", err.message);
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
 
 // ================ نقطة نهاية تنفيذ الاختصار ================
 app.post("/api/execute-keystroke", authenticateToken, async (req, res) => {
