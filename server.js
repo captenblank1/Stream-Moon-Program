@@ -1071,7 +1071,12 @@ function playAudio(file, volume = 100, targetUserId = null) {
 }
 
 // ================ الوظيفة الرئيسية لتنفيذ الإجراء ================
-async function executeAction(cmdObj, triggerUser = "Unknown", userId) {
+async function executeAction(
+  cmdObj,
+  triggerUser = "Unknown",
+  userId,
+  data = null,
+) {
   if (!cmdObj.active) {
     logger.info(`🚫 الأمر غير مفعل: ${cmdObj.name || cmdObj._id}`);
     return;
@@ -1096,6 +1101,15 @@ async function executeAction(cmdObj, triggerUser = "Unknown", userId) {
     combo = null,
     duration = 5,
   } = cmdObj;
+
+  // 🔥 استخراج الاسم الحقيقي والصورة من data (إن وجد)
+  let realName = triggerUser;
+  let avatar = "";
+  if (data) {
+    realName = getUserRealName(data) || triggerUser;
+    const uniqueId = getSenderFromEvent(data);
+    avatar = await getAvatarWithFallback(data, uniqueId, 800);
+  }
 
   if (oncePerLive && _id && userId) {
     const idStr = `${userId}:${String(_id)}`;
@@ -1212,11 +1226,12 @@ async function executeAction(cmdObj, triggerUser = "Unknown", userId) {
       }
     }
   }
+  // ✅ التراكب الآن يستخدم الاسم الحقيقي والصورة من data
   if (cmdObj.showOverlay && userId) {
     const room = `user-${userId}`;
     io.to(room).emit("show-overlay", {
-      username: triggerUser,
-      avatar: "",
+      username: realName,
+      avatar: avatar,
       text: cmdObj.overlayText || "",
       duration: (duration || 5) * 1000,
     });
@@ -1239,7 +1254,6 @@ async function executeAction(cmdObj, triggerUser = "Unknown", userId) {
     }
   }
 }
-
 // ================ دوال مساعدة لأحداث TikTok ================
 function resetOncePerLiveForUser(userId) {
   const toDelete = [];
@@ -1662,19 +1676,8 @@ async function connectUser(userId, username) {
             cmdObj.command && cmdObj.command.trim() !== ""
               ? cmdObj.command
               : cmdObj.combo || "";
-          await executeAction(cmdObj, sender, userId);
+          await executeAction(cmdObj, sender, userId, data);
         }
-      }
-      if (giftCmd && giftCmd.showOverlay && userId) {
-        const realName = getUserRealName(data);
-        const uniqueId = getSenderFromEvent(data);
-        const avatar = await getAvatarWithFallback(data, uniqueId, 800);
-        io.to(`user-${userId}`).emit("show-overlay", {
-          username: realName,
-          avatar: avatar,
-          text: giftCmd.overlayText || "",
-          duration: (giftCmd.duration || 5) * 1000,
-        });
       }
       const giftInteractions = getInteractionCommandsForProfile(
         userId,
@@ -1705,25 +1708,20 @@ async function connectUser(userId, username) {
           normalizeUser(cmd.targetUser) !== sender
         )
           continue;
-        if (cmd.showOverlay && userId) {
-          const realName = getUserRealName(data);
-          const uniqueId = getSenderFromEvent(data);
-          const avatar = await getAvatarWithFallback(data, uniqueId, 800);
-          io.to(`user-${userId}`).emit("show-overlay", {
-            username: realName,
-            avatar: avatar,
-            text: cmd.overlayText || "",
-            duration: (cmd.duration || 5) * 1000,
-          });
-        }
+
         if (cmd.keyword && cmd.keyword.trim()) {
           if (
             comment.toLowerCase().includes(cmd.keyword.trim().toLowerCase())
           ) {
-            await executeAction(addKeystrokeToCommand(cmd), sender, userId);
+            await executeAction(
+              addKeystrokeToCommand(cmd),
+              sender,
+              userId,
+              data,
+            );
           }
         } else {
-          await executeAction(addKeystrokeToCommand(cmd), sender, userId);
+          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
         }
       }
     } catch (err) {
@@ -1746,24 +1744,14 @@ async function connectUser(userId, username) {
           normalizeUser(cmd.targetUser) !== sender
         )
           continue;
-        if (cmd.showOverlay && userId) {
-          const realName = getUserRealName(data);
-          const uniqueId = getSenderFromEvent(data);
-          const avatar = await getAvatarWithFallback(data, uniqueId, 800);
-          io.to(`user-${userId}`).emit("show-overlay", {
-            username: realName,
-            avatar: avatar,
-            text: cmd.overlayText || "",
-            duration: (cmd.duration || 5) * 1000,
-          });
-        }
+
         if (cmd.oncePerLive) {
           const key = `${userId}:follow:${String(cmd._id)}:${sender}`;
           if (followExecutedUsers.has(key)) continue;
-          await executeAction(addKeystrokeToCommand(cmd), sender, userId);
+          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
           followExecutedUsers.add(key);
         } else {
-          await executeAction(addKeystrokeToCommand(cmd), sender, userId);
+          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
         }
       }
     } catch (err) {
@@ -1796,22 +1784,12 @@ async function connectUser(userId, username) {
           normalizeUser(cmd.targetUser) !== sender
         )
           continue;
-        if (cmd.showOverlay && userId) {
-          const realName = getUserRealName(data);
-          const uniqueId = getSenderFromEvent(data);
-          const avatar = await getAvatarWithFallback(data, uniqueId, 800);
-          io.to(`user-${userId}`).emit("show-overlay", {
-            username: realName,
-            avatar: avatar,
-            text: cmd.overlayText || "",
-            duration: (cmd.duration || 5) * 1000,
-          });
-        }
+
         const threshold = parseInt(cmd.threshold || 0, 10) || 0;
         const keyUser = `${userId}:${String(cmd._id)}:${sender}`;
         likeCounters.set(keyUser, (likeCounters.get(keyUser) || 0) + delta);
         if (threshold <= 0) {
-          await executeAction(addKeystrokeToCommand(cmd), sender, userId);
+          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
           continue;
         }
         const current = likeCounters.get(keyUser);
@@ -1819,7 +1797,7 @@ async function connectUser(userId, username) {
         if (times <= 0) continue;
         let cmdObj = addKeystrokeToCommand(cmd);
         cmdObj.repeat = Math.max(1, (cmdObj.repeat || 1) * times);
-        await executeAction(cmdObj, sender, userId);
+        await executeAction(cmdObj, sender, userId, data);
         likeCounters.set(keyUser, current - times * threshold);
         if (likeCounters.get(keyUser) < 0) likeCounters.delete(keyUser);
       }
@@ -1843,18 +1821,8 @@ async function connectUser(userId, username) {
           normalizeUser(cmd.targetUser) !== sender
         )
           continue;
-        if (cmd.showOverlay && userId) {
-          const realName = getUserRealName(data);
-          const uniqueId = getSenderFromEvent(data);
-          const avatar = await getAvatarWithFallback(data, uniqueId, 800);
-          io.to(`user-${userId}`).emit("show-overlay", {
-            username: realName,
-            avatar: avatar,
-            text: cmd.overlayText || "",
-            duration: (cmd.duration || 5) * 1000,
-          });
-        }
-        await executeAction(addKeystrokeToCommand(cmd), sender, userId);
+
+        await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
       }
     } catch (err) {
       logger.error("❌ SHARE handler error:", err.message);
