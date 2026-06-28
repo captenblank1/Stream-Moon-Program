@@ -114,6 +114,7 @@ let bindingTokens = new Map(); // key: token, value: { userId, expires }
 let agentSessions = new Map(); // تخزين رموز جلسات العملاء (صلاحية طويلة)
 
 let userAvatarCache = new Map();
+let userInfoCache = new Map(); // ✅ أضف هذا السطر هنا
 
 // ================ إعدادات السجلات (خفيفة) ================
 const logger = winston.createLogger({
@@ -1372,6 +1373,57 @@ async function fetchUserAvatarFromTikTok(uniqueId) {
   return "";
 }
 
+// دالة لجلب معلومات المستخدم من TikTok (الاسم الحقيقي والصورة)
+async function fetchTikTokUserInfo(uniqueId) {
+  if (!uniqueId) return { nickname: null, avatar: null };
+
+  // التحقق من الكاش أولاً
+  if (userInfoCache.has(uniqueId)) {
+    return userInfoCache.get(uniqueId);
+  }
+
+  try {
+    const url = `https://www.tikwm.com/api/user/?unique_id=${uniqueId}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) return { nickname: null, avatar: null };
+
+    const data = await response.json();
+    if (data && data.data) {
+      // معالجة رابط الصورة
+      let avatarUrl = data.data.avatar || "";
+      if (avatarUrl.startsWith("//")) avatarUrl = "https:" + avatarUrl;
+
+      const info = {
+        nickname: data.data.nickname || uniqueId, // الاسم الحقيقي
+        avatar: avatarUrl,
+      };
+
+      // تخزين في الكاش لمدة ساعة
+      userInfoCache.set(uniqueId, info);
+      setTimeout(() => userInfoCache.delete(uniqueId), 60 * 60 * 1000);
+
+      logger.info(`✅ تم جلب معلومات المستخدم ${uniqueId}: ${info.nickname}`);
+      return info;
+    }
+  } catch (err) {
+    logger.warn(`⚠️ فشل جلب معلومات المستخدم ${uniqueId}:`, err.message);
+  }
+
+  return { nickname: uniqueId, avatar: null };
+}
+
 async function getAvatarWithFallback(data, uniqueId, timeoutMs = 800) {
   let avatar = getUserAvatar(data);
   if (avatar) return avatar;
@@ -1781,6 +1833,10 @@ async function connectUser(userId, username) {
 
   try {
     await connection.connect();
+
+    // ======== ✅ الحل: تحميل الأوامر في الكاش فور نجاح الاتصال ========
+    await refreshCachesForUser(userId);
+
     userTikTokConnections.set(userId, {
       connection,
       username,
@@ -1806,12 +1862,10 @@ app.post("/api/auth/register", authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password)
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "البريد الإلكتروني وكلمة المرور مطلوبان",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "البريد الإلكتروني وكلمة المرور مطلوبان",
+      });
     const existingUser = await User.findOne({ email });
     if (existingUser)
       return res
@@ -1859,12 +1913,10 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password)
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "البريد الإلكتروني وكلمة المرور مطلوبان",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "البريد الإلكتروني وكلمة المرور مطلوبان",
+      });
     const user = await User.findOne({ email });
     if (!user)
       return res
@@ -2581,6 +2633,11 @@ app.post("/api/tiktok-user", authenticateToken, async (req, res) => {
 // ================ نقاط نهاية API العامة ================
 app.get("/api/live-status", authenticateToken, async (req, res) => {
   const userId = req.user.id;
+
+  // ======== ✅ الحل: تحديث الكاش عند التحقق من الحالة ========
+  await refreshCachesForUser(userId);
+  // ============================================================
+
   const connection = userTikTokConnections.get(userId);
   const isLive = connection ? connection.isLive : false;
   const user = await User.findById(userId);
@@ -2612,12 +2669,10 @@ app.post(
     try {
       const plan = await getUserPlan(req.user.id);
       if (plan !== "paid")
-        return res
-          .status(403)
-          .json({
-            success: false,
-            message: "لا يمكنك نسخ بروفايل في النسخة المجانية",
-          });
+        return res.status(403).json({
+          success: false,
+          message: "لا يمكنك نسخ بروفايل في النسخة المجانية",
+        });
       const sourceId = parseInt(req.params.sourceId);
       if (sourceId < 1 || sourceId > MAX_PROFILES)
         return res
@@ -2625,12 +2680,10 @@ app.post(
           .json({ success: false, message: "مصدر غير صالح" });
       const { targetProfile } = req.body;
       if (!targetProfile)
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "يجب تحديد البروفايل المستهدف (targetProfile) بين 1 و 20",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "يجب تحديد البروفايل المستهدف (targetProfile) بين 1 و 20",
+        });
       const targetId = parseInt(targetProfile);
       if (targetId < 1 || targetId > MAX_PROFILES)
         return res
@@ -2757,8 +2810,33 @@ app.get("/api/videos", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/streamer", async (req, res) => {
-  res.json({ isLive: false });
+app.get("/api/streamer", authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+  const connection = userTikTokConnections.get(userId);
+  const isLive = connection ? connection.isLive : false;
+  const user = await User.findById(userId);
+  const username = user?.tiktokUsername || null;
+
+  let nickname = username; // القيمة الافتراضية
+  let profilePicture = "";
+
+  // إذا كان البث مباشراً، جلب الاسم الحقيقي والصورة
+  if (isLive && username) {
+    try {
+      const info = await fetchTikTokUserInfo(username);
+      if (info.nickname) nickname = info.nickname;
+      if (info.avatar) profilePicture = info.avatar;
+    } catch (err) {
+      logger.warn(`⚠️ فشل جلب معلومات المستخدم ${username}:`, err.message);
+    }
+  }
+
+  res.json({
+    isLive,
+    username,
+    nickname, // ✅ الآن يعيد الاسم الحقيقي
+    profilePicture, // ✅ صورة البروفايل
+  });
 });
 
 // ================ نقاط نهاية API المحمية ================
@@ -2792,21 +2870,17 @@ app.post("/api/profile/select", authenticateToken, async (req, res) => {
   try {
     const p = parseInt(req.body.profile, 10);
     if (!p || p < 1 || p > MAX_PROFILES)
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: `يجب أن يكون البروفايل بين 1 و ${MAX_PROFILES}`,
-        });
+      return res.status(400).json({
+        success: false,
+        message: `يجب أن يكون البروفايل بين 1 و ${MAX_PROFILES}`,
+      });
     const canAccess = await canAccessProfile(req.user.id, p);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message:
-            "لا يمكنك الوصول إلى هذا البروفايل في النسخة المجانية. قم بالترقية.",
-        });
+      return res.status(403).json({
+        success: false,
+        message:
+          "لا يمكنك الوصول إلى هذا البروفايل في النسخة المجانية. قم بالترقية.",
+      });
     const user = await User.findById(req.user.id);
     if (!user)
       return res
@@ -2842,12 +2916,10 @@ app.put("/api/profile/:id/name", authenticateToken, async (req, res) => {
       return res.status(400).json({ success: false, message: "الاسم مطلوب" });
     const canAccess = await canAccessProfile(req.user.id, profileId);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "لا يمكنك تعديل هذا البروفايل في النسخة المجانية",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك تعديل هذا البروفايل في النسخة المجانية",
+      });
     await Profile.updateOne(
       { owner: req.user.id, id: profileId },
       { $set: { name: name.trim() } },
@@ -2874,12 +2946,10 @@ app.get("/api/gift-commands", authenticateToken, async (req, res) => {
         : 1;
     const canAccess = await canAccessProfile(req.user.id, p);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "لا يمكنك الوصول إلى أوامر هذا البروفايل",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك الوصول إلى أوامر هذا البروفايل",
+      });
     const gifts = await GiftCommand.find({
       userId: req.user.id,
       profile: p,
@@ -2907,12 +2977,10 @@ app.post(
         return res.status(403).json({ success: false, message: "غير مصرح به" });
       const canAccess = await canAccessProfile(req.user.id, gift.profile);
       if (!canAccess)
-        return res
-          .status(403)
-          .json({
-            success: false,
-            message: "لا يمكنك تنفيذ أمر من بروفايل غير مصرح به",
-          });
+        return res.status(403).json({
+          success: false,
+          message: "لا يمكنك تنفيذ أمر من بروفايل غير مصرح به",
+        });
       const count = Math.max(1, parseInt(req.body?.count || 1, 10) || 1);
       const timesToRun = Math.min(count, 10);
       const requestedScreen = req.body?.screen
@@ -2963,12 +3031,10 @@ app.post(
         return res.status(403).json({ success: false, message: "غير مصرح به" });
       const canAccess = await canAccessProfile(req.user.id, cmd.profile);
       if (!canAccess)
-        return res
-          .status(403)
-          .json({
-            success: false,
-            message: "لا يمكنك تنفيذ أمر من بروفايل غير مصرح به",
-          });
+        return res.status(403).json({
+          success: false,
+          message: "لا يمكنك تنفيذ أمر من بروفايل غير مصرح به",
+        });
       const count = Math.max(1, parseInt(req.body?.count || 1, 10) || 1);
       const timesToRun = Math.min(count, 10);
       const requestedScreen = req.body?.screen
@@ -3037,13 +3103,11 @@ app.post("/api/gift-commands", authenticateToken, async (req, res) => {
     );
     const canAccess = await canAccessProfile(req.user.id, profile);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message:
-            "لا يمكنك إنشاء أوامر لهذا البروفايل في النسخة المجانية. قم بالترقية.",
-        });
+      return res.status(403).json({
+        success: false,
+        message:
+          "لا يمكنك إنشاء أوامر لهذا البروفايل في النسخة المجانية. قم بالترقية.",
+      });
 
     // تم إزالة شرط plan === "free"
 
@@ -3056,12 +3120,10 @@ app.post("/api/gift-commands", authenticateToken, async (req, res) => {
       profile,
     });
     if (exists)
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "هذا giftId موجود مسبقاً في هذا البروفايل",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "هذا giftId موجود مسبقاً في هذا البروفايل",
+      });
 
     const newGift = await GiftCommand.create({
       giftId: giftIdToSave,
@@ -3110,12 +3172,10 @@ app.put("/api/gift-commands/:id", authenticateToken, async (req, res) => {
       return res.status(403).json({ success: false, message: "غير مصرح به" });
     const canAccess = await canAccessProfile(req.user.id, gift.profile);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "لا يمكنك تعديل أمر من بروفايل غير مصرح به",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك تعديل أمر من بروفايل غير مصرح به",
+      });
     Object.assign(gift, req.body);
     await gift.save();
     await refreshCachesForUser(req.user.id);
@@ -3138,12 +3198,10 @@ app.delete("/api/gift-commands/:id", authenticateToken, async (req, res) => {
       return res.status(403).json({ success: false, message: "غير مصرح به" });
     const canAccess = await canAccessProfile(req.user.id, gift.profile);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "لا يمكنك حذف أمر من بروفايل غير مصرح به",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك حذف أمر من بروفايل غير مصرح به",
+      });
 
     await deleteFilesForCommand(gift, req.user.id);
     await GiftCommand.findByIdAndDelete(req.params.id);
@@ -3180,12 +3238,10 @@ app.delete("/api/gift-commands", authenticateToken, async (req, res) => {
         .json({ success: false, message: "profile مطلوب وصحيح" });
     const canAccess = await canAccessProfile(req.user.id, profile);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "لا يمكنك حذف أوامر من بروفايل غير مصرح به",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك حذف أوامر من بروفايل غير مصرح به",
+      });
 
     const commands = await GiftCommand.find({ userId: req.user.id, profile });
     let totalAudioSize = 0,
@@ -3242,12 +3298,10 @@ app.get("/api/interaction-commands", authenticateToken, async (req, res) => {
         : 1;
     const canAccess = await canAccessProfile(req.user.id, p);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "لا يمكنك الوصول إلى أوامر هذا البروفايل",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك الوصول إلى أوامر هذا البروفايل",
+      });
     const list = await InteractionCommand.find({
       userId: req.user.id,
       profile: p,
@@ -3273,13 +3327,11 @@ app.post("/api/interaction-commands", authenticateToken, async (req, res) => {
     );
     const canAccess = await canAccessProfile(req.user.id, profile);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message:
-            "لا يمكنك إنشاء أوامر لهذا البروفايل في النسخة المجانية. قم بالترقية.",
-        });
+      return res.status(403).json({
+        success: false,
+        message:
+          "لا يمكنك إنشاء أوامر لهذا البروفايل في النسخة المجانية. قم بالترقية.",
+      });
 
     // تم إزالة شرط plan === "free"
 
@@ -3289,12 +3341,10 @@ app.post("/api/interaction-commands", authenticateToken, async (req, res) => {
         payload.type,
       )
     )
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: `النوع غير مدعوم. الأنواع المسموحة: follow, like, comment, share, gift, all`,
-        });
+      return res.status(400).json({
+        success: false,
+        message: `النوع غير مدعوم. الأنواع المسموحة: follow, like, comment, share, gift, all`,
+      });
     if (payload.combo && payload.combo.trim() !== "") {
       const existingCombo = await InteractionCommand.findOne({
         userId: req.user.id,
@@ -3302,12 +3352,10 @@ app.post("/api/interaction-commands", authenticateToken, async (req, res) => {
         combo: payload.combo.trim(),
       });
       if (existingCombo)
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "هذا الاختصار موجود بالفعل في هذا البروفايل",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "هذا الاختصار موجود بالفعل في هذا البروفايل",
+        });
     }
     payload.profile = profile;
     payload.repeat = parseInt(payload.repeat || 1, 10) || 1;
@@ -3356,12 +3404,10 @@ app.put(
         return res.status(403).json({ success: false, message: "غير مصرح به" });
       const canAccess = await canAccessProfile(req.user.id, cmd.profile);
       if (!canAccess)
-        return res
-          .status(403)
-          .json({
-            success: false,
-            message: "لا يمكنك تعديل أمر من بروفايل غير مصرح به",
-          });
+        return res.status(403).json({
+          success: false,
+          message: "لا يمكنك تعديل أمر من بروفايل غير مصرح به",
+        });
       if (
         req.body.combo &&
         req.body.combo !== cmd.combo &&
@@ -3374,12 +3420,10 @@ app.put(
           _id: { $ne: cmd._id },
         });
         if (existingCombo)
-          return res
-            .status(400)
-            .json({
-              success: false,
-              message: "هذا الاختصار موجود بالفعل في هذا البروفايل",
-            });
+          return res.status(400).json({
+            success: false,
+            message: "هذا الاختصار موجود بالفعل في هذا البروفايل",
+          });
         req.body.combo = req.body.combo.trim();
       } else if (req.body.combo === "" || req.body.combo === null)
         req.body.combo = null;
@@ -3414,13 +3458,10 @@ app.delete(
           .json({ success: false, message: "غير مصرح لك بحذف هذا الأمر" });
       const canAccess = await canAccessProfile(req.user.id, cmd.profile);
       if (!canAccess)
-        return res
-          .status(403)
-          .json({
-            success: false,
-            message:
-              "لا يمكنك حذف أمر من بروفايل غير مصرح به في النسخة المجانية",
-          });
+        return res.status(403).json({
+          success: false,
+          message: "لا يمكنك حذف أمر من بروفايل غير مصرح به في النسخة المجانية",
+        });
 
       await deleteFilesForCommand(cmd, req.user.id);
       await InteractionCommand.findByIdAndDelete(req.params.id);
@@ -3445,12 +3486,10 @@ app.delete("/api/interaction-commands", authenticateToken, async (req, res) => {
         .json({ success: false, message: "profile مطلوب وصحيح" });
     const canAccess = await canAccessProfile(req.user.id, profile);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "لا يمكنك حذف أوامر من بروفايل غير مصرح به",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك حذف أوامر من بروفايل غير مصرح به",
+      });
 
     const commands = await InteractionCommand.find({
       userId: req.user.id,
@@ -3550,12 +3589,10 @@ app.post("/api/execute-keystroke", authenticateToken, async (req, res) => {
         keystroke: keystrokeText,
       });
     } else {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "لا يوجد عميل محلي ولا node-key-sender متاح",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "لا يوجد عميل محلي ولا node-key-sender متاح",
+      });
     }
   } catch (err) {
     logger.error("❌ خطأ في تنفيذ الاختصار:", err);
@@ -3655,23 +3692,18 @@ app.post(
           .json({ success: false, message: "الملف ليس بصيغة JSON صحيحة" });
       }
       if (!Array.isArray(commands))
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "يجب أن يحتوي الملف على مصفوفة من الأوامر",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "يجب أن يحتوي الملف على مصفوفة من الأوامر",
+        });
       const user = await User.findById(req.user.id);
       const targetProfile = user ? user.selectedProfile : 1;
       const canAccess = await canAccessProfile(req.user.id, targetProfile);
       if (!canAccess)
-        return res
-          .status(403)
-          .json({
-            success: false,
-            message:
-              "لا يمكنك استيراد الأوامر لهذا البروفايل في النسخة المجانية",
-          });
+        return res.status(403).json({
+          success: false,
+          message: "لا يمكنك استيراد الأوامر لهذا البروفايل في النسخة المجانية",
+        });
 
       // تم إزالة شرط plan === "free"
 
@@ -3822,12 +3854,10 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
     }
     const canAccess = await canAccessProfile(req.user.id, profile);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "لا يمكنك استيراد أوامر لهذا البروفايل في النسخة المجانية",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك استيراد أوامر لهذا البروفايل في النسخة المجانية",
+      });
     if (!Array.isArray(commands))
       return res
         .status(400)
