@@ -77,6 +77,7 @@ const uploadVideo = multer({
   limits: { fileSize: MAX_VIDEO_MB * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
+    // أضف الامتدادات التي تريد دعمها
     if (
       [".mp4", ".mov", ".webm", ".mkv", ".avi", ".flv", ".3gp"].includes(ext)
     ) {
@@ -229,6 +230,7 @@ const allowedOrigins = [
   "http://127.0.0.1:5500",
 ];
 
+// أضف FRONTEND_URL من البيئة إذا كان موجوداً
 if (process.env.FRONTEND_URL) {
   allowedOrigins.push(process.env.FRONTEND_URL);
 }
@@ -236,7 +238,9 @@ if (process.env.FRONTEND_URL) {
 app.use(
   cors({
     origin: function (origin, callback) {
+      // السماح للطلبات بدون origin (مثل Postman)
       if (!origin) return callback(null, true);
+      // السماح لأي طلب localhost أثناء التطوير
       if (origin.includes("localhost") || origin.includes("127.0.0.1")) {
         return callback(null, true);
       }
@@ -255,12 +259,16 @@ app.use(
 
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
+// خدمة ملفات الصوت الافتراضية من مجلد audios
 app.use("/audios", express.static(path.join(__dirname, "audios")));
 app.use(cookieParser());
 app.use((req, res, next) => {
   req.setTimeout(30 * 1000);
   next();
 });
+
+// ================ حذف خدمة الملفات الثابتة الخاصة بالواجهة الأمامية ================
+// لم نعد نخدم public أو images لأن الواجهة منفصلة
 
 // ================ Middleware للمصادقة ================
 const authenticateToken = (req, res, next) => {
@@ -295,7 +303,7 @@ const isAdmin = async (req, res, next) => {
   }
 };
 
-// ================ الاتصال بقاعدة البيانات ================
+// ================ الاتصال بقاعدة البيانات (محسن) ================
 mongoose
   .connect(MONGODB_URI, {
     maxPoolSize: 10,
@@ -323,6 +331,7 @@ mongoose
           }
         }
       }
+      // إنشاء الفهارس اللازمة
       await db.collection("users").createIndex({ email: 1 }, { unique: true });
       await db
         .collection("users")
@@ -748,6 +757,7 @@ async function deleteFilesForCommand(cmd, userId) {
         user.videoUsedMB = Math.max(0, user.videoUsedMB - videoSize);
         await user.save();
 
+        // إرسال تحديث فوري للواجهة
         const storageData = {
           audio: {
             usedMB: user.audioUsedMB,
@@ -774,6 +784,7 @@ async function deleteFilesForCommand(cmd, userId) {
 async function uploadFileFromUrl(url, userId, type) {
   // type: 'audio' or 'video'
   try {
+    // التحقق من أن الرابط صحيح
     if (!url.startsWith("http://") && !url.startsWith("https://")) return null;
 
     const response = await fetch(url);
@@ -785,9 +796,11 @@ async function uploadFileFromUrl(url, userId, type) {
       (type === "video" ? "video/mp4" : "audio/mpeg");
     const fileSizeMB = buffer.byteLength / (1024 * 1024);
 
+    // تحديد المجلد والـ resource_type حسب النوع
     const folder = type === "video" ? "blackmoon_videos" : "blackmoon_audio";
     const resourceType = type === "video" ? "video" : "raw";
 
+    // استخراج اسم الملف الأصلي من الرابط
     const urlPath = new URL(url).pathname;
     const originalName =
       path.parse(urlPath).name || (type === "video" ? "video" : "audio");
@@ -795,6 +808,7 @@ async function uploadFileFromUrl(url, userId, type) {
     const publicId = `${originalName.replace(/[^a-zA-Z0-9\u0600-\u06FF\-]/g, "-")}-${Date.now()}`;
     const filename = `${publicId}${ext}`;
 
+    // رفع إلى Cloudinary
     const uploadResult = await cloudinary.uploader.upload(
       `data:${mime};base64,${Buffer.from(buffer).toString("base64")}`,
       {
@@ -806,6 +820,7 @@ async function uploadFileFromUrl(url, userId, type) {
       },
     );
 
+    // حفظ في قاعدة البيانات
     if (type === "audio") {
       await Audio.create({
         name: originalName,
@@ -824,6 +839,7 @@ async function uploadFileFromUrl(url, userId, type) {
       });
     }
 
+    // تحديث مساحة المستخدم
     const user = await User.findById(userId);
     if (user) {
       if (type === "audio") {
@@ -838,35 +854,6 @@ async function uploadFileFromUrl(url, userId, type) {
   } catch (err) {
     logger.error(`❌ فشل رفع الملف من URL ${url}:`, err.message);
     return null;
-  }
-}
-
-// ================ تطبيق حد 7 أوامر نشطة للخطة المجانية ================
-async function enforceFreePlanLimits(userId, profile) {
-  const user = await User.findById(userId);
-  if (!user || user.plan !== "free") return;
-
-  const giftCommands = await GiftCommand.find({
-    userId,
-    profile,
-    active: true,
-  }).sort({ createdAt: 1 });
-
-  const interactionCommands = await InteractionCommand.find({
-    userId,
-    profile,
-    active: true,
-  }).sort({ createdAt: 1 });
-
-  const allActive = [...giftCommands, ...interactionCommands];
-  allActive.sort((a, b) => a.createdAt - b.createdAt);
-
-  if (allActive.length <= 7) return;
-
-  const toDisable = allActive.slice(0, allActive.length - 7);
-  for (const cmd of toDisable) {
-    cmd.active = false;
-    await cmd.save();
   }
 }
 
@@ -967,7 +954,7 @@ async function sendRconCommand(userId, command, playerName = null) {
   }
 }
 
-// ================ وظيفة Webhook ================
+// ================ وظيفة Webhook (معدلة لدعم localhost عبر العميل المحلي) ================
 async function sendWebhook(webhookUrl, data, userId = null) {
   if (!webhookUrl || !webhookUrl.trim()) return;
   const isLocalhost =
@@ -1020,9 +1007,10 @@ async function sendWebhook(webhookUrl, data, userId = null) {
 
 // ================ تشغيل الصوت ================
 function playAudio(file, volume = 100, targetUserId = null) {
+  // إذا كان الملف محلي (من مجلد /audios/)، شغّله مباشرة
   if (file && file.startsWith("/audios/")) {
     const payload = {
-      filename: file,
+      filename: file, // الرابط النسبي الصحيح
       volume: Math.min(100, Math.max(0, parseInt(volume) || 100)),
       timestamp: Date.now(),
       isDefault: true,
@@ -1032,15 +1020,17 @@ function playAudio(file, volume = 100, targetUserId = null) {
     } else {
       io.emit("play-sound", payload);
     }
-    return;
+    return; // خلاص، ما نكملش
   }
 
+  // غير كده (ملف مرفوع من المستخدم)، نبحث عنه في قاعدة البيانات لنجيب رابط Cloudinary
   Audio.findOne({ file })
     .then((audio) => {
       let audioUrl = file;
       if (audio && audio.cloudinaryUrl) {
         audioUrl = audio.cloudinaryUrl;
       } else {
+        // fallback لو مش موجود في الداتابيز
         audioUrl = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/raw/upload/${encodeURIComponent(file)}`;
       }
       const payload = {
@@ -1069,7 +1059,7 @@ function playAudio(file, volume = 100, targetUserId = null) {
     });
 }
 
-// ================ الوظيفة الرئيسية لتنفيذ الإجراء ================
+// ================ الوظيفة الرئيسية لتنفيذ الإجراء (بما فيها الكيستروك) ================
 async function executeAction(cmdObj, triggerUser = "Unknown", userId) {
   if (!cmdObj.active) {
     logger.info(`🚫 الأمر غير مفعل: ${cmdObj.name || cmdObj._id}`);
@@ -1093,7 +1083,7 @@ async function executeAction(cmdObj, triggerUser = "Unknown", userId) {
     playVideo = true,
     keystrokeText = null,
     combo = null,
-    duration = 5,
+    duration = 5, // القيمة الافتراضية
   } = cmdObj;
 
   if (oncePerLive && _id && userId) {
@@ -1211,6 +1201,7 @@ async function executeAction(cmdObj, triggerUser = "Unknown", userId) {
       }
     }
   }
+  // إرسال تراكب إذا كان مفعلاً (لحالة التنفيذ اليدوي أو عندما لا تكون الصورة متوفرة)
   if (cmdObj.showOverlay && userId) {
     const room = `user-${userId}`;
     io.to(room).emit("show-overlay", {
@@ -1296,6 +1287,7 @@ function getUserRealName(data) {
     user.uniqueId,
     user.unique_id,
     user.username,
+    // إضافات
     user.name,
     user.userName,
     data.nickname,
@@ -1310,7 +1302,9 @@ function getUserRealName(data) {
 
 function getUserAvatar(data) {
   const user = data.user || {};
-  const paths = [
+
+  // قائمة مسارات صورة المستخدم (فقط من user)
+  const userAvatarPaths = [
     user.avatarThumb?.url_list?.[0],
     user.avatar_thumb?.url_list?.[0],
     user.avatarThumbMedium?.url_list?.[0],
@@ -1325,25 +1319,29 @@ function getUserAvatar(data) {
     user.avatar_thumb?.url,
     user.profilePicture?.url,
     user.profile_picture?.url,
-    user.user?.avatarThumb?.url_list?.[0],
+    user.user?.avatarThumb?.url_list?.[0], // بعض النسخ
     user.user?.avatar_thumb?.url_list?.[0],
   ];
-  for (let path of paths) {
+
+  for (let path of userAvatarPaths) {
     if (path && typeof path === "string" && path.startsWith("http")) {
       console.log(`✅ تم العثور على صورة المستخدم: ${path}`);
       return path;
     }
   }
+
   console.warn("⚠️ لم يتم العثور على صورة للمستخدم");
   return "";
 }
-
+// جلب صورة المستخدم من TikTok باستخدام API خارجي (بدون scraping)
 async function fetchUserAvatarFromTikTok(uniqueId) {
   if (!uniqueId) return "";
+  // التحقق من الكاش
   if (userAvatarCache.has(uniqueId)) {
     return userAvatarCache.get(uniqueId);
   }
   try {
+    // استخدام API TikWM (موثوق وسريع)
     const url = `https://www.tikwm.com/api/user/?unique_id=${uniqueId}`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -1360,8 +1358,10 @@ async function fetchUserAvatarFromTikTok(uniqueId) {
     const data = await response.json();
     if (data && data.data && data.data.avatar) {
       let avatarUrl = data.data.avatar;
+      // تأكد من أنها https
       if (avatarUrl.startsWith("//")) avatarUrl = "https:" + avatarUrl;
       userAvatarCache.set(uniqueId, avatarUrl);
+      // تنظيف الكاش بعد ساعة
       setTimeout(() => userAvatarCache.delete(uniqueId), 60 * 60 * 1000);
       console.log(`✅ تم جلب صورة المستخدم ${uniqueId} عبر API: ${avatarUrl}`);
       return avatarUrl;
@@ -1372,13 +1372,19 @@ async function fetchUserAvatarFromTikTok(uniqueId) {
   return "";
 }
 
+// دالة موحدة للحصول على رابط الصورة (مع fallback)
 async function getAvatarWithFallback(data, uniqueId, timeoutMs = 800) {
+  // 1. حاول الحصول على الصورة من البيانات مباشرة
   let avatar = getUserAvatar(data);
   if (avatar) return avatar;
+
+  // 2. إذا كان لدينا uniqueId، حاول الجلب من TikTok مع مهلة
   if (uniqueId) {
+    // تحقق من الكاش أولاً
     if (userAvatarCache.has(uniqueId)) {
       return userAvatarCache.get(uniqueId);
     }
+    // جلب غير متزامن مع مهلة
     try {
       const fetchPromise = fetchUserAvatarFromTikTok(uniqueId);
       const timeoutPromise = new Promise((_, reject) =>
@@ -1390,7 +1396,7 @@ async function getAvatarWithFallback(data, uniqueId, timeoutMs = 800) {
       console.warn(`⚠️ فشل جلب صورة ${uniqueId}:`, err.message);
     }
   }
-  return "";
+  return ""; // لا صورة
 }
 
 function normalizeUser(u) {
@@ -1420,9 +1426,11 @@ async function connectUser(userId, username) {
     apiKey: BLACKMOON_KEY,
   });
 
+  // متغير للطباعة لمرة واحدة لمعرفة هيكل البيانات
   let debugOnce = false;
 
   connection.on(WebcastEvent.GIFT, async (data) => {
+    // طباعة هيكل البيانات مرة واحدة فقط
     if (!debugOnce) {
       console.log("🔍 هيكل بيانات الهدية (GIFT) - أول مرة:");
       console.log(JSON.stringify(data, null, 2).substring(0, 2000));
@@ -1469,7 +1477,7 @@ async function connectUser(userId, username) {
         st.ts = now;
         giftStreakState.set(streakKey, st);
         if (repeatEnd) {
-          if (delta > 0) {
+          if (delta > 0)
             await processGiftDelta({
               userId,
               sender,
@@ -1478,7 +1486,6 @@ async function connectUser(userId, username) {
               newRepeat: repeatCount,
               data,
             });
-          }
           giftStreakState.delete(streakKey);
           return;
         }
@@ -1546,10 +1553,12 @@ async function connectUser(userId, username) {
           await executeAction(cmdObj, sender, userId);
         }
       }
+      // إرسال التراكب إذا كان مفعلاً (باستخدام الصورة والاسم الحقيقي)
       if (giftCmd && giftCmd.showOverlay && userId) {
         const realName = getUserRealName(data);
-        const uniqueId = getSenderFromEvent(data);
+        const uniqueId = getSenderFromEvent(data); // المعرف الفريد للمستخدم
         const avatar = await getAvatarWithFallback(data, uniqueId, 800);
+
         io.to(`user-${userId}`).emit("show-overlay", {
           username: realName,
           avatar: avatar,
@@ -1562,8 +1571,7 @@ async function connectUser(userId, username) {
         userProfile,
       ).filter((i) => i.type === "gift");
       for (const ic of giftInteractions) {
-        // يمكن إضافة منطق لاحقاً
-      }
+      } // يمكن إضافة منطق لاحقاً
     } catch (err) {
       logger.error("❌ processGiftDelta error:", err.message);
     }
@@ -1586,6 +1594,7 @@ async function connectUser(userId, username) {
           normalizeUser(cmd.targetUser) !== sender
         )
           continue;
+        // إرسال التراكب إذا كان مفعلاً (صورة المستخدم واسمه الحقيقي)
         if (cmd.showOverlay && userId) {
           const realName = getUserRealName(data);
           const uniqueId = getSenderFromEvent(data);
@@ -1598,11 +1607,8 @@ async function connectUser(userId, username) {
           });
         }
         if (cmd.keyword && cmd.keyword.trim()) {
-          if (
-            comment.toLowerCase().includes(cmd.keyword.trim().toLowerCase())
-          ) {
+          if (comment.toLowerCase().includes(cmd.keyword.trim().toLowerCase()))
             await executeAction(addKeystrokeToCommand(cmd), sender, userId);
-          }
         } else {
           await executeAction(addKeystrokeToCommand(cmd), sender, userId);
         }
@@ -1627,6 +1633,7 @@ async function connectUser(userId, username) {
           normalizeUser(cmd.targetUser) !== sender
         )
           continue;
+        // إرسال التراكب إذا كان مفعلاً
         if (cmd.showOverlay && userId) {
           const realName = getUserRealName(data);
           const uniqueId = getSenderFromEvent(data);
@@ -1677,6 +1684,7 @@ async function connectUser(userId, username) {
           normalizeUser(cmd.targetUser) !== sender
         )
           continue;
+        // إرسال التراكب إذا كان مفعلاً
         if (cmd.showOverlay && userId) {
           const realName = getUserRealName(data);
           const uniqueId = getSenderFromEvent(data);
@@ -1724,6 +1732,7 @@ async function connectUser(userId, username) {
           normalizeUser(cmd.targetUser) !== sender
         )
           continue;
+        // إرسال التراكب إذا كان مفعلاً
         if (cmd.showOverlay && userId) {
           const realName = getUserRealName(data);
           const uniqueId = getSenderFromEvent(data);
@@ -1806,12 +1815,10 @@ app.post("/api/auth/register", authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password)
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "البريد الإلكتروني وكلمة المرور مطلوبان",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "البريد الإلكتروني وكلمة المرور مطلوبان",
+      });
     const existingUser = await User.findOne({ email });
     if (existingUser)
       return res
@@ -1848,6 +1855,7 @@ app.post("/api/auth/register", authLimiter, async (req, res) => {
       sameSite: "none",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
+
     res.json({ success: true, token });
   } catch (err) {
     logger.error("❌ خطأ في التسجيل:", err.message);
@@ -1859,12 +1867,10 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password)
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "البريد الإلكتروني وكلمة المرور مطلوبان",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "البريد الإلكتروني وكلمة المرور مطلوبان",
+      });
     const user = await User.findOne({ email });
     if (!user)
       return res
@@ -1905,7 +1911,7 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
   }
 });
 
-// ================ نقطة نهاية لإرجاع التوكن ================
+// ================ نقطة نهاية لإرجاع التوكن فقط (بدون HTML) ================
 app.get("/api/user/screen-token", authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -1926,17 +1932,17 @@ app.get("/api/user/screen-token", authenticateToken, async (req, res) => {
   }
 });
 
-// ================ لوحة التحكم ================
+// ================ لوحة التحكم (توجيه إلى الفرونت) ================
 app.get("/admin", authenticateToken, isAdmin, (req, res) => {
   res.redirect(`${FRONTEND_URL}/admin`);
 });
 
-// ================ صفحة الشاشات ================
+// ================ نقطة نهاية لعرض صفحة الشاشة الفعلية (مطلوبة لـ OBS و TikTok Live Studio) ================
 app.get("/screens/:token/:screenNumber", async (req, res) => {
   try {
     const { token, screenNumber } = req.params;
     const screenNum = parseInt(screenNumber.replace(".html", ""), 10);
-    const unmuted = true;
+    const unmuted = true; // req.query.unmuted === "1";
 
     if (isNaN(screenNum) || screenNum < 1 || screenNum > 10)
       return res.status(404).send("Screen not found");
@@ -1962,6 +1968,8 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
   <style>
     html,body{ margin:0;padding:0;width:100%;height:100%; background:transparent; overflow:hidden; }
     video{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:transparent; display:none; }
+    
+    /* ========== تراكب الشاشة ========== */
     .overlay-container {
       position: fixed;
       top: 20%;
@@ -1983,18 +1991,40 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       box-shadow: 0 4px 15px rgba(0,0,0,0.3);
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
-    .overlay-avatar { width:70px; height:70px; border-radius:50%; object-fit:cover; border:3px solid #4caf50; background:#1e1e1e; }
-    .overlay-username { font-size:20px; font-weight:bold; margin:5px 0 0; text-shadow:1px 1px 2px black; }
-    .overlay-text { font-size:16px; color:#ffd966; background:rgba(0,0,0,0.5); padding:5px 12px; border-radius:20px; margin-top:5px; }
+    .overlay-avatar {
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 3px solid #4caf50;
+      background: #1e1e1e;
+    }
+    .overlay-username {
+      font-size: 20px;
+      font-weight: bold;
+      margin: 5px 0 0;
+      text-shadow: 1px 1px 2px black;
+    }
+    .overlay-text {
+      font-size: 16px;
+      color: #ffd966;
+      background: rgba(0,0,0,0.5);
+      padding: 5px 12px;
+      border-radius: 20px;
+      margin-top: 5px;
+    }
   </style>
 </head>
 <body>
+  <!-- تراكب الشاشة -->
   <div id="overlay" class="overlay-container">
     <img id="overlayAvatar" class="overlay-avatar" src="" alt="">
     <div id="overlayUsername" class="overlay-username"></div>
     <div id="overlayText" class="overlay-text"></div>
   </div>
+
   <video id="videoPlayer" autoplay playsinline ${unmuted ? "" : "muted"}></video>
+  
   <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
   <script>
   (function(){
@@ -2133,6 +2163,7 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       }
     });
 
+    // ==================== تراكب الشاشة ====================
     const overlayDiv = document.getElementById('overlay');
     const overlayAvatar = document.getElementById('overlayAvatar');
     const overlayUsername = document.getElementById('overlayUsername');
@@ -2147,6 +2178,7 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
         overlayUsername.textContent = data.username || 'مستخدم';
         overlayText.textContent = data.text || '';
         overlayDiv.style.display = 'flex';
+        
         if (overlayTimeout) clearTimeout(overlayTimeout);
         overlayTimeout = setTimeout(() => {
           overlayDiv.style.display = 'none';
@@ -2156,6 +2188,7 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       }
     });
 
+    // أحداث إيقاف الصوت والفيديو
     socket.on('stop-sound', () => {
       if (currentAudioElement) {
         currentAudioElement.pause();
@@ -2211,7 +2244,6 @@ app.post(
     }
   },
 );
-
 app.post(
   "/api/paypal/webhook",
   express.raw({ type: "application/json" }),
@@ -2266,11 +2298,12 @@ app.post(
   },
 );
 
-// ================ حذف ملفات ================
+// ================ حذف ملف صوتي وفيديو ================
 app.delete("/api/audio/:filename", authenticateToken, async (req, res) => {
   try {
     const filename = req.params.filename;
-    const keep = req.query.keep === "true";
+    const keep = req.query.keep === "true"; // إضافة معامل keep
+
     const audioDoc = await Audio.findOne({ file: filename });
     if (!audioDoc)
       return res
@@ -2281,12 +2314,15 @@ app.delete("/api/audio/:filename", authenticateToken, async (req, res) => {
         .status(403)
         .json({ success: false, message: "غير مصرح لك بحذف هذا الملف" });
 
+    // حذف من Cloudinary فقط إذا لم يكن keep=true
     if (!keep) {
       const basePublicId = path.parse(filename).name;
       await cloudinary.uploader.destroy(`blackmoon_audio/${basePublicId}`, {
         resource_type: "raw",
       });
     }
+
+    // تحديث مساحة المستخدم وحذف السجل
     const user = await User.findById(req.user.id);
     if (user) {
       user.audioUsedMB = Math.max(0, user.audioUsedMB - audioDoc.sizeMB);
@@ -2308,6 +2344,7 @@ app.delete("/api/audio/:filename", authenticateToken, async (req, res) => {
       },
     };
     io.to(`user-${req.user.id}`).emit("storage-update", storageData);
+
     res.json({
       success: true,
       message: keep
@@ -2320,11 +2357,12 @@ app.delete("/api/audio/:filename", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
+// حذف ملف فيديو
 app.delete("/api/video/:filename", authenticateToken, async (req, res) => {
   try {
     const filename = req.params.filename;
-    const keep = req.query.keep === "true";
+    const keep = req.query.keep === "true"; // قراءة المعامل keep
+
     const videoDoc = await Video.findOne({ file: filename });
     if (!videoDoc)
       return res
@@ -2335,18 +2373,23 @@ app.delete("/api/video/:filename", authenticateToken, async (req, res) => {
         .status(403)
         .json({ success: false, message: "غير مصرح لك بحذف هذا الملف" });
 
+    // حذف من Cloudinary فقط إذا لم يكن keep=true
     if (!keep) {
       const basePublicId = path.parse(filename).name;
       await cloudinary.uploader.destroy(`blackmoon_videos/${basePublicId}`, {
         resource_type: "video",
       });
     }
+
+    // حذف السجل من قاعدة البيانات وتحديث مساحة المستخدم
     const user = await User.findById(req.user.id);
     if (user) {
       user.videoUsedMB = Math.max(0, user.videoUsedMB - videoDoc.sizeMB);
       await user.save();
     }
     await Video.deleteOne({ file: filename });
+
+    // إزالة الفيديو من الأوامر التي تستخدمه
     await GiftCommand.updateMany(
       { video: filename },
       { $set: { video: null } },
@@ -2370,6 +2413,7 @@ app.delete("/api/video/:filename", authenticateToken, async (req, res) => {
       },
     };
     io.to(`user-${req.user.id}`).emit("storage-update", storageData);
+
     res.json({
       success: true,
       message: keep
@@ -2409,7 +2453,6 @@ app.get("/api/user/storage", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
 app.get("/api/user/subscription", authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -2448,7 +2491,6 @@ app.get("/api/auth/me", authenticateToken, async (req, res) => {
     subscription: subscriptionInfo,
   });
 });
-
 app.post("/api/auth/logout", (req, res) => {
   res.clearCookie("token", {
     httpOnly: true,
@@ -2458,22 +2500,25 @@ app.post("/api/auth/logout", (req, res) => {
   });
   res.json({ success: true, message: "تم تسجيل الخروج" });
 });
-
 app.delete("/api/auth/delete", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
+
     const giftCommands = await GiftCommand.find({ userId });
     const interactionCommands = await InteractionCommand.find({ userId });
     const allCommands = [...giftCommands, ...interactionCommands];
+
     for (const cmd of allCommands) {
       await deleteFilesForCommand(cmd, userId);
     }
+
     await GiftCommand.deleteMany({ userId });
     await InteractionCommand.deleteMany({ userId });
     await Audio.deleteMany({ userId });
     await Video.deleteMany({ userId });
     await Profile.deleteMany({ owner: userId });
     await User.findByIdAndDelete(userId);
+
     res.clearCookie("token");
     res.json({
       success: true,
@@ -2484,7 +2529,6 @@ app.delete("/api/auth/delete", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
 app.post("/api/auth/refresh", authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -2513,7 +2557,6 @@ app.post("/api/auth/refresh", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
 app.post("/api/tiktok-disconnect", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -2530,7 +2573,6 @@ app.post("/api/tiktok-disconnect", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
 app.delete("/api/tiktok-user", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -2547,7 +2589,6 @@ app.delete("/api/tiktok-user", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
 app.post("/api/tiktok-user", authenticateToken, async (req, res) => {
   const { username } = req.body;
   if (!username)
@@ -2563,7 +2604,7 @@ app.post("/api/tiktok-user", authenticateToken, async (req, res) => {
 });
 
 app.post("/api/tiktok-user", authenticateToken, async (req, res) => {
-  const { username, connect = true } = req.body;
+  const { username, connect = true } = req.body; // افتراضي true للتوافق مع السلوك القديم
   if (!username)
     return res
       .status(400)
@@ -2587,7 +2628,6 @@ app.get("/api/live-status", authenticateToken, async (req, res) => {
   const username = user?.tiktokUsername || null;
   res.json({ isLive, username });
 });
-
 app.get("/api/profiles", authenticateToken, async (req, res) => {
   try {
     await ensureUserProfiles(req.user.id);
@@ -2612,12 +2652,10 @@ app.post(
     try {
       const plan = await getUserPlan(req.user.id);
       if (plan !== "paid")
-        return res
-          .status(403)
-          .json({
-            success: false,
-            message: "لا يمكنك نسخ بروفايل في النسخة المجانية",
-          });
+        return res.status(403).json({
+          success: false,
+          message: "لا يمكنك نسخ بروفايل في النسخة المجانية",
+        });
       const sourceId = parseInt(req.params.sourceId);
       if (sourceId < 1 || sourceId > MAX_PROFILES)
         return res
@@ -2625,12 +2663,10 @@ app.post(
           .json({ success: false, message: "مصدر غير صالح" });
       const { targetProfile } = req.body;
       if (!targetProfile)
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "يجب تحديد البروفايل المستهدف (targetProfile) بين 1 و 20",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "يجب تحديد البروفايل المستهدف (targetProfile) بين 1 و 20",
+        });
       const targetId = parseInt(targetProfile);
       if (targetId < 1 || targetId > MAX_PROFILES)
         return res
@@ -2727,24 +2763,25 @@ app.get("/api/gifts", async (req, res) => {
     res.status(500).json({ success: false, gifts: [] });
   }
 });
-
 app.get("/api/audio", authenticateToken, async (req, res) => {
   try {
     const userAudios = await Audio.find({ userId: req.user.id }).sort({
       name: 1,
     });
     const defaultAudios = await getDefaultAudios();
+
+    // دمج القائمتين: الافتراضية الأول، ثم المرفوعة (مع تحويل الـ mongoose documents)
     const combined = [
       ...defaultAudios,
       ...userAudios.map((a) => ({ ...a.toObject(), isDefault: false })),
     ];
+
     res.json({ success: true, audios: combined });
   } catch (err) {
     logger.error("❌ خطأ في جلب الأصوات:", err.message);
     res.status(500).json({ success: false, audios: [] });
   }
 });
-
 app.get("/api/videos", authenticateToken, async (req, res) => {
   try {
     const videos = await Video.find({ userId: req.user.id }).sort({
@@ -2756,7 +2793,6 @@ app.get("/api/videos", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, videos: [] });
   }
 });
-
 app.get("/api/streamer", async (req, res) => {
   res.json({ isLive: false });
 });
@@ -2772,7 +2808,6 @@ app.get("/api/rcon-config", authenticateToken, async (req, res) => {
   };
   res.json(config);
 });
-
 app.post("/api/rcon-config", authenticateToken, async (req, res) => {
   const { host, port, password, player } = req.body;
   const user = await User.findById(req.user.id);
@@ -2787,26 +2822,21 @@ app.post("/api/rcon-config", authenticateToken, async (req, res) => {
   }
   res.json({ success: true, config: user.rconConfig });
 });
-
 app.post("/api/profile/select", authenticateToken, async (req, res) => {
   try {
     const p = parseInt(req.body.profile, 10);
     if (!p || p < 1 || p > MAX_PROFILES)
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: `يجب أن يكون البروفايل بين 1 و ${MAX_PROFILES}`,
-        });
+      return res.status(400).json({
+        success: false,
+        message: `يجب أن يكون البروفايل بين 1 و ${MAX_PROFILES}`,
+      });
     const canAccess = await canAccessProfile(req.user.id, p);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message:
-            "لا يمكنك الوصول إلى هذا البروفايل في النسخة المجانية. قم بالترقية.",
-        });
+      return res.status(403).json({
+        success: false,
+        message:
+          "لا يمكنك الوصول إلى هذا البروفايل في النسخة المجانية. قم بالترقية.",
+      });
     const user = await User.findById(req.user.id);
     if (!user)
       return res
@@ -2829,7 +2859,6 @@ app.post("/api/profile/select", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
 app.put("/api/profile/:id/name", authenticateToken, async (req, res) => {
   try {
     const profileId = parseInt(req.params.id);
@@ -2842,12 +2871,10 @@ app.put("/api/profile/:id/name", authenticateToken, async (req, res) => {
       return res.status(400).json({ success: false, message: "الاسم مطلوب" });
     const canAccess = await canAccessProfile(req.user.id, profileId);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "لا يمكنك تعديل هذا البروفايل في النسخة المجانية",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك تعديل هذا البروفايل في النسخة المجانية",
+      });
     await Profile.updateOne(
       { owner: req.user.id, id: profileId },
       { $set: { name: name.trim() } },
@@ -2874,12 +2901,10 @@ app.get("/api/gift-commands", authenticateToken, async (req, res) => {
         : 1;
     const canAccess = await canAccessProfile(req.user.id, p);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "لا يمكنك الوصول إلى أوامر هذا البروفايل",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك الوصول إلى أوامر هذا البروفايل",
+      });
     const gifts = await GiftCommand.find({
       userId: req.user.id,
       profile: p,
@@ -2890,7 +2915,6 @@ app.get("/api/gift-commands", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-
 app.post(
   "/api/gift-commands/:id/execute",
   authenticateToken,
@@ -2907,12 +2931,10 @@ app.post(
         return res.status(403).json({ success: false, message: "غير مصرح به" });
       const canAccess = await canAccessProfile(req.user.id, gift.profile);
       if (!canAccess)
-        return res
-          .status(403)
-          .json({
-            success: false,
-            message: "لا يمكنك تنفيذ أمر من بروفايل غير مصرح به",
-          });
+        return res.status(403).json({
+          success: false,
+          message: "لا يمكنك تنفيذ أمر من بروفايل غير مصرح به",
+        });
       const count = Math.max(1, parseInt(req.body?.count || 1, 10) || 1);
       const timesToRun = Math.min(count, 10);
       const requestedScreen = req.body?.screen
@@ -2946,7 +2968,6 @@ app.post(
     }
   },
 );
-
 app.post(
   "/api/interaction-commands/:id/execute",
   authenticateToken,
@@ -2963,12 +2984,10 @@ app.post(
         return res.status(403).json({ success: false, message: "غير مصرح به" });
       const canAccess = await canAccessProfile(req.user.id, cmd.profile);
       if (!canAccess)
-        return res
-          .status(403)
-          .json({
-            success: false,
-            message: "لا يمكنك تنفيذ أمر من بروفايل غير مصرح به",
-          });
+        return res.status(403).json({
+          success: false,
+          message: "لا يمكنك تنفيذ أمر من بروفايل غير مصرح به",
+        });
       const count = Math.max(1, parseInt(req.body?.count || 1, 10) || 1);
       const timesToRun = Math.min(count, 10);
       const requestedScreen = req.body?.screen
@@ -3021,8 +3040,6 @@ app.post(
     }
   },
 );
-
-// ================ POST /api/gift-commands (بعد التعديل) ================
 app.post("/api/gift-commands", authenticateToken, async (req, res) => {
   try {
     const body = req.body;
@@ -3037,16 +3054,21 @@ app.post("/api/gift-commands", authenticateToken, async (req, res) => {
     );
     const canAccess = await canAccessProfile(req.user.id, profile);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
+      return res.status(403).json({
+        success: false,
+        message:
+          "لا يمكنك إنشاء أوامر لهذا البروفايل في النسخة المجانية. قم بالترقية.",
+      });
+    const plan = await getUserPlan(req.user.id);
+    if (plan === "free") {
+      const total = await getTotalCommandsForUser(req.user.id);
+      if (total >= 7)
+        return res.status(403).json({
           success: false,
           message:
-            "لا يمكنك إنشاء أوامر لهذا البروفايل في النسخة المجانية. قم بالترقية.",
+            "لقد وصلت للحد الأقصى للأوامر (7) في النسخة المجانية. قم بالترقية لإضافة المزيد.",
         });
-
-    // تم إزالة شرط plan === "free"
-
+    }
     if (!body.giftId && body.giftId !== 0)
       return res.status(400).json({ success: false, message: "giftId مطلوب" });
     const giftIdToSave = String(body.giftId).trim();
@@ -3056,13 +3078,10 @@ app.post("/api/gift-commands", authenticateToken, async (req, res) => {
       profile,
     });
     if (exists)
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "هذا giftId موجود مسبقاً في هذا البروفايل",
-        });
-
+      return res.status(400).json({
+        success: false,
+        message: "هذا giftId موجود مسبقاً في هذا البروفايل",
+      });
     const newGift = await GiftCommand.create({
       giftId: giftIdToSave,
       name: body.name || `Gift ${giftIdToSave}`,
@@ -3088,8 +3107,6 @@ app.post("/api/gift-commands", authenticateToken, async (req, res) => {
       overlayText: body.overlayText || "",
       duration: parseInt(body.duration) || 5,
     });
-
-    await enforceFreePlanLimits(req.user.id, profile);
     await refreshCachesForUser(req.user.id);
     res.json({ success: true, gift: newGift });
   } catch (err) {
@@ -3097,8 +3114,6 @@ app.post("/api/gift-commands", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
-// ================ PUT /api/gift-commands/:id ================
 app.put("/api/gift-commands/:id", authenticateToken, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id))
@@ -3110,12 +3125,10 @@ app.put("/api/gift-commands/:id", authenticateToken, async (req, res) => {
       return res.status(403).json({ success: false, message: "غير مصرح به" });
     const canAccess = await canAccessProfile(req.user.id, gift.profile);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "لا يمكنك تعديل أمر من بروفايل غير مصرح به",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك تعديل أمر من بروفايل غير مصرح به",
+      });
     Object.assign(gift, req.body);
     await gift.save();
     await refreshCachesForUser(req.user.id);
@@ -3125,8 +3138,6 @@ app.put("/api/gift-commands/:id", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
-// ================ DELETE /api/gift-commands/:id ================
 app.delete("/api/gift-commands/:id", authenticateToken, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id))
@@ -3138,17 +3149,19 @@ app.delete("/api/gift-commands/:id", authenticateToken, async (req, res) => {
       return res.status(403).json({ success: false, message: "غير مصرح به" });
     const canAccess = await canAccessProfile(req.user.id, gift.profile);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "لا يمكنك حذف أمر من بروفايل غير مصرح به",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك حذف أمر من بروفايل غير مصرح به",
+      });
 
+    // حذف الملفات وتحديث مساحة المستخدم
     await deleteFilesForCommand(gift, req.user.id);
+
+    // حذف الأمر
     await GiftCommand.findByIdAndDelete(req.params.id);
     await refreshCachesForUser(req.user.id);
 
+    // إرسال بيانات التخزين المحدثة
     const updatedUser = await User.findById(req.user.id);
     const storageData = {
       audio: {
@@ -3163,14 +3176,13 @@ app.delete("/api/gift-commands/:id", authenticateToken, async (req, res) => {
       },
     };
     io.to(`user-${req.user.id}`).emit("storage-update", storageData);
+
     res.json({ success: true, storage: storageData });
   } catch (err) {
     logger.error("❌ خطأ في حذف أمر الهدية:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
-
-// ================ DELETE /api/gift-commands ================
 app.delete("/api/gift-commands", authenticateToken, async (req, res) => {
   try {
     const profile = parseInt(req.query.profile);
@@ -3180,16 +3192,15 @@ app.delete("/api/gift-commands", authenticateToken, async (req, res) => {
         .json({ success: false, message: "profile مطلوب وصحيح" });
     const canAccess = await canAccessProfile(req.user.id, profile);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "لا يمكنك حذف أوامر من بروفايل غير مصرح به",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك حذف أوامر من بروفايل غير مصرح به",
+      });
 
     const commands = await GiftCommand.find({ userId: req.user.id, profile });
     let totalAudioSize = 0,
       totalVideoSize = 0;
+
     for (const cmd of commands) {
       const { audioSize, videoSize } = await deleteFilesForCommand(
         cmd,
@@ -3198,11 +3209,13 @@ app.delete("/api/gift-commands", authenticateToken, async (req, res) => {
       totalAudioSize += audioSize;
       totalVideoSize += videoSize;
     }
+
     const result = await GiftCommand.deleteMany({
       userId: req.user.id,
       profile,
     });
     await refreshCachesForUser(req.user.id);
+
     const updatedUser = await User.findById(req.user.id);
     const storageData = {
       audio: {
@@ -3217,6 +3230,7 @@ app.delete("/api/gift-commands", authenticateToken, async (req, res) => {
       },
     };
     io.to(`user-${req.user.id}`).emit("storage-update", storageData);
+
     res.json({
       success: true,
       deletedCount: result.deletedCount,
@@ -3228,7 +3242,6 @@ app.delete("/api/gift-commands", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
 app.get("/api/interaction-commands", authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -3242,12 +3255,10 @@ app.get("/api/interaction-commands", authenticateToken, async (req, res) => {
         : 1;
     const canAccess = await canAccessProfile(req.user.id, p);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "لا يمكنك الوصول إلى أوامر هذا البروفايل",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك الوصول إلى أوامر هذا البروفايل",
+      });
     const list = await InteractionCommand.find({
       userId: req.user.id,
       profile: p,
@@ -3258,8 +3269,6 @@ app.get("/api/interaction-commands", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-
-// ================ POST /api/interaction-commands (بعد التعديل) ================
 app.post("/api/interaction-commands", authenticateToken, async (req, res) => {
   try {
     const payload = req.body;
@@ -3273,28 +3282,31 @@ app.post("/api/interaction-commands", authenticateToken, async (req, res) => {
     );
     const canAccess = await canAccessProfile(req.user.id, profile);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
+      return res.status(403).json({
+        success: false,
+        message:
+          "لا يمكنك إنشاء أوامر لهذا البروفايل في النسخة المجانية. قم بالترقية.",
+      });
+    const plan = await getUserPlan(req.user.id);
+    if (plan === "free") {
+      const total = await getTotalCommandsForUser(req.user.id);
+      if (total >= 7)
+        return res.status(403).json({
           success: false,
           message:
-            "لا يمكنك إنشاء أوامر لهذا البروفايل في النسخة المجانية. قم بالترقية.",
+            "لقد وصلت للحد الأقصى للأوامر (7) في النسخة المجانية. قم بالترقية لإضافة المزيد.",
         });
-
-    // تم إزالة شرط plan === "free"
-
+    }
     if (
       !payload.type ||
       !["follow", "like", "comment", "share", "gift", "all"].includes(
         payload.type,
       )
     )
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: `النوع غير مدعوم. الأنواع المسموحة: follow, like, comment, share, gift, all`,
-        });
+      return res.status(400).json({
+        success: false,
+        message: `النوع غير مدعوم. الأنواع المسموحة: follow, like, comment, share, gift, all`,
+      });
     if (payload.combo && payload.combo.trim() !== "") {
       const existingCombo = await InteractionCommand.findOne({
         userId: req.user.id,
@@ -3302,12 +3314,10 @@ app.post("/api/interaction-commands", authenticateToken, async (req, res) => {
         combo: payload.combo.trim(),
       });
       if (existingCombo)
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "هذا الاختصار موجود بالفعل في هذا البروفايل",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "هذا الاختصار موجود بالفعل في هذا البروفايل",
+        });
     }
     payload.profile = profile;
     payload.repeat = parseInt(payload.repeat || 1, 10) || 1;
@@ -3326,12 +3336,13 @@ app.post("/api/interaction-commands", authenticateToken, async (req, res) => {
       payload.combo && payload.combo.trim() !== ""
         ? payload.combo.trim()
         : null;
+
+    // ✅ إضافة الحقول الجديدة للتراكب والمدة
     payload.showOverlay = payload.showOverlay === true;
     payload.overlayText = payload.overlayText || "";
     payload.duration = parseInt(payload.duration) || 5;
 
     const created = await InteractionCommand.create(payload);
-    await enforceFreePlanLimits(req.user.id, profile);
     await refreshCachesForUser(req.user.id);
     res.json({ success: true, command: created });
   } catch (err) {
@@ -3339,7 +3350,6 @@ app.post("/api/interaction-commands", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
 app.put(
   "/api/interaction-commands/:id",
   authenticateToken,
@@ -3356,12 +3366,10 @@ app.put(
         return res.status(403).json({ success: false, message: "غير مصرح به" });
       const canAccess = await canAccessProfile(req.user.id, cmd.profile);
       if (!canAccess)
-        return res
-          .status(403)
-          .json({
-            success: false,
-            message: "لا يمكنك تعديل أمر من بروفايل غير مصرح به",
-          });
+        return res.status(403).json({
+          success: false,
+          message: "لا يمكنك تعديل أمر من بروفايل غير مصرح به",
+        });
       if (
         req.body.combo &&
         req.body.combo !== cmd.combo &&
@@ -3374,12 +3382,10 @@ app.put(
           _id: { $ne: cmd._id },
         });
         if (existingCombo)
-          return res
-            .status(400)
-            .json({
-              success: false,
-              message: "هذا الاختصار موجود بالفعل في هذا البروفايل",
-            });
+          return res.status(400).json({
+            success: false,
+            message: "هذا الاختصار موجود بالفعل في هذا البروفايل",
+          });
         req.body.combo = req.body.combo.trim();
       } else if (req.body.combo === "" || req.body.combo === null)
         req.body.combo = null;
@@ -3393,38 +3399,52 @@ app.put(
     }
   },
 );
-
 app.delete(
   "/api/interaction-commands/:id",
   authenticateToken,
   async (req, res) => {
     try {
-      if (!mongoose.Types.ObjectId.isValid(req.params.id))
+      // 1. التحقق من صحة المعرف
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
         return res
           .status(400)
           .json({ success: false, message: "معرف غير صالح" });
+      }
+
+      // 2. جلب الأمر من قاعدة البيانات
       const cmd = await InteractionCommand.findById(req.params.id);
-      if (!cmd)
+      if (!cmd) {
         return res
           .status(404)
           .json({ success: false, message: "الأمر غير موجود" });
-      if (cmd.userId.toString() !== req.user.id)
+      }
+
+      // 3. التحقق من ملكية الأمر
+      if (cmd.userId.toString() !== req.user.id) {
         return res
           .status(403)
           .json({ success: false, message: "غير مصرح لك بحذف هذا الأمر" });
+      }
+
+      // 4. التحقق من صلاحية البروفايل (للمستخدمين المجانيين)
       const canAccess = await canAccessProfile(req.user.id, cmd.profile);
-      if (!canAccess)
-        return res
-          .status(403)
-          .json({
-            success: false,
-            message:
-              "لا يمكنك حذف أمر من بروفايل غير مصرح به في النسخة المجانية",
-          });
+      if (!canAccess) {
+        return res.status(403).json({
+          success: false,
+          message: "لا يمكنك حذف أمر من بروفايل غير مصرح به في النسخة المجانية",
+        });
+      }
 
       await deleteFilesForCommand(cmd, req.user.id);
+      // ====================================================
+
+      // 6. حذف الأمر نفسه من قاعدة البيانات
       await InteractionCommand.findByIdAndDelete(req.params.id);
+
+      // 7. تحديث الكاش الخاص بالمستخدم
       await refreshCachesForUser(req.user.id);
+
+      // 8. الرد بنجاح (تم حذف الأمر والملفات)
       res.json({
         success: true,
         message: "تم حذف الأمر والملفات المرتبطة بنجاح",
@@ -3435,7 +3455,6 @@ app.delete(
     }
   },
 );
-
 app.delete("/api/interaction-commands", authenticateToken, async (req, res) => {
   try {
     const profile = parseInt(req.query.profile);
@@ -3445,12 +3464,10 @@ app.delete("/api/interaction-commands", authenticateToken, async (req, res) => {
         .json({ success: false, message: "profile مطلوب وصحيح" });
     const canAccess = await canAccessProfile(req.user.id, profile);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "لا يمكنك حذف أوامر من بروفايل غير مصرح به",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك حذف أوامر من بروفايل غير مصرح به",
+      });
 
     const commands = await InteractionCommand.find({
       userId: req.user.id,
@@ -3458,6 +3475,7 @@ app.delete("/api/interaction-commands", authenticateToken, async (req, res) => {
     });
     let totalAudioSize = 0,
       totalVideoSize = 0;
+
     for (const cmd of commands) {
       const { audioSize, videoSize } = await deleteFilesForCommand(
         cmd,
@@ -3466,11 +3484,13 @@ app.delete("/api/interaction-commands", authenticateToken, async (req, res) => {
       totalAudioSize += audioSize;
       totalVideoSize += videoSize;
     }
+
     const result = await InteractionCommand.deleteMany({
       userId: req.user.id,
       profile,
     });
     await refreshCachesForUser(req.user.id);
+
     const updatedUser = await User.findById(req.user.id);
     const storageData = {
       audio: {
@@ -3485,6 +3505,7 @@ app.delete("/api/interaction-commands", authenticateToken, async (req, res) => {
       },
     };
     io.to(`user-${req.user.id}`).emit("storage-update", storageData);
+
     res.json({
       success: true,
       deletedCount: result.deletedCount,
@@ -3496,8 +3517,7 @@ app.delete("/api/interaction-commands", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
-// ================ نقطة نهاية تنفيذ الاختصار ================
+// ================ نقطة نهاية تنفيذ الاختصار (keystroke) ================
 app.post("/api/execute-keystroke", authenticateToken, async (req, res) => {
   try {
     const { combo } = req.body;
@@ -3550,12 +3570,10 @@ app.post("/api/execute-keystroke", authenticateToken, async (req, res) => {
         keystroke: keystrokeText,
       });
     } else {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "لا يوجد عميل محلي ولا node-key-sender متاح",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "لا يوجد عميل محلي ولا node-key-sender متاح",
+      });
     }
   } catch (err) {
     logger.error("❌ خطأ في تنفيذ الاختصار:", err);
@@ -3571,7 +3589,6 @@ app.post("/api/play-sound", authenticateToken, (req, res) => {
   playAudio(filename, volume, req.user.id);
   res.json({ success: true });
 });
-
 app.post("/api/play-video", authenticateToken, async (req, res) => {
   const { filename, screen = 1, user = "Manual", volume = 100 } = req.body;
   if (!filename)
@@ -3588,12 +3605,10 @@ app.post("/api/play-video", authenticateToken, async (req, res) => {
   });
   res.json({ success: true });
 });
-
 app.post("/api/reset-live-state", authenticateToken, (req, res) => {
   resetOncePerLiveForUser(req.user.id);
   res.json({ success: true });
 });
-
 app.post("/api/test-webhook", authenticateToken, async (req, res) => {
   try {
     const { url, payload } = req.body;
@@ -3630,12 +3645,12 @@ app.post("/api/test-webhook", authenticateToken, async (req, res) => {
 });
 
 // ================ رفع الملفات ================
+
 const uploadTFC = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
-// ================ استيراد من ملف (مع التعديلات) ================
 app.post(
   "/api/profiles/import-file",
   authenticateToken,
@@ -3655,30 +3670,31 @@ app.post(
           .json({ success: false, message: "الملف ليس بصيغة JSON صحيحة" });
       }
       if (!Array.isArray(commands))
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "يجب أن يحتوي الملف على مصفوفة من الأوامر",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "يجب أن يحتوي الملف على مصفوفة من الأوامر",
+        });
       const user = await User.findById(req.user.id);
       const targetProfile = user ? user.selectedProfile : 1;
       const canAccess = await canAccessProfile(req.user.id, targetProfile);
       if (!canAccess)
-        return res
-          .status(403)
-          .json({
+        return res.status(403).json({
+          success: false,
+          message: "لا يمكنك استيراد الأوامر لهذا البروفايل في النسخة المجانية",
+        });
+      const plan = await getUserPlan(req.user.id);
+      if (plan === "free") {
+        const currentTotal = await getTotalCommandsForUser(req.user.id);
+        if (currentTotal + commands.length > 7)
+          return res.status(403).json({
             success: false,
-            message:
-              "لا يمكنك استيراد الأوامر لهذا البروفايل في النسخة المجانية",
+            message: `لا يمكن استيراد ${commands.length} أمر لأن الحد الأقصى للمجاني هو 7. لديك حاليًا ${currentTotal} أمر.`,
           });
-
-      // تم إزالة شرط plan === "free"
-
+      }
       const results = { added: 0, replaced: 0, skipped: 0, errors: [] };
       const replace = req.body.replace === "true";
 
-      // رفع الملفات من الروابط
+      // ===== رفع الملفات من الروابط (الصوت والفيديو) =====
       for (const cmd of commands) {
         if (cmd.audio) {
           const audioExists = await Audio.findOne({
@@ -3686,6 +3702,7 @@ app.post(
             userId: req.user.id,
           });
           if (!audioExists) {
+            // إذا كان الرابط يبدأ بـ http، حاول رفعه
             if (
               cmd.audio.startsWith("http://") ||
               cmd.audio.startsWith("https://")
@@ -3747,6 +3764,7 @@ app.post(
           }
         }
       }
+      // ===== نهاية رفع الملفات =====
 
       for (const cmd of commands) {
         try {
@@ -3793,15 +3811,12 @@ app.post(
               userId: req.user.id,
             });
             results.added++;
-          } else {
+          } else
             results.errors.push({ command: cmd, error: "نوع أمر غير معروف" });
-          }
         } catch (err) {
           results.errors.push({ command: cmd, error: err.message });
         }
       }
-
-      await enforceFreePlanLimits(req.user.id, targetProfile);
       await refreshCachesForUser(req.user.id);
       res.json({ success: true, results });
     } catch (err) {
@@ -3811,7 +3826,7 @@ app.post(
   },
 );
 
-// ================ استيراد JSON (مع التعديلات) ================
+// ================ استيراد الأوامر (JSON) ================
 app.post("/api/profiles/import", authenticateToken, async (req, res) => {
   try {
     const { commands, replace, profile: reqProfile } = req.body;
@@ -3822,22 +3837,28 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
     }
     const canAccess = await canAccessProfile(req.user.id, profile);
     if (!canAccess)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "لا يمكنك استيراد أوامر لهذا البروفايل في النسخة المجانية",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك استيراد أوامر لهذا البروفايل في النسخة المجانية",
+      });
     if (!Array.isArray(commands))
       return res
         .status(400)
         .json({ success: false, message: "يجب إرسال مصفوفة من الأوامر" });
-
-    // تم إزالة شرط plan === "free"
+    const plan = await getUserPlan(req.user.id);
+    if (plan === "free") {
+      const currentTotal = await getTotalCommandsForUser(req.user.id);
+      const newCommandsCount = commands.length;
+      if (currentTotal + newCommandsCount > 7)
+        return res.status(403).json({
+          success: false,
+          message: `لا يمكن استيراد ${newCommandsCount} أمر لأن الحد الأقصى للمجاني هو 7. لديك حاليًا ${currentTotal} أمر.`,
+        });
+    }
 
     const results = { added: 0, replaced: 0, skipped: 0, errors: [] };
 
-    // رفع الملفات من الروابط
+    // ===== رفع الملفات من الروابط (الصوت والفيديو) =====
     for (const cmd of commands) {
       if (cmd.audio) {
         const audioExists = await Audio.findOne({
@@ -3906,6 +3927,7 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
         }
       }
     }
+    // ===== نهاية رفع الملفات =====
 
     for (const cmd of commands) {
       try {
@@ -3959,8 +3981,6 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
         results.errors.push({ command: cmd, error: err.message });
       }
     }
-
-    await enforceFreePlanLimits(req.user.id, profile);
     await refreshCachesForUser(req.user.id);
     res.json({ success: true, results });
   } catch (err) {
@@ -3969,7 +3989,6 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
   }
 });
 
-// ================ رفع فيديو ================
 app.post(
   "/api/upload-video",
   authenticateToken,
@@ -4036,7 +4055,10 @@ app.post(
       user.videoUsedMB += fileSizeMB;
       await user.save();
 
+      // ===================== التعديل الجديد =====================
+      // ربط الفيديو بالأمر إذا تم إرسال giftId أو commandId
       const { giftId, commandId, screen = 1 } = req.body;
+
       if (giftId) {
         const gift = await GiftCommand.findOne({ userId: req.user.id, giftId });
         if (gift) {
@@ -4045,6 +4067,7 @@ app.post(
           await gift.save();
         }
       }
+
       if (commandId) {
         const interaction = await InteractionCommand.findOne({
           _id: commandId,
@@ -4056,6 +4079,7 @@ app.post(
           await interaction.save();
         }
       }
+      // ===================== نهاية التعديل =====================
 
       res.json({ success: true, filename, url: videoUrl, sizeMB: fileSizeMB });
     } catch (err) {
@@ -4065,7 +4089,6 @@ app.post(
   },
 );
 
-// ================ رفع صوت ================
 const audioStorage = multer.memoryStorage();
 const uploadAudioFile = multer({
   storage: audioStorage,
@@ -4164,7 +4187,6 @@ app.get("/api/admin/stats", authenticateToken, isAdmin, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
 app.get("/api/admin/users", authenticateToken, isAdmin, async (req, res) => {
   try {
     const users = await User.find().select("-password");
@@ -4190,7 +4212,6 @@ app.get("/api/admin/users", authenticateToken, isAdmin, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
 app.post(
   "/api/admin/user/:id/renew",
   authenticateToken,
@@ -4224,7 +4245,6 @@ app.post(
     }
   },
 );
-
 app.post(
   "/api/admin/user/:id/downgrade",
   authenticateToken,
@@ -4249,7 +4269,6 @@ app.post(
     }
   },
 );
-
 app.post(
   "/api/admin/user/:id/make-admin",
   authenticateToken,
@@ -4270,7 +4289,6 @@ app.post(
     }
   },
 );
-
 app.delete(
   "/api/admin/user/:id",
   authenticateToken,
@@ -4294,6 +4312,7 @@ app.delete(
 );
 
 // ================ صفحة الداشبورد ================
+// إعادة توجيه لوحة التحكم إلى الواجهة الأمامية (بدلاً من تقديم HTML من الخادم)
 app.get("/admin", authenticateToken, isAdmin, (req, res) => {
   res.redirect(`${FRONTEND_URL}/admin`);
 });
@@ -4301,6 +4320,7 @@ app.get("/admin", authenticateToken, isAdmin, (req, res) => {
 // ================ Socket.IO للبلوجن والشاشات ================
 const pluginNamespace = io.of("/plugin");
 pluginNamespace.use((socket, next) => {
+  // جلب التوكن من المصادقة (طريقة Socket.IO v4) أو من الـ query string (طريقة Java client)
   const token = socket.handshake.auth?.token || socket.handshake.query.token;
   if (token === PLUGIN_SECRET) {
     console.log("✅ Plugin authenticated successfully");
@@ -4397,7 +4417,6 @@ app.post("/api/agent/binding-token", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
 app.post("/api/agent/exchange-binding", async (req, res) => {
   try {
     const { bindingToken } = req.body;
@@ -4421,7 +4440,7 @@ app.post("/api/agent/exchange-binding", async (req, res) => {
   }
 });
 
-// ================ Cron Job ================
+// ================ Cron Job لمراقبة الاشتراكات ================
 cron.schedule("0 * * * *", async () => {
   logger.info("Checking expired subscriptions...");
   const now = new Date();
@@ -4466,28 +4485,9 @@ app.get("/agent-auth", async (req, res) => {
     callbackPort: port,
     serverUrl,
   });
-  res.send(`
-    <!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>ربط العميل المحلي - BlackMoon</title><style>body{background:#0a0a0a;color:white;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;}.container{background:#1e1e1e;padding:30px;border-radius:12px;text-align:center;max-width:400px;}input,button{padding:10px;margin:10px;border-radius:6px;border:none;}input{width:80%;background:#333;color:white;}button{background:#4caf50;color:white;cursor:pointer;}.error{color:#f44336;}</style></head><body><div class="container"><h2>🔗 ربط العميل المحلي</h2><p>الرجاء تسجيل الدخول أولاً ثم النقر على زر الربط.</p><div id="status"></div><button id="bindBtn">ربط العميل</button></div><script>
-      const bindBtn=document.getElementById('bindBtn');
-      const statusDiv=document.getElementById('status');
-      const bindingToken='${bindingToken}';
-      const callbackPort=${port};
-      const serverUrl='${serverUrl}';
-      async function checkLogin(){
-        try{ const res=await fetch('/api/auth/me',{credentials:'include'}); const data=await res.json(); if(data.success){ statusDiv.innerHTML='<span style="color:#4caf50">✅ تم تسجيل الدخول كـ '+data.user.email+'</span>'; return true; } else { statusDiv.innerHTML='<span style="color:#ff9800">⚠️ لم تسجل الدخول. سيتم فتح نافذة تسجيل الدخول.</span>'; return false; } } catch(e){ statusDiv.innerHTML='<span class="error">❌ خطأ في الاتصال</span>'; return false; }
-      }
-      bindBtn.onclick=async()=>{
-        const loggedIn=await checkLogin();
-        if(!loggedIn){ window.open('/login','_blank'); alert('سجل الدخول ثم اضغط على الربط مرة أخرى'); return; }
-        const tokenRes=await fetch('/api/agent/binding-token',{credentials:'include'});
-        const tokenData=await tokenRes.json();
-        if(!tokenData.success){ statusDiv.innerHTML='<span class="error">فشل الحصول على رمز الربط</span>'; return; }
-        const finalToken=tokenData.token;
-        window.location.href=\`http://localhost:\${callbackPort}/callback?sessionToken=\${finalToken}&serverUrl=\${serverUrl}\`;
-      };
-      checkLogin();
-    </script></body></html>
-  `);
+  res.send(
+    `<!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>ربط العميل المحلي - BlackMoon</title><style>body{background:#0a0a0a;color:white;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;}.container{background:#1e1e1e;padding:30px;border-radius:12px;text-align:center;max-width:400px;}input,button{padding:10px;margin:10px;border-radius:6px;border:none;}input{width:80%;background:#333;color:white;}button{background:#4caf50;color:white;cursor:pointer;}.error{color:#f44336;}</style></head><body><div class="container"><h2>🔗 ربط العميل المحلي</h2><p>الرجاء تسجيل الدخول أولاً ثم النقر على زر الربط.</p><div id="status"></div><button id="bindBtn">ربط العميل</button></div><script>const bindBtn=document.getElementById('bindBtn');const statusDiv=document.getElementById('status');const bindingToken='${bindingToken}';const callbackPort=${port};const serverUrl='${serverUrl}';async function checkLogin(){try{const res=await fetch('/api/auth/me',{credentials:'include'});const data=await res.json();if(data.success){statusDiv.innerHTML='<span style="color:#4caf50">✅ تم تسجيل الدخول كـ '+data.user.email+'</span>';return true;}else{statusDiv.innerHTML='<span style="color:#ff9800">⚠️ لم تسجل الدخول. سيتم فتح نافذة تسجيل الدخول.</span>';return false;}}catch(e){statusDiv.innerHTML='<span class="error">❌ خطأ في الاتصال</span>';return false;}}bindBtn.onclick=async()=>{const loggedIn=await checkLogin();if(!loggedIn){window.open('/login','_blank');alert('سجل الدخول ثم اضغط على الربط مرة أخرى');return;}const tokenRes=await fetch('/api/agent/binding-token',{credentials:'include'});const tokenData=await tokenRes.json();if(!tokenData.success){statusDiv.innerHTML='<span class="error">فشل الحصول على رمز الربط</span>';return;}const finalToken=tokenData.token;window.location.href=\`http://localhost:\${callbackPort}/callback?sessionToken=\${finalToken}&serverUrl=\${serverUrl}\`;};checkLogin();</script></body></html>`,
+  );
 });
 
 app.get("/api/agent/binding-token", authenticateToken, async (req, res) => {
@@ -4500,7 +4500,6 @@ app.get("/api/agent/binding-token", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
 app.post("/api/agent/exchange-binding", async (req, res) => {
   try {
     const { bindingToken } = req.body;
@@ -4532,7 +4531,7 @@ server.listen(PORT, "0.0.0.0", () => {
   logger.info(`🖥️ دعم العميل المحلي لتنفيذ الكيبورد الحقيقي عبر /agent`);
 });
 
-// تنظيف دوري للذاكرة
+// تنظيف دوري للذاكرة كل ساعة
 setInterval(
   () => {
     if (giftCommandsCache.size > 1000) giftCommandsCache.clear();
