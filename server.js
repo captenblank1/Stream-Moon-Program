@@ -1528,8 +1528,8 @@ async function getAvatarWithFallback(data, uniqueId) {
     }
     try {
       const fetchPromise = fetchUserAvatarFromTikTok(uniqueId);
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("timeout")), 800) // 800ms مهلة
+      const timeoutPromise = new Promise(
+        (_, reject) => setTimeout(() => reject(new Error("timeout")), 800), // 800ms مهلة
       );
       avatar = await Promise.race([fetchPromise, timeoutPromise]);
       if (avatar) return avatar;
@@ -2118,25 +2118,25 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       top: 20%;
       left: 50%;
       transform: translate(-50%, -50%);
-      background: rgba(0,0,0,0.75);
-      backdrop-filter: blur(8px);
+      background: transparent;          /* ✅ شفاف بالكامل */
+      backdrop-filter: none;           /* إزالة الضبابية */
       color: white;
-      padding: 15px 25px;
-      border-radius: 16px;
+      padding: 10px 20px;              /* تقليل الحشو شوية */
+      border-radius: 0;
       text-align: center;
       z-index: 9999;
       display: none;
       flex-direction: column;
       align-items: center;
-      gap: 10px;
-      border: 1px solid rgba(255,255,255,0.2);
-      min-width: 220px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+      gap: 5px;                        /* تقليل المسافات بين العناصر */
+      border: none;                    /* بدون إطار */
+      min-width: auto;
+      box-shadow: none;                /* بدون ظل */
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
-    .overlay-avatar { width:70px; height:70px; border-radius:50%; object-fit:cover; border:3px solid #4caf50; background:#1e1e1e; }
-    .overlay-username { font-size:20px; font-weight:bold; margin:5px 0 0; text-shadow:1px 1px 2px black; }
-    .overlay-text { font-size:16px; color:#ffd966; background:rgba(0,0,0,0.5); padding:5px 12px; border-radius:20px; margin-top:5px; }
+    .overlay-avatar { width:70px; height:70px; border-radius:50%; object-fit:cover; border:3px solid #4caf50; background: transparent; }
+    .overlay-username { font-size:20px; font-weight:bold; margin:0; text-shadow:1px 1px 2px black; }
+    .overlay-text { font-size:16px; color:#ffd966; background:rgba(0,0,0,0.5); padding:3px 10px; border-radius:20px; margin-top:2px; }
   </style>
 </head>
 <body>
