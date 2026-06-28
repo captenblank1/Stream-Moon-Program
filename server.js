@@ -1135,8 +1135,18 @@ async function executeAction(
     // نجيب المعلومات الكاملة من TikTok API (الكاش بيُسرّع)
     try {
       const info = await fetchTikTokUserInfo(uniqueId);
-      if (info.nickname) {
+      if (info.nickname && info.nickname !== uniqueId) {
         realName = info.nickname; // الاسم الحقيقي من API
+      } else {
+        // لو الـ API رجع نفس اليوزر نيم، استخدم الاسم اللي لقيناه من الحدث إن وُجد
+        if (
+          nameFromEvent &&
+          nameFromEvent !== "Unknown" &&
+          nameFromEvent !== uniqueId
+        ) {
+          realName = nameFromEvent;
+        }
+        // وإلا سيظل triggerUser (اليوزر نيم) كما هو
       }
       if (info.avatar) {
         avatar = info.avatar;
