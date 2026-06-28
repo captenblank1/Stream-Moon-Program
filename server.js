@@ -1108,7 +1108,6 @@ async function executeAction(
   if (data) {
     realName = getUserRealName(data) || triggerUser;
     const uniqueId = getSenderFromEvent(data);
-    const uniqueId = getSenderFromEvent(data);
     avatar = await getAvatarWithFallback(data, uniqueId, 500);
   }
 
