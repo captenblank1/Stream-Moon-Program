@@ -947,17 +947,21 @@ function replacePlaceholders(cmd, nickname, username, rconPlayer) {
 
 async function sendRconCommand(userId, command, { nickname, username } = {}) {
   if (pluginSockets.size > 0) {
+    // نستبدل فقط {nickname} و {username} قبل الإرسال إلى البلوجن، ونترك {player} للبلوجن نفسه
+    const finalCommand = command
+      .replace(/{nickname}/g, nickname || "")
+      .replace(/{username}/g, username || "");
+
     for (const sock of pluginSockets) {
       sock.emit("execute", {
-        command,
+        command: finalCommand,
         player: username || "console",
         nickname: nickname || username || "console",
       });
     }
-    logger.info(`📡 أرسل إلى البلوجن: ${command}`);
+    logger.info(`📡 أرسل إلى البلوجن: ${finalCommand}`);
     return;
   }
-
   const user = await User.findById(userId);
   if (!user || !user.rconConfig) return;
   const rcon = await getUserRcon(userId);
@@ -1176,22 +1180,29 @@ async function executeAction(
     await new Promise((resolve) => setTimeout(resolve, delayBefore));
   }
   if (keystrokeText) {
+    // نستبدل {nickname} و {username} في الكيستروك مثل الأوامر
+    const finalKeystroke = replacePlaceholders(
+      keystrokeText,
+      realName,
+      triggerUser,
+      "", // لا حاجة لـ rconPlayer هنا
+    );
     const agentSocket = userLocalAgents.get(userId);
     for (let i = 0; i < repeat; i++) {
       if (i > 0 && interval > 0)
         await new Promise((r) => setTimeout(r, interval));
       if (agentSocket && agentSocket.connected) {
         agentSocket.emit("execute-keys", {
-          command: keystrokeText,
+          command: finalKeystroke,
           repeat: 1,
           interval: 0,
           combo,
         });
         logger.info(
-          `⌨️ تم إرسال keystroke إلى العميل المحلي: ${keystrokeText}`,
+          `⌨️ تم إرسال keystroke إلى العميل المحلي: ${finalKeystroke}`,
         );
       } else if (keySenderReady) {
-        await executeNativeKeystroke(keystrokeText, 1, 0);
+        await executeNativeKeystroke(finalKeystroke, 1, 0);
       } else {
         logger.warn(
           `⚠️ لا يمكن تنفيذ keystroke: لا عميل محلي ولا node-key-sender`,
@@ -1309,6 +1320,7 @@ async function executeAction(
     const webhookData = {
       name: name || "",
       user: triggerUser,
+      displayName: realName,
       type: cmdObj.type || "keyboard",
       timestamp: new Date().toISOString(),
       profile: cmdObj.profile || 1,
