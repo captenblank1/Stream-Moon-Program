@@ -1117,26 +1117,40 @@ async function executeAction(
   let avatar = "";
   if (data) {
     const uniqueId = getSenderFromEvent(data);
-    // محاولة استخراج من بيانات الحدث
+
+    // محاولة سريعة من بيانات الحدث لو موجودة
     const nameFromEvent = getUserRealName(data);
     const avatarFromEvent = getUserAvatar(data);
-    if (nameFromEvent && nameFromEvent !== "Unknown") realName = nameFromEvent;
-    if (avatarFromEvent) avatar = avatarFromEvent;
+    if (
+      nameFromEvent &&
+      nameFromEvent !== "Unknown" &&
+      nameFromEvent !== uniqueId
+    ) {
+      realName = nameFromEvent; // اسم مؤقت لحين التأكد من API
+    }
+    if (avatarFromEvent) {
+      avatar = avatarFromEvent;
+    }
 
-    // لو لسه ناقص اسم أو صورة، نجيب المعلومات الكاملة من TikTok API
-    // (نفس الطريقة اللي بنجيب بيها بيانات الستريمر)
-    if (!realName || realName === triggerUser || !avatar) {
-      try {
-        const info = await fetchTikTokUserInfo(uniqueId);
-        if (info.nickname && info.nickname !== uniqueId) {
-          realName = info.nickname; // الاسم الحقيقي
-        }
-        if (info.avatar) {
-          avatar = info.avatar;
-        }
-      } catch (err) {
-        logger.warn(`⚠️ فشل جلب معلومات المستخدم ${uniqueId}:`, err.message);
+    // نجيب المعلومات الكاملة من TikTok API (الكاش بيُسرّع)
+    try {
+      const info = await fetchTikTokUserInfo(uniqueId);
+      if (info.nickname) {
+        realName = info.nickname; // الاسم الحقيقي من API
       }
+      if (info.avatar) {
+        avatar = info.avatar;
+      }
+    } catch (err) {
+      // لو فشل API، نستخدم اللي لقيناه من الحدث
+      if (
+        realName === triggerUser &&
+        nameFromEvent &&
+        nameFromEvent !== "Unknown"
+      ) {
+        realName = nameFromEvent;
+      }
+      logger.warn(`فشل جلب معلومات ${uniqueId}: ${err.message}`);
     }
   }
 
@@ -1320,30 +1334,31 @@ function resetOncePerLiveForUser(userId) {
 function getSenderFromEvent(data) {
   if (!data) return "Unknown";
   const user = data.user || {};
+  // priority: fields that are the TikTok username (uniqueId)
   const candidates = [
     user.uniqueId,
     user.unique_id,
-    user.username,
-    user.nickName,
-    user.nickname,
-    user.displayName,
-    user.display_name,
-    user.userId,
-    user.id,
     data.uniqueId,
     data.unique_id,
+    user.username,
     data.username,
-    data.userId,
-    data.user_id,
+    data.userId, // if it's a string (some events)
+    user.userId,
+    user.id,
     data.id,
     data.uid,
     data.sender,
+    user.nickname, // fallback to nickname if no username found
+    user.nickName,
+    user.displayName,
+    user.display_name,
   ];
   for (let c of candidates) {
-    if (typeof c === "string" && c.trim()) return c.trim();
-    if (typeof c === "number") return String(c);
+    if (typeof c === "string" && c.trim() && !/^\d+$/.test(c.trim()))
+      return c.trim();
+    if (typeof c === "number") continue; // skip numeric IDs
   }
-  return "Unknown";
+  return "StreamMoon";
 }
 
 function getUserRealName(data) {
