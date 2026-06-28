@@ -1376,17 +1376,15 @@ async function fetchUserAvatarFromTikTok(uniqueId) {
 // دالة لجلب معلومات المستخدم من TikTok (الاسم الحقيقي والصورة)
 async function fetchTikTokUserInfo(uniqueId) {
   if (!uniqueId) return { nickname: null, avatar: null };
-
-  // التحقق من الكاش أولاً
   if (userInfoCache.has(uniqueId)) {
     return userInfoCache.get(uniqueId);
   }
 
+  // المحاولة الأولى: tikwm.com API
   try {
     const url = `https://www.tikwm.com/api/user/?unique_id=${uniqueId}`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
-
     const response = await fetch(url, {
       headers: {
         "User-Agent":
@@ -1396,29 +1394,55 @@ async function fetchTikTokUserInfo(uniqueId) {
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
-
-    if (!response.ok) return { nickname: null, avatar: null };
-
-    const data = await response.json();
-    if (data && data.data) {
-      // معالجة رابط الصورة
-      let avatarUrl = data.data.avatar || "";
-      if (avatarUrl.startsWith("//")) avatarUrl = "https:" + avatarUrl;
-
-      const info = {
-        nickname: data.data.nickname || uniqueId, // الاسم الحقيقي
-        avatar: avatarUrl,
-      };
-
-      // تخزين في الكاش لمدة ساعة
-      userInfoCache.set(uniqueId, info);
-      setTimeout(() => userInfoCache.delete(uniqueId), 60 * 60 * 1000);
-
-      logger.info(`✅ تم جلب معلومات المستخدم ${uniqueId}: ${info.nickname}`);
-      return info;
+    if (response.ok) {
+      const data = await response.json();
+      if (data?.data) {
+        let avatarUrl = data.data.avatar || "";
+        if (avatarUrl.startsWith("//")) avatarUrl = "https:" + avatarUrl;
+        const info = {
+          nickname: data.data.nickname || uniqueId,
+          avatar: avatarUrl,
+        };
+        userInfoCache.set(uniqueId, info);
+        setTimeout(() => userInfoCache.delete(uniqueId), 60 * 60 * 1000);
+        return info;
+      }
     }
   } catch (err) {
-    logger.warn(`⚠️ فشل جلب معلومات المستخدم ${uniqueId}:`, err.message);
+    logger.warn(`⚠️ فشل جلب معلومات ${uniqueId} عبر tikwm:`, err.message);
+  }
+
+  // المحاولة الثانية: scraping مباشر (قد يكون ممنوعاً في بعض البيئات)
+  try {
+    const url = `https://www.tiktok.com/@${uniqueId}`;
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+    });
+    if (response.ok) {
+      const html = await response.text();
+      const match = html.match(
+        /<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application\/json">(.*?)<\/script>/,
+      );
+      if (match && match[1]) {
+        const json = JSON.parse(match[1]);
+        const userData =
+          json?.__DEFAULT_SCOPE__?.["webapp.user-detail"]?.userInfo?.user;
+        if (userData) {
+          const info = {
+            nickname: userData.nickname || uniqueId,
+            avatar: userData.avatarMedium || userData.avatarLarger || "",
+          };
+          userInfoCache.set(uniqueId, info);
+          setTimeout(() => userInfoCache.delete(uniqueId), 60 * 60 * 1000);
+          return info;
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn(`⚠️ فشل جلب معلومات ${uniqueId} عبر scraping:`, err.message);
   }
 
   return { nickname: uniqueId, avatar: null };
@@ -2852,16 +2876,30 @@ app.get("/api/videos", authenticateToken, async (req, res) => {
 
 app.get("/api/streamer", authenticateToken, async (req, res) => {
   const userId = req.user.id;
-  const connection = userTikTokConnections.get(userId);
-  const isLive = connection ? connection.isLive : false;
+  const conn = userTikTokConnections.get(userId);
+  const isLive = conn ? conn.isLive : false;
   const user = await User.findById(userId);
   const username = user?.tiktokUsername || null;
 
-  let nickname = username; // القيمة الافتراضية
+  let nickname = username;
   let profilePicture = "";
 
-  // إذا كان البث مباشراً، جلب الاسم الحقيقي والصورة
-  if (isLive && username) {
+  // 1. محاولة جلب البيانات من اتصال TikTok المباشر (الأكثر دقة)
+  if (conn && conn.connection && conn.connection.state?.roomInfo?.data) {
+    const roomInfo = conn.connection.state.roomInfo.data;
+    const owner = roomInfo.owner || {};
+    if (owner.nickname) nickname = owner.nickname;
+    if (owner.avatar_thumb?.url_list?.[0]) {
+      profilePicture = owner.avatar_thumb.url_list[0];
+    } else if (owner.avatar_thumb_medium?.url_list?.[0]) {
+      profilePicture = owner.avatar_thumb_medium.url_list[0];
+    }
+    // تحديث isLive بناءً على roomInfo (تأكيد)
+    if (roomInfo.roomId) isLive = true;
+  }
+
+  // 2. إذا لم تكن البيانات متاحة من الاتصال المباشر، نستخدم fetchTikTokUserInfo كخيار احتياطي
+  if (!profilePicture && username) {
     try {
       const info = await fetchTikTokUserInfo(username);
       if (info.nickname) nickname = info.nickname;
@@ -2871,12 +2909,7 @@ app.get("/api/streamer", authenticateToken, async (req, res) => {
     }
   }
 
-  res.json({
-    isLive,
-    username,
-    nickname, // ✅ الآن يعيد الاسم الحقيقي
-    profilePicture, // ✅ صورة البروفايل
-  });
+  res.json({ isLive, username, nickname, profilePicture });
 });
 
 // ================ نقاط نهاية API المحمية ================
