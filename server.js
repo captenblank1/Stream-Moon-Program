@@ -2205,7 +2205,7 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       box-shadow: none;                /* بدون ظل */
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
-    .overlay-avatar { width:70px; height:70px; border-radius:50%; object-fit:cover; border:3px solid #4caf50; background: transparent; }
+    .overlay-avatar { width:100px; height:100px; border-radius:50%; object-fit:cover; border:3px solid #4caf50; background: transparent; }
     .overlay-username { font-size:20px; font-weight:bold; margin:0; text-shadow:1px 1px 2px black; }
     .overlay-text { font-size:16px; color:#ffd966; background:rgba(0,0,0,0.5); padding:3px 10px; border-radius:20px; margin-top:2px; }
   </style>
