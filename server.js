@@ -1102,34 +1102,25 @@ async function executeAction(
     duration = 5,
   } = cmdObj;
 
-  // 🔥 استخراج الاسم الحقيقي والصورة من data (إن وجد)
+  // 🔥 استخراج الاسم الحقيقي والصورة بسرعة
   let realName = triggerUser;
   let avatar = "";
   if (data) {
     const uniqueId = getSenderFromEvent(data);
-    // محاولة استخراج من بيانات الحدث
+    // نأخذ الاسم الموجود في الحدث إن وجد
     const nameFromEvent = getUserRealName(data);
-    const avatarFromEvent = getUserAvatar(data);
-    if (nameFromEvent && nameFromEvent !== "Unknown") realName = nameFromEvent;
-    if (avatarFromEvent) avatar = avatarFromEvent;
-
-    // لو لسه ناقص اسم أو صورة، نجيب المعلومات الكاملة من TikTok API
-    // (نفس الطريقة اللي بنجيب بيها بيانات الستريمر)
-    if (!realName || realName === triggerUser || !avatar) {
-      try {
-        const info = await fetchTikTokUserInfo(uniqueId);
-        if (info.nickname && info.nickname !== uniqueId) {
-          realName = info.nickname; // الاسم الحقيقي
-        }
-        if (info.avatar) {
-          avatar = info.avatar;
-        }
-      } catch (err) {
-        logger.warn(`⚠️ فشل جلب معلومات المستخدم ${uniqueId}:`, err.message);
-      }
+    if (nameFromEvent && nameFromEvent !== "Unknown") {
+      realName = nameFromEvent;
+    } else {
+      realName = triggerUser; // نستخدم triggerUser (الـ uniqueId عادة)
     }
+    // الصورة: إما من الحدث مباشرة أو نجلبها بسرعة من الكاش/API مع مهلة قصيرة
+    avatar = getUserAvatar(data);
+    if (!avatar && uniqueId) {
+      avatar = await getAvatarWithFallback(data, uniqueId);
+    }
+    // إذا لم تتوفر صورة، نستخدم fallback في الشاشة نفسها (تمت إضافته مسبقًا)
   }
-
   if (oncePerLive && _id && userId) {
     const idStr = `${userId}:${String(_id)}`;
     if (executedOncePerLive.has(idStr)) {
@@ -1531,13 +1522,14 @@ async function getAvatarWithFallback(data, uniqueId) {
   let avatar = getUserAvatar(data);
   if (avatar) return avatar;
   if (uniqueId) {
+    // تحقق من الكاش أولاً
     if (userAvatarCache.has(uniqueId)) {
       return userAvatarCache.get(uniqueId);
     }
     try {
       const fetchPromise = fetchUserAvatarFromTikTok(uniqueId);
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("timeout")), 0),
+        setTimeout(() => reject(new Error("timeout")), 800) // 800ms مهلة
       );
       avatar = await Promise.race([fetchPromise, timeoutPromise]);
       if (avatar) return avatar;
@@ -1545,7 +1537,7 @@ async function getAvatarWithFallback(data, uniqueId) {
       console.warn(`⚠️ فشل جلب صورة ${uniqueId}:`, err.message);
     }
   }
-  return "";
+  return ""; // لا صورة
 }
 
 function normalizeUser(u) {
