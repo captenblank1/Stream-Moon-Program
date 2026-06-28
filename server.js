@@ -2655,20 +2655,6 @@ app.delete("/api/tiktok-user", authenticateToken, async (req, res) => {
 });
 
 app.post("/api/tiktok-user", authenticateToken, async (req, res) => {
-  const { username } = req.body;
-  if (!username)
-    return res
-      .status(400)
-      .json({ success: false, message: "اسم المستخدم مطلوب" });
-  const userId = req.user.id;
-  const user = await User.findById(userId);
-  user.tiktokUsername = username;
-  await user.save();
-  await connectUser(userId, username);
-  res.json({ success: true });
-});
-
-app.post("/api/tiktok-user", authenticateToken, async (req, res) => {
   const { username, connect = true } = req.body;
   if (!username)
     return res
