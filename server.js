@@ -928,27 +928,36 @@ async function getUserRcon(userId) {
   return rcon;
 }
 
-function replacePlaceholders(cmd, playerName, rconPlayer) {
-  const safePlayer = rconPlayer.includes(" ") ? `"${rconPlayer}"` : rconPlayer;
-  const safeUser =
-    playerName && playerName.includes(" ")
-      ? `"${playerName}"`
-      : playerName || safePlayer;
+function replacePlaceholders(cmd, nickname, username, rconPlayer) {
+  const safeName = (name) =>
+    name && name.includes(" ") ? `"${name}"` : name || "";
+
+  const safeNickname = safeName(nickname);
+  const safeUsername = safeName(username);
+  const safePlayer = safeName(rconPlayer);
+
   let finalCmd = cmd
     .replace(/{player}/g, safePlayer)
-    .replace(/{nickname}/g, safeUser);
+    .replace(/{nickname}/g, safeNickname) // الاسم الحقيقي
+    .replace(/{username}/g, safeUsername); // اليوزر نيم
+
   if (finalCmd.startsWith("/")) finalCmd = finalCmd.slice(1);
   return finalCmd.trim();
 }
 
-async function sendRconCommand(userId, command, playerName = null) {
+async function sendRconCommand(userId, command, { nickname, username } = {}) {
   if (pluginSockets.size > 0) {
     for (const sock of pluginSockets) {
-      sock.emit("execute", { command, player: playerName || "console" });
+      sock.emit("execute", {
+        command,
+        player: username || "console",
+        nickname: nickname || username || "console",
+      });
     }
     logger.info(`📡 أرسل إلى البلوجن: ${command}`);
     return;
   }
+
   const user = await User.findById(userId);
   if (!user || !user.rconConfig) return;
   const rcon = await getUserRcon(userId);
@@ -956,9 +965,11 @@ async function sendRconCommand(userId, command, playerName = null) {
     logger.info(`⚠️ RCON للمستخدم ${userId} غير متصل، تأجيل الأمر: ${command}`);
     return;
   }
+
   const final = replacePlaceholders(
     command,
-    playerName,
+    nickname,
+    username,
     user.rconConfig.player,
   );
   try {
@@ -967,7 +978,6 @@ async function sendRconCommand(userId, command, playerName = null) {
     logger.error("❌ فشل إرسال أمر RCON:", err.message);
   }
 }
-
 // ================ وظيفة Webhook ================
 async function sendWebhook(webhookUrl, data, userId = null) {
   if (!webhookUrl || !webhookUrl.trim()) return;
@@ -1102,25 +1112,34 @@ async function executeAction(
     duration = 5,
   } = cmdObj;
 
-  // 🔥 استخراج الاسم الحقيقي والصورة بسرعة
+  // 🔥 استخراج الاسم الحقيقي والصورة من data (إن وجد)
   let realName = triggerUser;
   let avatar = "";
   if (data) {
     const uniqueId = getSenderFromEvent(data);
-    // نأخذ الاسم الموجود في الحدث إن وجد
+    // محاولة استخراج من بيانات الحدث
     const nameFromEvent = getUserRealName(data);
-    if (nameFromEvent && nameFromEvent !== "Unknown") {
-      realName = nameFromEvent;
-    } else {
-      realName = triggerUser; // نستخدم triggerUser (الـ uniqueId عادة)
+    const avatarFromEvent = getUserAvatar(data);
+    if (nameFromEvent && nameFromEvent !== "Unknown") realName = nameFromEvent;
+    if (avatarFromEvent) avatar = avatarFromEvent;
+
+    // لو لسه ناقص اسم أو صورة، نجيب المعلومات الكاملة من TikTok API
+    // (نفس الطريقة اللي بنجيب بيها بيانات الستريمر)
+    if (!realName || realName === triggerUser || !avatar) {
+      try {
+        const info = await fetchTikTokUserInfo(uniqueId);
+        if (info.nickname && info.nickname !== uniqueId) {
+          realName = info.nickname; // الاسم الحقيقي
+        }
+        if (info.avatar) {
+          avatar = info.avatar;
+        }
+      } catch (err) {
+        logger.warn(`⚠️ فشل جلب معلومات المستخدم ${uniqueId}:`, err.message);
+      }
     }
-    // الصورة: إما من الحدث مباشرة أو نجلبها بسرعة من الكاش/API مع مهلة قصيرة
-    avatar = getUserAvatar(data);
-    if (!avatar && uniqueId) {
-      avatar = await getAvatarWithFallback(data, uniqueId);
-    }
-    // إذا لم تتوفر صورة، نستخدم fallback في الشاشة نفسها (تمت إضافته مسبقًا)
   }
+
   if (oncePerLive && _id && userId) {
     const idStr = `${userId}:${String(_id)}`;
     if (executedOncePerLive.has(idStr)) {
@@ -1214,10 +1233,18 @@ async function executeAction(
         }
         setTimeout(() => {
           for (let i = 0; i < repeat; i++) {
-            if (interval === 0) sendRconCommand(userId, cmdLine, triggerUser);
+            if (interval === 0)
+              sendRconCommand(userId, cmdLine, {
+                nickname: realName,
+                username: triggerUser,
+              });
             else
               setTimeout(
-                () => sendRconCommand(userId, cmdLine, triggerUser),
+                () =>
+                  sendRconCommand(userId, cmdLine, {
+                    nickname: realName,
+                    username: triggerUser,
+                  }),
                 i * interval,
               );
           }
@@ -1227,10 +1254,18 @@ async function executeAction(
     } else {
       const singleCmd = lines[0];
       for (let i = 0; i < repeat; i++) {
-        if (interval === 0) sendRconCommand(userId, singleCmd, triggerUser);
+        if (interval === 0)
+          sendRconCommand(userId, singleCmd, {
+            nickname: realName,
+            username: triggerUser,
+          });
         else
           setTimeout(
-            () => sendRconCommand(userId, singleCmd, triggerUser),
+            () =>
+              sendRconCommand(userId, singleCmd, {
+                nickname: realName,
+                username: triggerUser,
+              }),
             i * interval,
           );
       }
@@ -1522,14 +1557,13 @@ async function getAvatarWithFallback(data, uniqueId) {
   let avatar = getUserAvatar(data);
   if (avatar) return avatar;
   if (uniqueId) {
-    // تحقق من الكاش أولاً
     if (userAvatarCache.has(uniqueId)) {
       return userAvatarCache.get(uniqueId);
     }
     try {
       const fetchPromise = fetchUserAvatarFromTikTok(uniqueId);
-      const timeoutPromise = new Promise(
-        (_, reject) => setTimeout(() => reject(new Error("timeout")), 800), // 800ms مهلة
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("timeout")), 0),
       );
       avatar = await Promise.race([fetchPromise, timeoutPromise]);
       if (avatar) return avatar;
@@ -1537,7 +1571,7 @@ async function getAvatarWithFallback(data, uniqueId) {
       console.warn(`⚠️ فشل جلب صورة ${uniqueId}:`, err.message);
     }
   }
-  return ""; // لا صورة
+  return "";
 }
 
 function normalizeUser(u) {
