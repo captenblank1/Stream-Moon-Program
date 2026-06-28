@@ -1106,11 +1106,28 @@ async function executeAction(
   let realName = triggerUser;
   let avatar = "";
   if (data) {
-    realName = getUserRealName(data) || triggerUser;
     const uniqueId = getSenderFromEvent(data);
-    avatar = getUserAvatar(data);
-    // لو الصورة مش موجودة في الحدث، نجيبها من الإنترنت
-    if (!avatar) avatar = await getAvatarWithFallback(data, uniqueId);
+    // محاولة استخراج من بيانات الحدث
+    const nameFromEvent = getUserRealName(data);
+    const avatarFromEvent = getUserAvatar(data);
+    if (nameFromEvent && nameFromEvent !== "Unknown") realName = nameFromEvent;
+    if (avatarFromEvent) avatar = avatarFromEvent;
+
+    // لو لسه ناقص اسم أو صورة، نجيب المعلومات الكاملة من TikTok API
+    // (نفس الطريقة اللي بنجيب بيها بيانات الستريمر)
+    if (!realName || realName === triggerUser || !avatar) {
+      try {
+        const info = await fetchTikTokUserInfo(uniqueId);
+        if (info.nickname && info.nickname !== uniqueId) {
+          realName = info.nickname; // الاسم الحقيقي
+        }
+        if (info.avatar) {
+          avatar = info.avatar;
+        }
+      } catch (err) {
+        logger.warn(`⚠️ فشل جلب معلومات المستخدم ${uniqueId}:`, err.message);
+      }
+    }
   }
 
   if (oncePerLive && _id && userId) {
