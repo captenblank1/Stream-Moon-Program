@@ -1108,7 +1108,7 @@ async function executeAction(
   if (data) {
     realName = getUserRealName(data) || triggerUser;
     const uniqueId = getSenderFromEvent(data);
-    avatar = await getAvatarWithFallback(data, uniqueId, 500);
+    avatar = await getAvatarWithFallback(data, uniqueId, 300);
   }
 
   if (oncePerLive && _id && userId) {
@@ -1324,29 +1324,64 @@ function getUserRealName(data) {
 }
 
 function getUserAvatar(data) {
+  if (!data) return "";
   const user = data.user || {};
   const paths = [
-    user.avatarThumb?.url_list?.[0],
+    // المسارات الأكثر شيوعاً أولاً
     user.avatar_thumb?.url_list?.[0],
-    user.avatarThumbMedium?.url_list?.[0],
+    user.avatarThumb?.url_list?.[0],
     user.avatar_thumb_medium?.url_list?.[0],
-    user.profilePicture?.url_list?.[0],
+    user.avatarThumbMedium?.url_list?.[0],
     user.profile_picture?.url_list?.[0],
+    user.profilePicture?.url_list?.[0],
     user.avatar,
     user.avatarUrl,
     user.profilePicture,
     user.profile_picture,
-    user.avatarThumb?.url,
     user.avatar_thumb?.url,
+    user.avatarThumb?.url,
     user.profilePicture?.url,
     user.profile_picture?.url,
-    user.user?.avatarThumb?.url_list?.[0],
+    // محاولة الوصول من user.user (في بعض الأحداث تكون الصورة أعمق)
     user.user?.avatar_thumb?.url_list?.[0],
+    user.user?.avatarThumb?.url_list?.[0],
+    user.user?.profile_picture?.url_list?.[0],
+    user.user?.profilePicture?.url_list?.[0],
+    // مسارات إضافية من البيانات المباشرة
+    data.avatar_thumb?.url_list?.[0],
+    data.avatarThumb?.url_list?.[0],
+    data.profile_picture?.url_list?.[0],
+    data.profilePicture?.url_list?.[0],
+    data.avatar,
+    data.avatarUrl,
+    // بعض الأحداث تحتوي على الصورة في data.userInfo
+    user.userInfo?.avatar_thumb?.url_list?.[0],
+    user.userInfo?.avatarThumb?.url_list?.[0],
+    user.userInfo?.profile_picture?.url_list?.[0],
+    user.userInfo?.profilePicture?.url_list?.[0],
   ];
   for (let path of paths) {
     if (path && typeof path === "string" && path.startsWith("http")) {
       console.log(`✅ تم العثور على صورة المستخدم: ${path}`);
       return path;
+    }
+  }
+  // إذا لم نجد، نبحث في data.userInfo إن وجد
+  if (data.userInfo) {
+    const info = data.userInfo;
+    const infoPaths = [
+      info.avatar_thumb?.url_list?.[0],
+      info.avatarThumb?.url_list?.[0],
+      info.profile_picture?.url_list?.[0],
+      info.profilePicture?.url_list?.[0],
+      info.avatar,
+      info.avatarUrl,
+    ];
+    for (let path of infoPaths) {
+      if (path && typeof path === "string" && path.startsWith("http")) {
+        console.log(`✅ تم العثور على صورة المستخدم من userInfo: ${path}`);
+        return path;
+      }
     }
   }
   console.warn("⚠️ لم يتم العثور على صورة للمستخدم");
@@ -1462,7 +1497,7 @@ async function fetchTikTokUserInfo(uniqueId) {
   return { nickname: uniqueId, avatar: null };
 }
 
-async function getAvatarWithFallback(data, uniqueId, timeoutMs = 800) {
+async function getAvatarWithFallback(data, uniqueId, timeoutMs = 300) {
   let avatar = getUserAvatar(data);
   if (avatar) return avatar;
   if (uniqueId) {
