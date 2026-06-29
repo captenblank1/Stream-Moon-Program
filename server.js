@@ -257,6 +257,7 @@ app.use(
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
 app.use("/audios", express.static(path.join(__dirname, "audios")));
+app.use("/images", express.static(path.join(__dirname, "images")));
 app.use(cookieParser());
 app.use((req, res, next) => {
   req.setTimeout(30 * 1000);
