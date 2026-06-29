@@ -1091,10 +1091,8 @@ async function executeAction(
   userId,
   data = null,
 ) {
-  if (!cmdObj.active) {
-    logger.info(`🚫 الأمر غير مفعل: ${cmdObj.name || cmdObj._id}`);
-    return;
-  }
+  if (!cmdObj.active) return;
+
   const {
     command,
     webhookUrl,
@@ -1116,13 +1114,11 @@ async function executeAction(
     duration = 5,
   } = cmdObj;
 
-  // 🔥 استخراج الاسم الحقيقي والصورة من data (إن وجد)
+  // استخراج الاسم الحقيقي والصورة (نفس الكود السابق)
   let realName = triggerUser;
   let avatar = "";
   if (data) {
     const uniqueId = getSenderFromEvent(data);
-
-    // محاولة سريعة من بيانات الحدث لو موجودة
     const nameFromEvent = getUserRealName(data);
     const avatarFromEvent = getUserAvatar(data);
     if (
@@ -1130,33 +1126,16 @@ async function executeAction(
       nameFromEvent !== "Unknown" &&
       nameFromEvent !== uniqueId
     ) {
-      realName = nameFromEvent; // اسم مؤقت لحين التأكد من API
+      realName = nameFromEvent;
     }
-    if (avatarFromEvent) {
-      avatar = avatarFromEvent;
-    }
-
-    // نجيب المعلومات الكاملة من TikTok API (الكاش بيُسرّع)
+    if (avatarFromEvent) avatar = avatarFromEvent;
     try {
       const info = await fetchTikTokUserInfo(uniqueId);
       if (info.nickname && info.nickname !== uniqueId) {
-        realName = info.nickname; // الاسم الحقيقي من API
-      } else {
-        // لو الـ API رجع نفس اليوزر نيم، استخدم الاسم اللي لقيناه من الحدث إن وُجد
-        if (
-          nameFromEvent &&
-          nameFromEvent !== "Unknown" &&
-          nameFromEvent !== uniqueId
-        ) {
-          realName = nameFromEvent;
-        }
-        // وإلا سيظل triggerUser (اليوزر نيم) كما هو
+        realName = info.nickname;
       }
-      if (info.avatar) {
-        avatar = info.avatar;
-      }
+      if (info.avatar) avatar = info.avatar;
     } catch (err) {
-      // لو فشل API، نستخدم اللي لقيناه من الحدث
       if (
         realName === triggerUser &&
         nameFromEvent &&
@@ -1164,52 +1143,20 @@ async function executeAction(
       ) {
         realName = nameFromEvent;
       }
-      logger.warn(`فشل جلب معلومات ${uniqueId}: ${err.message}`);
     }
   }
 
+  // oncePerLive check يبقى كما هو
   if (oncePerLive && _id && userId) {
     const idStr = `${userId}:${String(_id)}`;
     if (executedOncePerLive.has(idStr)) {
-      logger.info(`⏭️ الأمر ${name} تم تنفيذه مرة واحدة في هذا اللايف - تخطي`);
+      logger.info(`⏭️ الأمر ${name} تم تنفيذه مرة واحدة - تخطي`);
       return;
     }
     executedOncePerLive.add(idStr);
   }
-  if (delayBefore > 0) {
-    await new Promise((resolve) => setTimeout(resolve, delayBefore));
-  }
-  if (keystrokeText) {
-    // نستبدل {nickname} و {username} في الكيستروك مثل الأوامر
-    const finalKeystroke = replacePlaceholders(
-      keystrokeText,
-      realName,
-      triggerUser,
-      "", // لا حاجة لـ rconPlayer هنا
-    );
-    const agentSocket = userLocalAgents.get(userId);
-    for (let i = 0; i < repeat; i++) {
-      if (i > 0 && interval > 0)
-        await new Promise((r) => setTimeout(r, interval));
-      if (agentSocket && agentSocket.connected) {
-        agentSocket.emit("execute-keys", {
-          command: finalKeystroke,
-          repeat: 1,
-          interval: 0,
-          combo,
-        });
-        logger.info(
-          `⌨️ تم إرسال keystroke إلى العميل المحلي: ${finalKeystroke}`,
-        );
-      } else if (keySenderReady) {
-        await executeNativeKeystroke(finalKeystroke, 1, 0);
-      } else {
-        logger.warn(
-          `⚠️ لا يمكن تنفيذ keystroke: لا عميل محلي ولا node-key-sender`,
-        );
-      }
-    }
-  }
+
+  // ✅ 1. الصوت والفيديو والتراكب يشتغلوا فوراً (بدون تأخير)
   if (playSound && audio) {
     playAudio(audio, volume, userId);
     if (duration && duration > 0) {
@@ -1218,13 +1165,16 @@ async function executeAction(
       }, duration * 1000);
     }
   }
+
   if (playVideo && video && userId) {
     const room = `user-${userId}`;
-    const videoDoc = await Video.findOne({ file: video, userId });
-    let videoUrl = videoDoc?.cloudinaryUrl;
-    if (!videoUrl) {
-      videoUrl = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload/${encodeURIComponent(video)}`;
-    }
+    let videoUrl = video;
+    try {
+      const videoDoc = await Video.findOne({ file: video, userId });
+      videoUrl =
+        videoDoc?.cloudinaryUrl ||
+        `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload/${encodeURIComponent(video)}`;
+    } catch (e) {}
     io.to(room).emit("gift-video", {
       videoId: videoUrl,
       user: triggerUser,
@@ -1237,12 +1187,53 @@ async function executeAction(
       }, duration * 1000);
     }
   }
+
+  if (cmdObj.showOverlay && userId) {
+    io.to(`user-${userId}`).emit("show-overlay", {
+      username: realName,
+      avatar: avatar,
+      text: cmdObj.overlayText || "",
+      duration: (duration || 5) * 1000,
+    });
+  }
+
+  // ✅ 2. بعد كده نطبق التأخير (خاص بالأمر والكيستروك فقط)
+  if (delayBefore > 0) {
+    await new Promise((resolve) => setTimeout(resolve, delayBefore));
+  }
+
+  // ✅ 3. تنفيذ الكيستروك والأوامر
+  if (keystrokeText) {
+    const finalKeystroke = replacePlaceholders(
+      keystrokeText,
+      realName,
+      triggerUser,
+      "",
+    );
+    const agentSocket = userLocalAgents.get(userId);
+    for (let i = 0; i < repeat; i++) {
+      if (i > 0 && interval > 0)
+        await new Promise((r) => setTimeout(r, interval));
+      if (agentSocket && agentSocket.connected) {
+        agentSocket.emit("execute-keys", {
+          command: finalKeystroke,
+          repeat: 1,
+          interval: 0,
+          combo,
+        });
+      } else if (keySenderReady) {
+        await executeNativeKeystroke(finalKeystroke, 1, 0);
+      }
+    }
+  }
+
   if (command && command.trim()) {
     const lines = command
       .split(/\r?\n/)
       .map((l) => l.trim())
       .filter((l) => l);
     if (lines.length > 1) {
+      // منطق المجموعات العشوائية
       const groups = [];
       let currentGroup = [];
       for (const line of lines) {
@@ -1251,9 +1242,7 @@ async function executeAction(
             groups.push(currentGroup);
             currentGroup = [];
           }
-        } else {
-          currentGroup.push(line);
-        }
+        } else currentGroup.push(line);
       }
       if (currentGroup.length) groups.push(currentGroup);
       const selectedGroup = groups.length
@@ -1306,16 +1295,8 @@ async function executeAction(
       }
     }
   }
-  // ✅ التراكب الآن يستخدم الاسم الحقيقي والصورة من data
-  if (cmdObj.showOverlay && userId) {
-    const room = `user-${userId}`;
-    io.to(room).emit("show-overlay", {
-      username: realName,
-      avatar: avatar,
-      text: cmdObj.overlayText || "",
-      duration: (duration || 5) * 1000,
-    });
-  }
+
+  // ✅ 4. الويبهوك (يبقى بنفس الترتيب لكن ممكن يكون بعد الأوامر أيضاً لو حابب)
   if (webhookUrl && webhookUrl.trim()) {
     const webhookData = {
       name: name || "",
@@ -2897,6 +2878,39 @@ app.post(
         delete newCmd._id;
         newCmd.profile = targetId;
         newCmd.userId = req.user.id;
+
+        // نسخ الصوت
+        if (newCmd.audio) {
+          const audioDoc = await Audio.findOne({
+            file: newCmd.audio,
+            userId: req.user.id,
+          });
+          if (audioDoc && audioDoc.cloudinaryUrl) {
+            const newAudioFile = await uploadFileFromUrl(
+              audioDoc.cloudinaryUrl,
+              req.user.id,
+              "audio",
+            );
+            if (newAudioFile) newCmd.audio = newAudioFile;
+          }
+        }
+
+        // نسخ الفيديو
+        if (newCmd.video) {
+          const videoDoc = await Video.findOne({
+            file: newCmd.video,
+            userId: req.user.id,
+          });
+          if (videoDoc && videoDoc.cloudinaryUrl) {
+            const newVideoFile = await uploadFileFromUrl(
+              videoDoc.cloudinaryUrl,
+              req.user.id,
+              "video",
+            );
+            if (newVideoFile) newCmd.video = newVideoFile;
+          }
+        }
+
         await GiftCommand.create(newCmd);
       }
       const interactionCommands = await InteractionCommand.find({
@@ -2908,6 +2922,39 @@ app.post(
         delete newCmd._id;
         newCmd.profile = targetId;
         newCmd.userId = req.user.id;
+
+        // نسخ الصوت
+        if (newCmd.audio) {
+          const audioDoc = await Audio.findOne({
+            file: newCmd.audio,
+            userId: req.user.id,
+          });
+          if (audioDoc && audioDoc.cloudinaryUrl) {
+            const newAudioFile = await uploadFileFromUrl(
+              audioDoc.cloudinaryUrl,
+              req.user.id,
+              "audio",
+            );
+            if (newAudioFile) newCmd.audio = newAudioFile;
+          }
+        }
+
+        // نسخ الفيديو
+        if (newCmd.video) {
+          const videoDoc = await Video.findOne({
+            file: newCmd.video,
+            userId: req.user.id,
+          });
+          if (videoDoc && videoDoc.cloudinaryUrl) {
+            const newVideoFile = await uploadFileFromUrl(
+              videoDoc.cloudinaryUrl,
+              req.user.id,
+              "video",
+            );
+            if (newVideoFile) newCmd.video = newVideoFile;
+          }
+        }
+
         await InteractionCommand.create(newCmd);
       }
       await refreshCachesForUser(req.user.id);
@@ -3877,13 +3924,12 @@ app.post(
           message: "لا يمكنك استيراد الأوامر لهذا البروفايل في النسخة المجانية",
         });
 
-      // تم إزالة شرط plan === "free"
-
       const results = { added: 0, replaced: 0, skipped: 0, errors: [] };
       const replace = req.body.replace === "true";
 
       // رفع الملفات من الروابط
       for (const cmd of commands) {
+        // ----------- صوت -----------
         if (cmd.audio) {
           const audioExists = await Audio.findOne({
             file: cmd.audio,
@@ -3908,15 +3954,19 @@ app.post(
                   error: `فشل رفع الملف الصوتي من الرابط: ${cmd.audio}`,
                 });
               }
-            } else {
+            } else if (!cmd.audio.startsWith("/audios/")) {
+              // ✅ مش صوت افتراضي → نحذفه
               cmd.audio = null;
               results.errors.push({
                 command: cmd,
                 error: `الملف الصوتي "${cmd.audio}" غير موجود في حسابك ولم يكن رابطاً صحيحاً، تم تعطيل الصوت.`,
               });
             }
+            // لو "/audios/..." هنخليه زي ما هو
           }
         }
+
+        // ----------- فيديو -----------
         if (cmd.video) {
           const videoExists = await Video.findOne({
             file: cmd.video,
@@ -3941,7 +3991,8 @@ app.post(
                   error: `فشل رفع ملف الفيديو من الرابط: ${cmd.video}`,
                 });
               }
-            } else {
+            } else if (!cmd.video.startsWith("/videos/")) {
+              // لو عندك فيديوهات افتراضية تبدأ بـ /videos/
               cmd.video = null;
               results.errors.push({
                 command: cmd,
@@ -4014,7 +4065,6 @@ app.post(
     }
   },
 );
-
 // ================ استيراد JSON (مع التعديلات) ================
 app.post("/api/profiles/import", authenticateToken, async (req, res) => {
   try {
@@ -4035,12 +4085,11 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
         .status(400)
         .json({ success: false, message: "يجب إرسال مصفوفة من الأوامر" });
 
-    // تم إزالة شرط plan === "free"
-
     const results = { added: 0, replaced: 0, skipped: 0, errors: [] };
 
     // رفع الملفات من الروابط
     for (const cmd of commands) {
+      // ----------- صوت -----------
       if (cmd.audio) {
         const audioExists = await Audio.findOne({
           file: cmd.audio,
@@ -4065,7 +4114,8 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
                 error: `فشل رفع الملف الصوتي من الرابط: ${cmd.audio}`,
               });
             }
-          } else {
+          } else if (!cmd.audio.startsWith("/audios/")) {
+            // ✅ مش صوت افتراضي → نحذفه
             cmd.audio = null;
             results.errors.push({
               command: cmd,
@@ -4074,6 +4124,8 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
           }
         }
       }
+
+      // ----------- فيديو -----------
       if (cmd.video) {
         const videoExists = await Video.findOne({
           file: cmd.video,
@@ -4098,7 +4150,7 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
                 error: `فشل رفع ملف الفيديو من الرابط: ${cmd.video}`,
               });
             }
-          } else {
+          } else if (!cmd.video.startsWith("/videos/")) {
             cmd.video = null;
             results.errors.push({
               command: cmd,
@@ -4170,7 +4222,6 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
 // ================ رفع فيديو ================
 app.post(
   "/api/upload-video",
