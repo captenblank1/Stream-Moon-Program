@@ -2886,35 +2886,59 @@ app.post(
         newCmd.profile = targetId;
         newCmd.userId = req.user.id;
 
-        // نسخ الصوت
+        // نسخ الصوت (يدعم الروابط المباشرة)
         if (newCmd.audio) {
-          const audioDoc = await Audio.findOne({
-            file: newCmd.audio,
-            userId: req.user.id,
-          });
-          if (audioDoc && audioDoc.cloudinaryUrl) {
+          if (
+            newCmd.audio.startsWith("http://") ||
+            newCmd.audio.startsWith("https://")
+          ) {
             const newAudioFile = await uploadFileFromUrl(
-              audioDoc.cloudinaryUrl,
+              newCmd.audio,
               req.user.id,
               "audio",
             );
             if (newAudioFile) newCmd.audio = newAudioFile;
+          } else {
+            const audioDoc = await Audio.findOne({
+              file: newCmd.audio,
+              userId: req.user.id,
+            });
+            if (audioDoc && audioDoc.cloudinaryUrl) {
+              const newAudioFile = await uploadFileFromUrl(
+                audioDoc.cloudinaryUrl,
+                req.user.id,
+                "audio",
+              );
+              if (newAudioFile) newCmd.audio = newAudioFile;
+            }
           }
         }
 
-        // نسخ الفيديو
+        // نسخ الفيديو (يدعم الروابط المباشرة)
         if (newCmd.video) {
-          const videoDoc = await Video.findOne({
-            file: newCmd.video,
-            userId: req.user.id,
-          });
-          if (videoDoc && videoDoc.cloudinaryUrl) {
+          if (
+            newCmd.video.startsWith("http://") ||
+            newCmd.video.startsWith("https://")
+          ) {
             const newVideoFile = await uploadFileFromUrl(
-              videoDoc.cloudinaryUrl,
+              newCmd.video,
               req.user.id,
               "video",
             );
             if (newVideoFile) newCmd.video = newVideoFile;
+          } else {
+            const videoDoc = await Video.findOne({
+              file: newCmd.video,
+              userId: req.user.id,
+            });
+            if (videoDoc && videoDoc.cloudinaryUrl) {
+              const newVideoFile = await uploadFileFromUrl(
+                videoDoc.cloudinaryUrl,
+                req.user.id,
+                "video",
+              );
+              if (newVideoFile) newCmd.video = newVideoFile;
+            }
           }
         }
 
@@ -2930,35 +2954,59 @@ app.post(
         newCmd.profile = targetId;
         newCmd.userId = req.user.id;
 
-        // نسخ الصوت
+        // نسخ الصوت (يدعم الروابط المباشرة)
         if (newCmd.audio) {
-          const audioDoc = await Audio.findOne({
-            file: newCmd.audio,
-            userId: req.user.id,
-          });
-          if (audioDoc && audioDoc.cloudinaryUrl) {
+          if (
+            newCmd.audio.startsWith("http://") ||
+            newCmd.audio.startsWith("https://")
+          ) {
             const newAudioFile = await uploadFileFromUrl(
-              audioDoc.cloudinaryUrl,
+              newCmd.audio,
               req.user.id,
               "audio",
             );
             if (newAudioFile) newCmd.audio = newAudioFile;
+          } else {
+            const audioDoc = await Audio.findOne({
+              file: newCmd.audio,
+              userId: req.user.id,
+            });
+            if (audioDoc && audioDoc.cloudinaryUrl) {
+              const newAudioFile = await uploadFileFromUrl(
+                audioDoc.cloudinaryUrl,
+                req.user.id,
+                "audio",
+              );
+              if (newAudioFile) newCmd.audio = newAudioFile;
+            }
           }
         }
 
-        // نسخ الفيديو
+        // نسخ الفيديو (يدعم الروابط المباشرة)
         if (newCmd.video) {
-          const videoDoc = await Video.findOne({
-            file: newCmd.video,
-            userId: req.user.id,
-          });
-          if (videoDoc && videoDoc.cloudinaryUrl) {
+          if (
+            newCmd.video.startsWith("http://") ||
+            newCmd.video.startsWith("https://")
+          ) {
             const newVideoFile = await uploadFileFromUrl(
-              videoDoc.cloudinaryUrl,
+              newCmd.video,
               req.user.id,
               "video",
             );
             if (newVideoFile) newCmd.video = newVideoFile;
+          } else {
+            const videoDoc = await Video.findOne({
+              file: newCmd.video,
+              userId: req.user.id,
+            });
+            if (videoDoc && videoDoc.cloudinaryUrl) {
+              const newVideoFile = await uploadFileFromUrl(
+                videoDoc.cloudinaryUrl,
+                req.user.id,
+                "video",
+              );
+              if (newVideoFile) newCmd.video = newVideoFile;
+            }
           }
         }
 
