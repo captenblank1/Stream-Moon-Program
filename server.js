@@ -1767,7 +1767,14 @@ async function connectUser(userId, username) {
         });
         if (giftCmd) await refreshCachesForUser(userId);
       }
-      if (giftCmd && (giftCmd.command || giftCmd.webhookUrl || giftCmd.combo)) {
+      if (
+        giftCmd &&
+        (giftCmd.command ||
+          giftCmd.webhookUrl ||
+          giftCmd.combo ||
+          giftCmd.audio ||
+          giftCmd.video)
+      ) {
         const targetOk =
           !giftCmd.targetUser ||
           normalizeUser(giftCmd.targetUser) === "all" ||
