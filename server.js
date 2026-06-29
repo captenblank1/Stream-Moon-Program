@@ -3762,6 +3762,66 @@ app.delete(
   },
 );
 
+// ================ DELETE /api/interaction-commands ================
+app.delete("/api/interaction-commands", authenticateToken, async (req, res) => {
+  try {
+    const profile = parseInt(req.query.profile);
+    if (!profile || profile < 1 || profile > MAX_PROFILES)
+      return res
+        .status(400)
+        .json({ success: false, message: "profile مطلوب وصحيح" });
+    const canAccess = await canAccessProfile(req.user.id, profile);
+    if (!canAccess)
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك حذف أوامر من بروفايل غير مصرح به",
+      });
+
+    const commands = await InteractionCommand.find({
+      userId: req.user.id,
+      profile,
+    });
+    let totalAudioSize = 0,
+      totalVideoSize = 0;
+    for (const cmd of commands) {
+      const { audioSize, videoSize } = await deleteFilesForCommand(
+        cmd,
+        req.user.id,
+      );
+      totalAudioSize += audioSize;
+      totalVideoSize += videoSize;
+    }
+    const result = await InteractionCommand.deleteMany({
+      userId: req.user.id,
+      profile,
+    });
+    await refreshCachesForUser(req.user.id);
+    const updatedUser = await User.findById(req.user.id);
+    const storageData = {
+      audio: {
+        usedMB: updatedUser.audioUsedMB,
+        limitMB: MAX_AUDIO_MB,
+        remainingMB: Math.max(0, MAX_AUDIO_MB - updatedUser.audioUsedMB),
+      },
+      video: {
+        usedMB: updatedUser.videoUsedMB,
+        limitMB: MAX_VIDEO_MB,
+        remainingMB: Math.max(0, MAX_VIDEO_MB - updatedUser.videoUsedMB),
+      },
+    };
+    io.to(`user-${req.user.id}`).emit("storage-update", storageData);
+    res.json({
+      success: true,
+      deletedCount: result.deletedCount,
+      profile,
+      storage: storageData,
+    });
+  } catch (err) {
+    logger.error("❌ خطأ في حذف جميع أوامر التفاعل:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ================ نقطة نهاية تنفيذ الاختصار ================
 app.post("/api/execute-keystroke", authenticateToken, async (req, res) => {
   try {
