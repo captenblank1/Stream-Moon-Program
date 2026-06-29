@@ -2871,11 +2871,13 @@ app.post(
         return res
           .status(404)
           .json({ success: false, message: "البروفايل المستهدف غير موجود" });
+
       await GiftCommand.deleteMany({ userId: req.user.id, profile: targetId });
       await InteractionCommand.deleteMany({
         userId: req.user.id,
         profile: targetId,
       });
+
       const giftCommands = await GiftCommand.find({
         userId: req.user.id,
         profile: sourceId,
@@ -2886,12 +2888,15 @@ app.post(
         newCmd.profile = targetId;
         newCmd.userId = req.user.id;
 
-        // نسخ الصوت (يدعم الروابط المباشرة)
+        // ---------- صوت ----------
         if (newCmd.audio) {
-          if (
+          if (newCmd.audio.startsWith("/audios/")) {
+            // صوت افتراضي ← اتركه كما هو
+          } else if (
             newCmd.audio.startsWith("http://") ||
             newCmd.audio.startsWith("https://")
           ) {
+            // رابط مباشر ← ارفع نسخة جديدة
             const newAudioFile = await uploadFileFromUrl(
               newCmd.audio,
               req.user.id,
@@ -2899,24 +2904,20 @@ app.post(
             );
             if (newAudioFile) newCmd.audio = newAudioFile;
           } else {
+            // ملف مرفوع ← تأكد من وجوده
             const audioDoc = await Audio.findOne({
               file: newCmd.audio,
               userId: req.user.id,
             });
-            if (audioDoc && audioDoc.cloudinaryUrl) {
-              const newAudioFile = await uploadFileFromUrl(
-                audioDoc.cloudinaryUrl,
-                req.user.id,
-                "audio",
-              );
-              if (newAudioFile) newCmd.audio = newAudioFile;
-            }
+            if (!audioDoc) newCmd.audio = null; // غير موجود ← نحذف
           }
         }
 
-        // نسخ الفيديو (يدعم الروابط المباشرة)
+        // ---------- فيديو ----------
         if (newCmd.video) {
-          if (
+          if (newCmd.video.startsWith("/videos/")) {
+            // فيديو افتراضي ← اتركه
+          } else if (
             newCmd.video.startsWith("http://") ||
             newCmd.video.startsWith("https://")
           ) {
@@ -2931,19 +2932,13 @@ app.post(
               file: newCmd.video,
               userId: req.user.id,
             });
-            if (videoDoc && videoDoc.cloudinaryUrl) {
-              const newVideoFile = await uploadFileFromUrl(
-                videoDoc.cloudinaryUrl,
-                req.user.id,
-                "video",
-              );
-              if (newVideoFile) newCmd.video = newVideoFile;
-            }
+            if (!videoDoc) newCmd.video = null;
           }
         }
 
         await GiftCommand.create(newCmd);
       }
+
       const interactionCommands = await InteractionCommand.find({
         userId: req.user.id,
         profile: sourceId,
@@ -2954,9 +2949,11 @@ app.post(
         newCmd.profile = targetId;
         newCmd.userId = req.user.id;
 
-        // نسخ الصوت (يدعم الروابط المباشرة)
+        // صوت
         if (newCmd.audio) {
-          if (
+          if (newCmd.audio.startsWith("/audios/")) {
+            // افتراضي
+          } else if (
             newCmd.audio.startsWith("http://") ||
             newCmd.audio.startsWith("https://")
           ) {
@@ -2971,20 +2968,15 @@ app.post(
               file: newCmd.audio,
               userId: req.user.id,
             });
-            if (audioDoc && audioDoc.cloudinaryUrl) {
-              const newAudioFile = await uploadFileFromUrl(
-                audioDoc.cloudinaryUrl,
-                req.user.id,
-                "audio",
-              );
-              if (newAudioFile) newCmd.audio = newAudioFile;
-            }
+            if (!audioDoc) newCmd.audio = null;
           }
         }
 
-        // نسخ الفيديو (يدعم الروابط المباشرة)
+        // فيديو
         if (newCmd.video) {
-          if (
+          if (newCmd.video.startsWith("/videos/")) {
+            // افتراضي
+          } else if (
             newCmd.video.startsWith("http://") ||
             newCmd.video.startsWith("https://")
           ) {
@@ -2999,19 +2991,13 @@ app.post(
               file: newCmd.video,
               userId: req.user.id,
             });
-            if (videoDoc && videoDoc.cloudinaryUrl) {
-              const newVideoFile = await uploadFileFromUrl(
-                videoDoc.cloudinaryUrl,
-                req.user.id,
-                "video",
-              );
-              if (newVideoFile) newCmd.video = newVideoFile;
-            }
+            if (!videoDoc) newCmd.video = null;
           }
         }
 
         await InteractionCommand.create(newCmd);
       }
+
       await refreshCachesForUser(req.user.id);
       res.json({
         success: true,
