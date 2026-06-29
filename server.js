@@ -2839,22 +2839,26 @@ app.post(
           success: false,
           message: "لا يمكنك نسخ بروفايل في النسخة المجانية",
         });
+
       const sourceId = parseInt(req.params.sourceId);
       if (sourceId < 1 || sourceId > MAX_PROFILES)
         return res
           .status(400)
           .json({ success: false, message: "مصدر غير صالح" });
+
       const { targetProfile } = req.body;
       if (!targetProfile)
         return res.status(400).json({
           success: false,
           message: "يجب تحديد البروفايل المستهدف (targetProfile) بين 1 و 20",
         });
+
       const targetId = parseInt(targetProfile);
       if (targetId < 1 || targetId > MAX_PROFILES)
         return res
           .status(400)
           .json({ success: false, message: "البروفايل المستهدف غير صالح" });
+
       const sourceProfile = await Profile.findOne({
         owner: req.user.id,
         id: sourceId,
@@ -2863,6 +2867,7 @@ app.post(
         return res
           .status(404)
           .json({ success: false, message: "البروفايل المصدر غير موجود" });
+
       const targetProfileDoc = await Profile.findOne({
         owner: req.user.id,
         id: targetId,
@@ -2872,6 +2877,7 @@ app.post(
           .status(404)
           .json({ success: false, message: "البروفايل المستهدف غير موجود" });
 
+      // حذف الأوامر القديمة في البروفايل الهدف
       await GiftCommand.deleteMany({ userId: req.user.id, profile: targetId });
       await InteractionCommand.deleteMany({
         userId: req.user.id,
@@ -2882,63 +2888,56 @@ app.post(
         userId: req.user.id,
         profile: sourceId,
       });
+
+      // دالة مساعدة لرفع نسخة مستقلة من ملف (صوت/فيديو) اعتماداً على الرابط السحابي
+      async function deepCopyMedia(file, userId, type) {
+        if (!file) return null;
+
+        // 1. ملف افتراضي (نظام) → نبقيه كما هو
+        if (file.startsWith("/audios/") || file.startsWith("/videos/")) {
+          return file;
+        }
+
+        // 2. رابط خارجي مباشر → نرفع نسخة جديدة
+        if (file.startsWith("http://") || file.startsWith("https://")) {
+          const newFile = await uploadFileFromUrl(file, userId, type);
+          return newFile || null;
+        }
+
+        // 3. ملف مرفوع سابقاً: نجيب رابطه السحابي ثم نرفع منه نسخة جديدة
+        const Model = type === "audio" ? Audio : Video;
+        const doc = await Model.findOne({ file, userId });
+        if (doc) {
+          // استخدم الرابط السحابي المخزن (أو بناء رابط افتراضي إن لم يوجد)
+          const cloudUrl =
+            doc.cloudinaryUrl ||
+            `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/${
+              type === "audio" ? "raw/upload" : "video/upload"
+            }/${file}`;
+          const newFile = await uploadFileFromUrl(cloudUrl, userId, type);
+          return newFile || null;
+        }
+
+        // الملف غير موجود في المكتبة → لا يمكن نسخه
+        return null;
+      }
+
+      // نسخ أوامر الهدايا
       for (const cmd of giftCommands) {
         const newCmd = cmd.toObject();
         delete newCmd._id;
         newCmd.profile = targetId;
         newCmd.userId = req.user.id;
 
-        // ---------- صوت ----------
-        if (newCmd.audio) {
-          if (newCmd.audio.startsWith("/audios/")) {
-            // صوت افتراضي ← اتركه كما هو
-          } else if (
-            newCmd.audio.startsWith("http://") ||
-            newCmd.audio.startsWith("https://")
-          ) {
-            // رابط مباشر ← ارفع نسخة جديدة
-            const newAudioFile = await uploadFileFromUrl(
-              newCmd.audio,
-              req.user.id,
-              "audio",
-            );
-            if (newAudioFile) newCmd.audio = newAudioFile;
-          } else {
-            // ملف مرفوع ← تأكد من وجوده
-            const audioDoc = await Audio.findOne({
-              file: newCmd.audio,
-              userId: req.user.id,
-            });
-            if (!audioDoc) newCmd.audio = null; // غير موجود ← نحذف
-          }
-        }
-
-        // ---------- فيديو ----------
-        if (newCmd.video) {
-          if (newCmd.video.startsWith("/videos/")) {
-            // فيديو افتراضي ← اتركه
-          } else if (
-            newCmd.video.startsWith("http://") ||
-            newCmd.video.startsWith("https://")
-          ) {
-            const newVideoFile = await uploadFileFromUrl(
-              newCmd.video,
-              req.user.id,
-              "video",
-            );
-            if (newVideoFile) newCmd.video = newVideoFile;
-          } else {
-            const videoDoc = await Video.findOne({
-              file: newCmd.video,
-              userId: req.user.id,
-            });
-            if (!videoDoc) newCmd.video = null;
-          }
-        }
+        // نسخ مستقل للصوت
+        newCmd.audio = await deepCopyMedia(newCmd.audio, req.user.id, "audio");
+        // نسخ مستقل للفيديو
+        newCmd.video = await deepCopyMedia(newCmd.video, req.user.id, "video");
 
         await GiftCommand.create(newCmd);
       }
 
+      // نسخ أوامر التفاعلات
       const interactionCommands = await InteractionCommand.find({
         userId: req.user.id,
         profile: sourceId,
@@ -2949,51 +2948,8 @@ app.post(
         newCmd.profile = targetId;
         newCmd.userId = req.user.id;
 
-        // صوت
-        if (newCmd.audio) {
-          if (newCmd.audio.startsWith("/audios/")) {
-            // افتراضي
-          } else if (
-            newCmd.audio.startsWith("http://") ||
-            newCmd.audio.startsWith("https://")
-          ) {
-            const newAudioFile = await uploadFileFromUrl(
-              newCmd.audio,
-              req.user.id,
-              "audio",
-            );
-            if (newAudioFile) newCmd.audio = newAudioFile;
-          } else {
-            const audioDoc = await Audio.findOne({
-              file: newCmd.audio,
-              userId: req.user.id,
-            });
-            if (!audioDoc) newCmd.audio = null;
-          }
-        }
-
-        // فيديو
-        if (newCmd.video) {
-          if (newCmd.video.startsWith("/videos/")) {
-            // افتراضي
-          } else if (
-            newCmd.video.startsWith("http://") ||
-            newCmd.video.startsWith("https://")
-          ) {
-            const newVideoFile = await uploadFileFromUrl(
-              newCmd.video,
-              req.user.id,
-              "video",
-            );
-            if (newVideoFile) newCmd.video = newVideoFile;
-          } else {
-            const videoDoc = await Video.findOne({
-              file: newCmd.video,
-              userId: req.user.id,
-            });
-            if (!videoDoc) newCmd.video = null;
-          }
-        }
+        newCmd.audio = await deepCopyMedia(newCmd.audio, req.user.id, "audio");
+        newCmd.video = await deepCopyMedia(newCmd.video, req.user.id, "video");
 
         await InteractionCommand.create(newCmd);
       }
@@ -3001,7 +2957,7 @@ app.post(
       await refreshCachesForUser(req.user.id);
       res.json({
         success: true,
-        message: `تم نسخ الأوامر من البروفايل ${sourceId} إلى البروفايل ${targetId}`,
+        message: `تم نسخ الأوامر من البروفايل ${sourceId} إلى البروفايل ${targetId} (مع نسخ مستقل لجميع الوسائط)`,
       });
     } catch (err) {
       logger.error("❌ خطأ في نسخ البروفايل:", err.message);
@@ -3009,6 +2965,144 @@ app.post(
     }
   },
 );
+
+// ================ تصدير بروفايل (لمشاركته مع حساب آخر) ================
+app.get(
+  "/api/profiles/export/:profileId",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const profileId = parseInt(req.params.profileId);
+      const canAccess = await canAccessProfile(req.user.id, profileId);
+      if (!canAccess)
+        return res
+          .status(403)
+          .json({ success: false, message: "لا يمكن الوصول" });
+
+      const gifts = await GiftCommand.find({
+        userId: req.user.id,
+        profile: profileId,
+      }).lean();
+      const interactions = await InteractionCommand.find({
+        userId: req.user.id,
+        profile: profileId,
+      }).lean();
+
+      // دالة لجلب رابط Cloudinary الحقيقي للملف (صوت/فيديو)
+      const resolveMediaUrl = async (file, type) => {
+        if (!file) return null;
+        if (file.startsWith("/audios/") || file.startsWith("/videos/"))
+          return file; // افتراضي
+        if (file.startsWith("http")) return file; // رابط خارجي
+        const Model = type === "audio" ? Audio : Video;
+        const doc = await Model.findOne({ file, userId: req.user.id });
+        if (doc && doc.cloudinaryUrl) return doc.cloudinaryUrl;
+        // fallback
+        const resource = type === "audio" ? "raw/upload" : "video/upload";
+        return `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/${resource}/${file}`;
+      };
+
+      const enrichedGifts = [];
+      for (let cmd of gifts) {
+        const newCmd = { ...cmd };
+        newCmd.audio = await resolveMediaUrl(cmd.audio, "audio");
+        newCmd.video = await resolveMediaUrl(cmd.video, "video");
+        enrichedGifts.push(newCmd);
+      }
+
+      const enrichedInteractions = [];
+      for (let cmd of interactions) {
+        const newCmd = { ...cmd };
+        newCmd.audio = await resolveMediaUrl(cmd.audio, "audio");
+        newCmd.video = await resolveMediaUrl(cmd.video, "video");
+        enrichedInteractions.push(newCmd);
+      }
+
+      res.json({
+        success: true,
+        data: {
+          profileId,
+          gifts: enrichedGifts,
+          interactions: enrichedInteractions,
+        },
+      });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  },
+);
+
+// ================ استيراد بروفايل من حساب آخر ================
+app.post("/api/profiles/import-shared", authenticateToken, async (req, res) => {
+  try {
+    const { data, targetProfile } = req.body;
+    if (!data || !targetProfile)
+      return res.status(400).json({ success: false, message: "بيانات ناقصة" });
+
+    const targetId = parseInt(targetProfile);
+    if (targetId < 1 || targetId > MAX_PROFILES)
+      return res
+        .status(400)
+        .json({ success: false, message: "بروفايل غير صالح" });
+
+    const canAccess = await canAccessProfile(req.user.id, targetId);
+    if (!canAccess)
+      return res
+        .status(403)
+        .json({ success: false, message: "لا يمكن الوصول" });
+
+    // حذف الأوامر القديمة في البروفايل الهدف (اختياري)
+    await GiftCommand.deleteMany({ userId: req.user.id, profile: targetId });
+    await InteractionCommand.deleteMany({
+      userId: req.user.id,
+      profile: targetId,
+    });
+
+    // دالة لرفع الميديا من رابط (URL) إلى حساب المستخدم الحالي
+    const uploadMedia = async (url, type) => {
+      if (!url) return null;
+      if (url.startsWith("/audios/") || url.startsWith("/videos/")) return url;
+      try {
+        return await uploadFileFromUrl(url, req.user.id, type);
+      } catch (err) {
+        logger.warn(`فشل رفع ${type} من ${url}`);
+        return null;
+      }
+    };
+
+    for (let cmd of data.gifts || []) {
+      const newCmd = { ...cmd };
+      delete newCmd._id;
+      newCmd.userId = req.user.id;
+      newCmd.profile = targetId;
+
+      newCmd.audio = await uploadMedia(newCmd.audio, "audio");
+      newCmd.video = await uploadMedia(newCmd.video, "video");
+
+      await GiftCommand.create(newCmd);
+    }
+
+    for (let cmd of data.interactions || []) {
+      const newCmd = { ...cmd };
+      delete newCmd._id;
+      newCmd.userId = req.user.id;
+      newCmd.profile = targetId;
+
+      newCmd.audio = await uploadMedia(newCmd.audio, "audio");
+      newCmd.video = await uploadMedia(newCmd.video, "video");
+
+      await InteractionCommand.create(newCmd);
+    }
+
+    await refreshCachesForUser(req.user.id);
+    res.json({
+      success: true,
+      message: `تم استيراد البروفايل إلى ${targetId}`,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 async function getDefaultAudios() {
   const audiosDir = path.join(__dirname, "audios");
