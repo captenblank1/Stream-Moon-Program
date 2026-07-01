@@ -1652,11 +1652,13 @@ function startLiveHeartbeat(userId) {
 async function connectUser(userId, username) {
   if (userTikTokConnections.has(userId)) {
     const existing = userTikTokConnections.get(userId);
-    if (existing.connection) {
+    if (existing && existing.connection) {
       try {
+        existing.connection.removeAllListeners();
         existing.connection.disconnect();
       } catch (e) {}
     }
+    userTikTokConnections.delete(userId);
   }
   const connection = new TikTokLiveConnection(username, {
     apiKey: BLACKMOON_KEY,
@@ -1964,13 +1966,10 @@ async function connectUser(userId, username) {
   connection.on(WebcastEvent.DISCONNECTED, () => {
     if (userTikTokConnections.has(userId)) {
       const conn = userTikTokConnections.get(userId);
-      // ضبط الحالة
       conn.isLive = false;
       conn.roomId = null;
-      // يمكن أيضاً حذف الكائن بالكامل، لكن الأفضل الاحتفاظ به للرجوع إليه
       userTikTokConnections.set(userId, conn);
     }
-    // إعادة تعيين الحالات المرتبطة بالبث
     resetOncePerLiveForUser(userId);
     logger.info(`⚠️ تم قطع الاتصال بـ TikTok للمستخدم ${userId}`);
   });
@@ -2752,13 +2751,15 @@ app.post("/api/tiktok-disconnect", authenticateToken, async (req, res) => {
     const conn = userTikTokConnections.get(userId);
     if (conn && conn.connection) {
       try {
+        conn.connection.removeAllListeners(); // ⭐
         conn.connection.disconnect();
       } catch (e) {}
     }
-    userTikTokConnections.delete(userId);
+    userTikTokConnections.delete(userId); // ⭐
     resetOncePerLiveForUser(userId);
     res.json({ success: true, message: "تم قطع الاتصال" });
   } catch (err) {
+    logger.error("❌ خطأ في قطع الاتصال:", err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 });
