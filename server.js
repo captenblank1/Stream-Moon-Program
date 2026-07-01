@@ -1962,6 +1962,7 @@ async function connectUser(userId, username) {
       userTikTokConnections.set(userId, conn);
     }
   });
+  
 
   connection.on(WebcastEvent.DISCONNECTED, () => {
     if (userTikTokConnections.has(userId)) {
