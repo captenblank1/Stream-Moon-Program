@@ -1115,8 +1115,8 @@ async function executeAction(
   } = cmdObj;
 
   // تعريف المتغيرات الأساسية
-  let uniqueId = triggerUser;     // المعرف الفريد (اسم المستخدم)
-  let realName = triggerUser;    // الاسم المعروض (nickname)
+  let uniqueId = triggerUser; // المعرف الفريد (اسم المستخدم)
+  let realName = triggerUser; // الاسم المعروض (nickname)
   let avatar = "";
 
   // استخراج الاسم والصورة من البيانات إذا كانت موجودة
@@ -1183,7 +1183,7 @@ async function executeAction(
     } catch (e) {}
     io.to(room).emit("gift-video", {
       videoId: videoUrl,
-      user: uniqueId,        // استخدم uniqueId بدلاً من triggerUser
+      user: uniqueId, // استخدم uniqueId بدلاً من triggerUser
       screen,
       volume: videoVolume,
     });
@@ -1213,7 +1213,7 @@ async function executeAction(
     const finalKeystroke = replacePlaceholders(
       keystrokeText,
       realName,
-      uniqueId,      // استخدم uniqueId بدلاً من triggerUser
+      uniqueId, // استخدم uniqueId بدلاً من triggerUser
       "",
     );
     const agentSocket = userLocalAgents.get(userId);
@@ -1346,13 +1346,30 @@ function resetOncePerLiveForUser(userId) {
 // استبدل getSenderFromEvent
 function getSenderFromEvent(data) {
   if (!data) return "Unknown";
+  console.log("🔍 [getSenderFromEvent] data keys:", Object.keys(data));
+  console.log(
+    "🔍 [getSenderFromEvent] user keys:",
+    data.user ? Object.keys(data.user) : "no user",
+  );
+
   const user = data.user || data;
   const candidates = [
-    user.uniqueId, user.unique_id, user.userId, user.id,
-    data.uniqueId, data.unique_id, data.userId, data.id,
-    user.username, data.username,
-    user.nickname, user.nickName, user.displayName, user.display_name,
-    data.nickname, data.displayName,
+    user.uniqueId,
+    user.unique_id,
+    user.userId,
+    user.id,
+    data.uniqueId,
+    data.unique_id,
+    data.userId,
+    data.id,
+    user.username,
+    data.username,
+    user.nickname,
+    user.nickName,
+    user.displayName,
+    user.display_name,
+    data.nickname,
+    data.displayName,
   ];
   for (let c of candidates) {
     if (typeof c === "string" && c.trim() && !/^\d+$/.test(c.trim())) {
@@ -1372,10 +1389,18 @@ function getSenderFromEvent(data) {
 function getUserRealName(data) {
   const user = data?.user || {};
   const nickCandidates = [
-    user.nickname, user.nickName, user.displayName, user.display_name,
-    data.nickname, data.displayName,
-    user.uniqueId, user.unique_id, data.uniqueId, data.unique_id,
-    user.username, data.username,
+    user.nickname,
+    user.nickName,
+    user.displayName,
+    user.display_name,
+    data.nickname,
+    data.displayName,
+    user.uniqueId,
+    user.unique_id,
+    data.uniqueId,
+    data.unique_id,
+    user.username,
+    data.username,
   ];
   for (let c of nickCandidates) {
     if (typeof c === "string" && c.trim()) return c.trim();
@@ -1961,7 +1986,6 @@ async function connectUser(userId, username) {
       userTikTokConnections.set(userId, conn);
     }
   });
-  
 
   connection.on(WebcastEvent.DISCONNECTED, () => {
     if (userTikTokConnections.has(userId)) {
