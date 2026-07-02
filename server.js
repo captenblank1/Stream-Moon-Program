@@ -1346,40 +1346,48 @@ function resetOncePerLiveForUser(userId) {
 // استبدل getSenderFromEvent
 function getSenderFromEvent(data) {
   if (!data) return "Unknown";
-  console.log("🔍 [getSenderFromEvent] data keys:", Object.keys(data));
-  console.log(
+  logger.info("🔍 [getSenderFromEvent] data keys:", Object.keys(data));
+  logger.info(
     "🔍 [getSenderFromEvent] user keys:",
     data.user ? Object.keys(data.user) : "no user",
   );
 
   const user = data.user || data;
+  // قائمة موسعة
   const candidates = [
+    data.uniqueId,
+    data.userId,
+    data.fromUserId,
+    data.ownerId,
     user.uniqueId,
     user.unique_id,
     user.userId,
     user.id,
-    data.uniqueId,
-    data.unique_id,
-    data.userId,
-    data.id,
-    user.username,
-    data.username,
     user.nickname,
     user.nickName,
     user.displayName,
     user.display_name,
     data.nickname,
     data.displayName,
+    user.username,
+    data.username,
   ];
   for (let c of candidates) {
     if (typeof c === "string" && c.trim() && !/^\d+$/.test(c.trim())) {
       return c.trim();
     }
+    if (typeof c === "number" && c.toString().trim()) {
+      return c.toString().trim();
+    }
   }
+  // بحث شامل في user
   for (let key of Object.keys(user)) {
     const val = user[key];
-    if (typeof val === "string" && val.trim() && !/^\d+$/.test(val.trim())) {
+    if (typeof val === "string" && val.trim()) {
       return val.trim();
+    }
+    if (typeof val === "number" && val.toString().trim()) {
+      return val.toString().trim();
     }
   }
   return "Unknown";
@@ -1776,13 +1784,16 @@ async function connectUser(userId, username) {
 
   async function processGiftDelta({
     userId,
-    sender,
+    sender, // هذا هو الاسم المحول (normalized)
     giftIdStr,
     delta,
     newRepeat,
     data,
   }) {
     try {
+      // احصل على الاسم الخام من data مباشرة
+      const rawSender = getSenderFromEvent(data); // ← هذا هو المفتاح
+
       const userProfile = await getUserSelectedProfile(userId);
       let giftCmd = getGiftCommandForProfile(userId, userProfile, giftIdStr);
       if (!giftCmd) {
@@ -1804,7 +1815,7 @@ async function connectUser(userId, username) {
         const targetOk =
           !giftCmd.targetUser ||
           normalizeUser(giftCmd.targetUser) === "all" ||
-          normalizeUser(giftCmd.targetUser) === sender;
+          normalizeUser(giftCmd.targetUser) === sender; // المقارنة تبقى باستخدام sender المحول
         if (targetOk) {
           const cmdObj = giftCmd.toObject
             ? { ...giftCmd.toObject() }
@@ -1818,16 +1829,11 @@ async function connectUser(userId, username) {
             cmdObj.command && cmdObj.command.trim() !== ""
               ? cmdObj.command
               : cmdObj.combo || "";
-          await executeAction(cmdObj, sender, userId, data);
+          // ✅ هنا نمرر rawSender بدلاً من sender
+          await executeAction(cmdObj, rawSender, userId, data);
         }
       }
-      const giftInteractions = getInteractionCommandsForProfile(
-        userId,
-        userProfile,
-      ).filter((i) => i.type === "gift");
-      for (const ic of giftInteractions) {
-        // يمكن إضافة منطق لاحقاً
-      }
+      // باقي الكود...
     } catch (err) {
       logger.error("❌ processGiftDelta error:", err.message);
     }
@@ -2187,250 +2193,250 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
     const safeUnmuted = unmuted ? "true" : "false";
 
     const html = `<!DOCTYPE html>
-<html lang="ar">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Screen ${screenNum} - ${safeEmailForTitle}</title>
-  <style>
-    html,body{ margin:0;padding:0;width:100%;height:100%; background:transparent; overflow:hidden; }
-    video{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:transparent; display:none; }
-    .overlay-container {
-      position: fixed;
-      top: 20%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: transparent;          /* ✅ شفاف بالكامل */
-      backdrop-filter: none;           /* إزالة الضبابية */
-      color: white;
-      padding: 10px 20px;              /* تقليل الحشو شوية */
+  <html lang="ar">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Screen ${screenNum} - ${safeEmailForTitle}</title>
+    <style>
+      html,body{ margin:0;padding:0;width:100%;height:100%; background:transparent; overflow:hidden; }
+      video{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:transparent; display:none; }
+      .overlay-container {
+        position: fixed;
+        top: 20%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: transparent;          /* ✅ شفاف بالكامل */
+        backdrop-filter: none;           /* إزالة الضبابية */
+        color: white;
+        padding: 10px 20px;              /* تقليل الحشو شوية */
+        border-radius: 0;
+        text-align: center;
+        z-index: 9999;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        gap: 5px;                        /* تقليل المسافات بين العناصر */
+        border: none;                    /* بدون إطار */
+        min-width: auto;
+        box-shadow: none;                /* بدون ظل */
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      }
+      .overlay-avatar { width:100px; height:100px; border-radius:50%; object-fit:cover; border:3px solid #4caf50; background: transparent; }
+      .overlay-username { font-size:20px; font-weight:bold; margin:0; text-shadow:1px 1px 2px black; }
+      .overlay-text {
+      font-size: 17px;
+      color: #ffd966;
+      background: transparent;
+      padding: 3px 10px;
       border-radius: 0;
-      text-align: center;
-      z-index: 9999;
-      display: none;
-      flex-direction: column;
-      align-items: center;
-      gap: 5px;                        /* تقليل المسافات بين العناصر */
-      border: none;                    /* بدون إطار */
-      min-width: auto;
-      box-shadow: none;                /* بدون ظل */
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin-top: 2px;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.8), 0 0 5px rgba(0,0,0,0.5);
     }
-    .overlay-avatar { width:100px; height:100px; border-radius:50%; object-fit:cover; border:3px solid #4caf50; background: transparent; }
-    .overlay-username { font-size:20px; font-weight:bold; margin:0; text-shadow:1px 1px 2px black; }
-    .overlay-text {
-    font-size: 17px;
-    color: #ffd966;
-    background: transparent;
-    padding: 3px 10px;
-    border-radius: 0;
-    margin-top: 2px;
-    text-shadow: 1px 1px 2px rgba(0,0,0,0.8), 0 0 5px rgba(0,0,0,0.5);
-  }
-  </style>
-</head>
-<body>
-  <div id="overlay" class="overlay-container">
-    <img id="overlayAvatar" class="overlay-avatar" src="" alt="">
-    <div id="overlayUsername" class="overlay-username"></div>
-    <div id="overlayText" class="overlay-text"></div>
-  </div>
-  <video id="videoPlayer" autoplay playsinline ${unmuted ? "" : "muted"}></video>
-  <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
-  <script>
-  (function(){
-    const SCREEN_NUMBER = ${screenNum};
-    const USER_TOKEN = ${safeToken};
-    const UNMUTED = ${safeUnmuted};
-    console.log('🎬 Screen ' + SCREEN_NUMBER + ' loaded' + (UNMUTED ? ' (مع الصوت)' : ' (مكتوم)'));
+    </style>
+  </head>
+  <body>
+    <div id="overlay" class="overlay-container">
+      <img id="overlayAvatar" class="overlay-avatar" src="" alt="">
+      <div id="overlayUsername" class="overlay-username"></div>
+      <div id="overlayText" class="overlay-text"></div>
+    </div>
+    <video id="videoPlayer" autoplay playsinline ${unmuted ? "" : "muted"}></video>
+    <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
+    <script>
+    (function(){
+      const SCREEN_NUMBER = ${screenNum};
+      const USER_TOKEN = ${safeToken};
+      const UNMUTED = ${safeUnmuted};
+      console.log('🎬 Screen ' + SCREEN_NUMBER + ' loaded' + (UNMUTED ? ' (مع الصوت)' : ' (مكتوم)'));
 
-    const socket = io(window.location.origin, { query: { token: USER_TOKEN }, transports: ['websocket', 'polling'] });
-    let audioUnlocked = false;
-    let currentAudioElement = null;
+      const socket = io(window.location.origin, { query: { token: USER_TOKEN }, transports: ['websocket', 'polling'] });
+      let audioUnlocked = false;
+      let currentAudioElement = null;
 
-    function getAudioElement(){
-      if (currentAudioElement) {
-        currentAudioElement.pause();
-        currentAudioElement.currentTime = 0;
-        currentAudioElement.src = '';
-        currentAudioElement.load();
-      }
-      const a = new Audio();
-      a.preload = 'auto';
-      a.crossOrigin = 'anonymous';
-      a.onended = () => {
-        a.src = '';
-        a.load();
-        if (currentAudioElement === a) currentAudioElement = null;
-      };
-      currentAudioElement = a;
-      return a;
-    }
-
-    async function tryUnlockAudio(){
-      if(audioUnlocked) return true;
-      try {
-        if (typeof AudioContext !== 'undefined') {
-          const ctx = new (window.AudioContext || window.webkitAudioContext)();
-          const o = ctx.createOscillator();
-          const g = ctx.createGain();
-          g.gain.value = 0;
-          o.connect(g); g.connect(ctx.destination);
-          o.start(0);
-          setTimeout(()=>{ try{ o.stop(); ctx.close(); }catch(e){} }, 50);
+      function getAudioElement(){
+        if (currentAudioElement) {
+          currentAudioElement.pause();
+          currentAudioElement.currentTime = 0;
+          currentAudioElement.src = '';
+          currentAudioElement.load();
         }
-        const silent = getAudioElement();
-        silent.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
-        silent.volume = 0;
-        await silent.play().catch(()=>{});
-        silent.pause();
-        silent.src = '';
-        audioUnlocked = true;
-        return true;
-      } catch (e) {
-        console.warn('audio unlock failed', e);
-        return false;
+        const a = new Audio();
+        a.preload = 'auto';
+        a.crossOrigin = 'anonymous';
+        a.onended = () => {
+          a.src = '';
+          a.load();
+          if (currentAudioElement === a) currentAudioElement = null;
+        };
+        currentAudioElement = a;
+        return a;
       }
-    }
 
-    window.addEventListener('load', ()=>{ tryUnlockAudio(); });
-
-    socket.on('play-sound', async (payload) => {
-      try {
-        if (!payload || !payload.filename) return;
-        if (!audioUnlocked) await tryUnlockAudio();
-        const filename = payload.filename;
-        const vol100 = typeof payload.volume !== 'undefined' ? Number(payload.volume) : 100;
-        const vol = Math.min(100, Math.max(0, vol100)) / 100;
-        const a = getAudioElement();
-        a.src = filename;
-        a.volume = vol;
-        a.currentTime = 0;
-        a.play().catch(err => console.warn('audio play blocked', err));
-      } catch (err) {
-        console.error('play-sound handler error', err);
-      }
-    });
-
-    const video = document.getElementById('videoPlayer');
-    const videoQueue = [];
-    let isPlaying = false;
-    let videoVolume = 1;
-
-    video.muted = !UNMUTED;
-    video.volume = UNMUTED ? videoVolume : 0;
-
-    function playNextVideo() {
-      if (isPlaying || videoQueue.length === 0) return;
-      const src = videoQueue.shift();
-      isPlaying = true;
-      video.src = src;
-      video.muted = true;
-      video.volume = 0;
-      video.style.display = 'block';
-      
-      video.play().then(() => {
-        if (UNMUTED) {
-          video.muted = false;
-          video.volume = videoVolume;
-          console.log('🔊 تم إلغاء كتم الفيديو بعد التشغيل');
-        } else {
-          video.muted = true;
-          video.volume = 0;
+      async function tryUnlockAudio(){
+        if(audioUnlocked) return true;
+        try {
+          if (typeof AudioContext !== 'undefined') {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            g.gain.value = 0;
+            o.connect(g); g.connect(ctx.destination);
+            o.start(0);
+            setTimeout(()=>{ try{ o.stop(); ctx.close(); }catch(e){} }, 50);
+          }
+          const silent = getAudioElement();
+          silent.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
+          silent.volume = 0;
+          await silent.play().catch(()=>{});
+          silent.pause();
+          silent.src = '';
+          audioUnlocked = true;
+          return true;
+        } catch (e) {
+          console.warn('audio unlock failed', e);
+          return false;
         }
-      }).catch(e => console.warn('video autoplay blocked', e));
-      
-      video.onended = () => {
-        isPlaying = false;
-        video.style.display = 'none';
-        video.src = '';
-        playNextVideo();
-      };
-    }
+      }
 
-    if (UNMUTED) {
-      document.body.addEventListener('click', () => {
-        if (video.muted) {
-          video.muted = false;
-          video.volume = videoVolume;
-          console.log('🔊 تم إلغاء كتم الفيديو بعد النقرة');
+      window.addEventListener('load', ()=>{ tryUnlockAudio(); });
+
+      socket.on('play-sound', async (payload) => {
+        try {
+          if (!payload || !payload.filename) return;
+          if (!audioUnlocked) await tryUnlockAudio();
+          const filename = payload.filename;
+          const vol100 = typeof payload.volume !== 'undefined' ? Number(payload.volume) : 100;
+          const vol = Math.min(100, Math.max(0, vol100)) / 100;
+          const a = getAudioElement();
+          a.src = filename;
+          a.volume = vol;
+          a.currentTime = 0;
+          a.play().catch(err => console.warn('audio play blocked', err));
+        } catch (err) {
+          console.error('play-sound handler error', err);
         }
       });
-    }
 
-    socket.on('gift-video', (data) => {
-      try {
-        if (data.screen !== SCREEN_NUMBER) return;
-        if (data.volume !== undefined) {
-          videoVolume = Math.min(1, Math.max(0, Number(data.volume) / 100));
-          if (!video.muted) video.volume = videoVolume;
-        }
-        const vidName = data.videoId;
-        console.log('🎬 Screen ' + SCREEN_NUMBER + ' playing:', vidName);
-        videoQueue.push(vidName);
-        playNextVideo();
-      } catch (err) {
-        console.error('gift-video handler error', err);
-      }
-    });
+      const video = document.getElementById('videoPlayer');
+      const videoQueue = [];
+      let isPlaying = false;
+      let videoVolume = 1;
 
-    const overlayDiv = document.getElementById('overlay');
-    const overlayAvatar = document.getElementById('overlayAvatar');
-    const overlayUsername = document.getElementById('overlayUsername');
-    const overlayText = document.getElementById('overlayText');
-    let overlayTimeout = null;
+      video.muted = !UNMUTED;
+      video.volume = UNMUTED ? videoVolume : 0;
 
-    socket.on('show-overlay', (data) => {
-      try {
-        if (!data) return;
-        console.log('📢 استقبال تراكب:', data);
-
-        // رابط الصورة، مع fallback لو فاضي
-        const avatarSrc = data.avatar || 'https://via.placeholder.com/70?text=User';
-        overlayAvatar.src = avatarSrc;
-
-        // لو الصورة فشل تحميلها، نعرض placeholder
-        overlayAvatar.onerror = () => {
-          overlayAvatar.src = 'https://via.placeholder.com/70?text=User';
+      function playNextVideo() {
+        if (isPlaying || videoQueue.length === 0) return;
+        const src = videoQueue.shift();
+        isPlaying = true;
+        video.src = src;
+        video.muted = true;
+        video.volume = 0;
+        video.style.display = 'block';
+        
+        video.play().then(() => {
+          if (UNMUTED) {
+            video.muted = false;
+            video.volume = videoVolume;
+            console.log('🔊 تم إلغاء كتم الفيديو بعد التشغيل');
+          } else {
+            video.muted = true;
+            video.volume = 0;
+          }
+        }).catch(e => console.warn('video autoplay blocked', e));
+        
+        video.onended = () => {
+          isPlaying = false;
+          video.style.display = 'none';
+          video.src = '';
+          playNextVideo();
         };
-
-        overlayUsername.textContent = data.username || 'مستخدم';
-        overlayText.textContent = data.text || '';
-        overlayDiv.style.display = 'flex';
-
-        if (overlayTimeout) clearTimeout(overlayTimeout);
-        overlayTimeout = setTimeout(() => {
-          overlayDiv.style.display = 'none';
-        }, data.duration || 5000);
-      } catch (err) {
-        console.error('خطأ في عرض التراكب:', err);
       }
-    });
 
-    socket.on('stop-sound', () => {
-      if (currentAudioElement) {
-        currentAudioElement.pause();
-        currentAudioElement.currentTime = 0;
-        currentAudioElement = null;
+      if (UNMUTED) {
+        document.body.addEventListener('click', () => {
+          if (video.muted) {
+            video.muted = false;
+            video.volume = videoVolume;
+            console.log('🔊 تم إلغاء كتم الفيديو بعد النقرة');
+          }
+        });
       }
-    });
 
-    socket.on('stop-video', () => {
-      if (video && !video.paused) {
-        video.pause();
-        video.currentTime = 0;
-        video.style.display = 'none';
-        isPlaying = false;
-        while(videoQueue.length) videoQueue.pop();
-      }
-    });
+      socket.on('gift-video', (data) => {
+        try {
+          if (data.screen !== SCREEN_NUMBER) return;
+          if (data.volume !== undefined) {
+            videoVolume = Math.min(1, Math.max(0, Number(data.volume) / 100));
+            if (!video.muted) video.volume = videoVolume;
+          }
+          const vidName = data.videoId;
+          console.log('🎬 Screen ' + SCREEN_NUMBER + ' playing:', vidName);
+          videoQueue.push(vidName);
+          playNextVideo();
+        } catch (err) {
+          console.error('gift-video handler error', err);
+        }
+      });
 
-    socket.on('connect_error', (err) => console.warn('socket connect_error', err));
-    socket.on('connect', () => console.log('✅ Socket connected'));
-  })();
-  <\/script>
-</body>
-</html>`;
+      const overlayDiv = document.getElementById('overlay');
+      const overlayAvatar = document.getElementById('overlayAvatar');
+      const overlayUsername = document.getElementById('overlayUsername');
+      const overlayText = document.getElementById('overlayText');
+      let overlayTimeout = null;
+
+      socket.on('show-overlay', (data) => {
+        try {
+          if (!data) return;
+          console.log('📢 استقبال تراكب:', data);
+
+          // رابط الصورة، مع fallback لو فاضي
+          const avatarSrc = data.avatar || 'https://via.placeholder.com/70?text=User';
+          overlayAvatar.src = avatarSrc;
+
+          // لو الصورة فشل تحميلها، نعرض placeholder
+          overlayAvatar.onerror = () => {
+            overlayAvatar.src = 'https://via.placeholder.com/70?text=User';
+          };
+
+          overlayUsername.textContent = data.username || 'مستخدم';
+          overlayText.textContent = data.text || '';
+          overlayDiv.style.display = 'flex';
+
+          if (overlayTimeout) clearTimeout(overlayTimeout);
+          overlayTimeout = setTimeout(() => {
+            overlayDiv.style.display = 'none';
+          }, data.duration || 5000);
+        } catch (err) {
+          console.error('خطأ في عرض التراكب:', err);
+        }
+      });
+
+      socket.on('stop-sound', () => {
+        if (currentAudioElement) {
+          currentAudioElement.pause();
+          currentAudioElement.currentTime = 0;
+          currentAudioElement = null;
+        }
+      });
+
+      socket.on('stop-video', () => {
+        if (video && !video.paused) {
+          video.pause();
+          video.currentTime = 0;
+          video.style.display = 'none';
+          isPlaying = false;
+          while(videoQueue.length) videoQueue.pop();
+        }
+      });
+
+      socket.on('connect_error', (err) => console.warn('socket connect_error', err));
+      socket.on('connect', () => console.log('✅ Socket connected'));
+    })();
+    <\/script>
+  </body>
+  </html>`;
     res.send(html);
   } catch (err) {
     logger.error("❌ Error serving screen:", err.message);
@@ -4940,27 +4946,27 @@ app.get("/agent-auth", async (req, res) => {
     serverUrl,
   });
   res.send(`
-    <!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>ربط العميل المحلي - BlackMoon</title><style>body{background:#0a0a0a;color:white;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;}.container{background:#1e1e1e;padding:30px;border-radius:12px;text-align:center;max-width:400px;}input,button{padding:10px;margin:10px;border-radius:6px;border:none;}input{width:80%;background:#333;color:white;}button{background:#4caf50;color:white;cursor:pointer;}.error{color:#f44336;}</style></head><body><div class="container"><h2>🔗 ربط العميل المحلي</h2><p>الرجاء تسجيل الدخول أولاً ثم النقر على زر الربط.</p><div id="status"></div><button id="bindBtn">ربط العميل</button></div><script>
-      const bindBtn=document.getElementById('bindBtn');
-      const statusDiv=document.getElementById('status');
-      const bindingToken='${bindingToken}';
-      const callbackPort=${port};
-      const serverUrl='${serverUrl}';
-      async function checkLogin(){
-        try{ const res=await fetch('/api/auth/me',{credentials:'include'}); const data=await res.json(); if(data.success){ statusDiv.innerHTML='<span style="color:#4caf50">✅ تم تسجيل الدخول كـ '+data.user.email+'</span>'; return true; } else { statusDiv.innerHTML='<span style="color:#ff9800">⚠️ لم تسجل الدخول. سيتم فتح نافذة تسجيل الدخول.</span>'; return false; } } catch(e){ statusDiv.innerHTML='<span class="error">❌ خطأ في الاتصال</span>'; return false; }
-      }
-      bindBtn.onclick=async()=>{
-        const loggedIn=await checkLogin();
-        if(!loggedIn){ window.open('/login','_blank'); alert('سجل الدخول ثم اضغط على الربط مرة أخرى'); return; }
-        const tokenRes=await fetch('/api/agent/binding-token',{credentials:'include'});
-        const tokenData=await tokenRes.json();
-        if(!tokenData.success){ statusDiv.innerHTML='<span class="error">فشل الحصول على رمز الربط</span>'; return; }
-        const finalToken=tokenData.token;
-        window.location.href=\`http://localhost:\${callbackPort}/callback?sessionToken=\${finalToken}&serverUrl=\${serverUrl}\`;
-      };
-      checkLogin();
-    </script></body></html>
-  `);
+      <!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>ربط العميل المحلي - BlackMoon</title><style>body{background:#0a0a0a;color:white;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;}.container{background:#1e1e1e;padding:30px;border-radius:12px;text-align:center;max-width:400px;}input,button{padding:10px;margin:10px;border-radius:6px;border:none;}input{width:80%;background:#333;color:white;}button{background:#4caf50;color:white;cursor:pointer;}.error{color:#f44336;}</style></head><body><div class="container"><h2>🔗 ربط العميل المحلي</h2><p>الرجاء تسجيل الدخول أولاً ثم النقر على زر الربط.</p><div id="status"></div><button id="bindBtn">ربط العميل</button></div><script>
+        const bindBtn=document.getElementById('bindBtn');
+        const statusDiv=document.getElementById('status');
+        const bindingToken='${bindingToken}';
+        const callbackPort=${port};
+        const serverUrl='${serverUrl}';
+        async function checkLogin(){
+          try{ const res=await fetch('/api/auth/me',{credentials:'include'}); const data=await res.json(); if(data.success){ statusDiv.innerHTML='<span style="color:#4caf50">✅ تم تسجيل الدخول كـ '+data.user.email+'</span>'; return true; } else { statusDiv.innerHTML='<span style="color:#ff9800">⚠️ لم تسجل الدخول. سيتم فتح نافذة تسجيل الدخول.</span>'; return false; } } catch(e){ statusDiv.innerHTML='<span class="error">❌ خطأ في الاتصال</span>'; return false; }
+        }
+        bindBtn.onclick=async()=>{
+          const loggedIn=await checkLogin();
+          if(!loggedIn){ window.open('/login','_blank'); alert('سجل الدخول ثم اضغط على الربط مرة أخرى'); return; }
+          const tokenRes=await fetch('/api/agent/binding-token',{credentials:'include'});
+          const tokenData=await tokenRes.json();
+          if(!tokenData.success){ statusDiv.innerHTML='<span class="error">فشل الحصول على رمز الربط</span>'; return; }
+          const finalToken=tokenData.token;
+          window.location.href=\`http://localhost:\${callbackPort}/callback?sessionToken=\${finalToken}&serverUrl=\${serverUrl}\`;
+        };
+        checkLogin();
+      </script></body></html>
+    `);
 });
 
 app.get("/api/agent/binding-token", authenticateToken, async (req, res) => {
