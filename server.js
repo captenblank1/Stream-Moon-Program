@@ -1114,11 +1114,17 @@ async function executeAction(
     duration = 5,
   } = cmdObj;
 
-  // استخراج الاسم الحقيقي والصورة (نفس الكود السابق)
-  let realName = triggerUser;
+  // تعريف المتغيرات الأساسية
+  let uniqueId = triggerUser;     // المعرف الفريد (اسم المستخدم)
+  let realName = triggerUser;    // الاسم المعروض (nickname)
   let avatar = "";
+
+  // استخراج الاسم والصورة من البيانات إذا كانت موجودة
   if (data) {
-    const uniqueId = getSenderFromEvent(data);
+    const fromEvent = getSenderFromEvent(data);
+    if (fromEvent && fromEvent !== "Unknown" && fromEvent !== "StreamMoon") {
+      uniqueId = fromEvent;
+    }
     const nameFromEvent = getUserRealName(data);
     const avatarFromEvent = getUserAvatar(data);
     if (
@@ -1146,7 +1152,7 @@ async function executeAction(
     }
   }
 
-  // oncePerLive check يبقى كما هو
+  // oncePerLive check
   if (oncePerLive && _id && userId) {
     const idStr = `${userId}:${String(_id)}`;
     if (executedOncePerLive.has(idStr)) {
@@ -1156,7 +1162,7 @@ async function executeAction(
     executedOncePerLive.add(idStr);
   }
 
-  // ✅ 1. الصوت والفيديو والتراكب يشتغلوا فوراً (بدون تأخير)
+  // 1. الصوت والفيديو والتراكب (فوراً)
   if (playSound && audio) {
     playAudio(audio, volume, userId);
     if (duration && duration > 0) {
@@ -1177,7 +1183,7 @@ async function executeAction(
     } catch (e) {}
     io.to(room).emit("gift-video", {
       videoId: videoUrl,
-      user: triggerUser,
+      user: uniqueId,        // استخدم uniqueId بدلاً من triggerUser
       screen,
       volume: videoVolume,
     });
@@ -1197,17 +1203,17 @@ async function executeAction(
     });
   }
 
-  // ✅ 2. بعد كده نطبق التأخير (خاص بالأمر والكيستروك فقط)
+  // 2. التأخير (خاص بالأمر والكيستروك)
   if (delayBefore > 0) {
     await new Promise((resolve) => setTimeout(resolve, delayBefore));
   }
 
-  // ✅ 3. تنفيذ الكيستروك والأوامر
+  // 3. تنفيذ الكيستروك والأوامر
   if (keystrokeText) {
     const finalKeystroke = replacePlaceholders(
       keystrokeText,
       realName,
-      triggerUser,
+      uniqueId,      // استخدم uniqueId بدلاً من triggerUser
       "",
     );
     const agentSocket = userLocalAgents.get(userId);
@@ -1260,14 +1266,14 @@ async function executeAction(
             if (interval === 0)
               sendRconCommand(userId, cmdLine, {
                 nickname: realName,
-                username: triggerUser,
+                username: uniqueId,
               });
             else
               setTimeout(
                 () =>
                   sendRconCommand(userId, cmdLine, {
                     nickname: realName,
-                    username: triggerUser,
+                    username: uniqueId,
                   }),
                 i * interval,
               );
@@ -1281,14 +1287,14 @@ async function executeAction(
         if (interval === 0)
           sendRconCommand(userId, singleCmd, {
             nickname: realName,
-            username: triggerUser,
+            username: uniqueId,
           });
         else
           setTimeout(
             () =>
               sendRconCommand(userId, singleCmd, {
                 nickname: realName,
-                username: triggerUser,
+                username: uniqueId,
               }),
             i * interval,
           );
@@ -1296,12 +1302,14 @@ async function executeAction(
     }
   }
 
-  // ✅ 4. الويبهوك (يبقى بنفس الترتيب لكن ممكن يكون بعد الأوامر أيضاً لو حابب)
+  // 4. الويبهوك (مع التكرار)
   if (webhookUrl && webhookUrl.trim()) {
     const webhookData = {
       name: name || "",
-      user: triggerUser,
+      user: uniqueId,
+      username: uniqueId,
       displayName: realName,
+      nickname: realName,
       type: cmdObj.type || "keyboard",
       timestamp: new Date().toISOString(),
       profile: cmdObj.profile || 1,
@@ -1310,8 +1318,9 @@ async function executeAction(
       interval,
     };
     for (let i = 0; i < repeat; i++) {
-      if (i > 0 && interval > 0)
+      if (i > 0 && interval > 0) {
         await new Promise((r) => setTimeout(r, interval));
+      }
       await sendWebhook(webhookUrl, webhookData, userId);
     }
   }
@@ -1334,56 +1343,46 @@ function resetOncePerLiveForUser(userId) {
   logger.info(`♻️ تم إعادة تعيين حالة oncePerLive للمستخدم ${userId}`);
 }
 
+// استبدل getSenderFromEvent
 function getSenderFromEvent(data) {
   if (!data) return "Unknown";
-  const user = data.user || {};
-  // priority: fields that are the TikTok username (uniqueId)
+  const user = data.user || data;
   const candidates = [
-    user.uniqueId,
-    user.unique_id,
-    data.uniqueId,
-    data.unique_id,
-    user.username,
-    data.username,
-    data.userId, // if it's a string (some events)
-    user.userId,
-    user.id,
-    data.id,
-    data.uid,
-    data.sender,
-    user.nickname, // fallback to nickname if no username found
-    user.nickName,
-    user.displayName,
-    user.display_name,
+    user.uniqueId, user.unique_id, user.userId, user.id,
+    data.uniqueId, data.unique_id, data.userId, data.id,
+    user.username, data.username,
+    user.nickname, user.nickName, user.displayName, user.display_name,
+    data.nickname, data.displayName,
   ];
   for (let c of candidates) {
-    if (typeof c === "string" && c.trim() && !/^\d+$/.test(c.trim()))
+    if (typeof c === "string" && c.trim() && !/^\d+$/.test(c.trim())) {
       return c.trim();
-    if (typeof c === "number") continue; // skip numeric IDs
+    }
   }
-  return "StreamMoon";
+  for (let key of Object.keys(user)) {
+    const val = user[key];
+    if (typeof val === "string" && val.trim() && !/^\d+$/.test(val.trim())) {
+      return val.trim();
+    }
+  }
+  return "Unknown";
 }
 
+// استبدل getUserRealName
 function getUserRealName(data) {
-  const user = data.user || {};
-  const candidates = [
-    user.nickname,
-    user.nickName,
-    user.displayName,
-    user.display_name,
-    user.uniqueId,
-    user.unique_id,
-    user.username,
-    user.name,
-    user.userName,
-    data.nickname,
-    data.displayName,
-    getSenderFromEvent(data),
+  const user = data?.user || {};
+  const nickCandidates = [
+    user.nickname, user.nickName, user.displayName, user.display_name,
+    data.nickname, data.displayName,
+    user.uniqueId, user.unique_id, data.uniqueId, data.unique_id,
+    user.username, data.username,
   ];
-  for (let c of candidates) {
+  for (let c of nickCandidates) {
     if (typeof c === "string" && c.trim()) return c.trim();
   }
-  return getSenderFromEvent(data);
+  const unique = getSenderFromEvent(data);
+  if (unique && unique !== "Unknown" && unique !== "StreamMoon") return unique;
+  return "Unknown";
 }
 
 function getUserAvatar(data) {
