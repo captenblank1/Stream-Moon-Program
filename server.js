@@ -68,8 +68,8 @@ const PROCESSED_TTL_MS = 60 * 1000;
 const GIFT_STREAK_TTL_MS = 15 * 1000;
 
 // ================ حدود التخزين ================
-const MAX_AUDIO_MB = 100;
-const MAX_VIDEO_MB = 1000;
+const MAX_AUDIO_MB = 1000;
+const MAX_VIDEO_MB = 10000;
 
 const videoStorage = multer.memoryStorage();
 const uploadVideo = multer({
@@ -988,7 +988,11 @@ async function sendWebhook(webhookUrl, data, userId = null) {
   const isLocalhost =
     webhookUrl.includes("localhost") || webhookUrl.includes("127.0.0.1");
   if (isLocalhost && userId) {
+    const userIdStr = userId.toString();
     const agentSocket = userLocalAgents.get(userId);
+    logger.info(
+      `🔍 البحث عن عميل محلي للمستخدم ${userId}: ${agentSocket ? "موجود" : "غير موجود"}`,
+    );
     if (agentSocket && agentSocket.connected) {
       logger.info(
         `📡 إرسال webhook إلى العميل المحلي للمستخدم ${userId}: ${webhookUrl}`,
@@ -1962,7 +1966,6 @@ async function connectUser(userId, username) {
       userTikTokConnections.set(userId, conn);
     }
   });
-  
 
   connection.on(WebcastEvent.DISCONNECTED, () => {
     if (userTikTokConnections.has(userId)) {
@@ -4777,7 +4780,7 @@ agentNamespace.use((socket, next) => {
   const session = agentSessions.get(token);
   if (!session || session.expires < Date.now())
     return next(new Error("Invalid session"));
-  socket.userId = session.userId;
+  socket.userId = session.userId.toString(); // ✅ تحويل إلى string
   next();
 });
 agentNamespace.on("connection", (socket) => {
