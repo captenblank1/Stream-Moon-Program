@@ -111,7 +111,6 @@ let interactionCommandsCache = new Map();
 let userLocalAgents = new Map(); // key: userId (string), value: socket
 let agentRegistrationTokens = new Map(); // key: token, value: { userId, expires }
 let bindingTokens = new Map(); // key: token, value: { userId, expires }
-let agentSessions = new Map(); // تخزين رموز جلسات العملاء (صلاحية طويلة)
 
 let userAvatarCache = new Map();
 let userInfoCache = new Map(); // ✅ أضف هذا السطر هنا
@@ -346,6 +345,20 @@ mongoose
   .catch((err) => logger.error("❌ فشل الاتصال بـ MongoDB:", err));
 
 // ================ تعريف Schemas ================
+const agentSessionSchema = new mongoose.Schema(
+  {
+    token: { type: String, required: true, unique: true },
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    expires: { type: Date, required: true, index: { expires: 0 } }, // TTL: يحذف تلقائياً بعد انتهاء الصلاحية
+  },
+  { timestamps: true },
+);
+const AgentSession = mongoose.model("AgentSession", agentSessionSchema);
+
 const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
@@ -4775,14 +4788,21 @@ pluginNamespace.on("connection", (socket) => {
 });
 
 const agentNamespace = io.of("/agent");
-agentNamespace.use((socket, next) => {
+agentNamespace.use(async (socket, next) => {
   const token = socket.handshake.auth?.token;
   if (!token) return next(new Error("Missing token"));
-  const session = agentSessions.get(token);
-  if (!session || session.expires < Date.now())
-    return next(new Error("Invalid session"));
-  socket.userId = session.userId.toString(); // ✅ تحويل إلى string
-  next();
+  try {
+    const session = await AgentSession.findOne({ token });
+    if (!session || session.expires < new Date()) {
+      // تنظيف الجلسة المنتهية لو كانت موجودة
+      if (session) await AgentSession.deleteOne({ _id: session._id });
+      return next(new Error("Invalid session"));
+    }
+    socket.userId = session.userId.toString();
+    next();
+  } catch (err) {
+    next(new Error("Authentication error"));
+  }
 });
 agentNamespace.on("connection", (socket) => {
   const userId = socket.userId;
@@ -4941,13 +4961,16 @@ app.post("/api/agent/exchange-binding", async (req, res) => {
         .status(400)
         .json({ success: false, message: "Invalid or expired binding token" });
     bindingTokens.delete(bindingToken);
+
     const sessionToken = crypto.randomBytes(32).toString("hex");
-    agentSessions.set(sessionToken, {
+    // تخزين الجلسة في قاعدة البيانات (صالحة 30 يوم)
+    await AgentSession.create({
+      token: sessionToken,
       userId: data.userId,
-      expires: Date.now() + 30 * 24 * 60 * 60 * 1000,
+      expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     });
-    let wsProtocol = "ws";
-    if (process.env.NODE_ENV === "production") wsProtocol = "wss";
+
+    let wsProtocol = process.env.NODE_ENV === "production" ? "wss" : "ws";
     const wsUrl = `${wsProtocol}://${req.headers.host}/agent`;
     res.json({ success: true, sessionToken, wsUrl });
   } catch (err) {
