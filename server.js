@@ -989,7 +989,7 @@ async function sendWebhook(webhookUrl, data, userId = null) {
     webhookUrl.includes("localhost") || webhookUrl.includes("127.0.0.1");
   if (isLocalhost && userId) {
     const userIdStr = userId.toString();
-    const agentSocket = userLocalAgents.get(userId);
+    const agentSocket = userLocalAgents.get(userIdStr);
     logger.info(
       `🔍 البحث عن عميل محلي للمستخدم ${userId}: ${agentSocket ? "موجود" : "غير موجود"}`,
     );
@@ -1214,7 +1214,8 @@ async function executeAction(
       triggerUser,
       "",
     );
-    const agentSocket = userLocalAgents.get(userId);
+    const userIdStr = userId ? userId.toString() : null;
+    const agentSocket = userLocalAgents.get(userIdStr);
     for (let i = 0; i < repeat; i++) {
       if (i > 0 && interval > 0)
         await new Promise((r) => setTimeout(r, interval));
@@ -4846,29 +4847,6 @@ app.post("/api/agent/binding-token", authenticateToken, async (req, res) => {
     const token = crypto.randomBytes(32).toString("hex");
     bindingTokens.set(token, { userId, expires: Date.now() + 5 * 60 * 1000 });
     res.json({ success: true, token });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-app.post("/api/agent/exchange-binding", async (req, res) => {
-  try {
-    const { bindingToken } = req.body;
-    const data = bindingTokens.get(bindingToken);
-    if (!data || data.expires < Date.now())
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid or expired binding token" });
-    bindingTokens.delete(bindingToken);
-    const sessionToken = crypto.randomBytes(32).toString("hex");
-    agentSessions.set(sessionToken, {
-      userId: data.userId,
-      expires: Date.now() + 30 * 24 * 60 * 60 * 1000,
-    });
-    let wsProtocol = "ws";
-    if (process.env.NODE_ENV === "production") wsProtocol = "wss";
-    const wsUrl = `${wsProtocol}://${req.headers.host}/agent`;
-    res.json({ success: true, sessionToken, wsUrl });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
