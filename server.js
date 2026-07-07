@@ -1071,20 +1071,21 @@ function playAudio(
     return;
   }
 
-  // التحقق من وجود شاشة للمستخدم
+  // التحقق من وجود غرفة الشاشة
   const screenRoom = `screen-${targetUserId}`;
   const hasScreen = io.sockets.adapter.rooms.has(screenRoom);
 
   if (hasScreen) {
-    // إرسال فقط إلى الشاشات
+    // الشاشة موجودة → نرسل إليها فقط
     io.to(screenRoom).emit("play-sound", payload);
-    logger.info(`🔊 إرسال صوت إلى الشاشة (${screenRoom})`);
+    console.log(`🔊 صوت إلى الشاشة (${screenRoom})`);
   } else {
-    // إرسال إلى واجهة الإدارة (الفرونت)
+    // لا توجد شاشة → نرسل إلى الفرونت (غرفة المستخدم)
     io.to(`user-${targetUserId}`).emit("play-sound", payload);
-    logger.info(`🔊 إرسال صوت إلى واجهة الإدارة (user-${targetUserId})`);
+    console.log(`🔊 صوت إلى الفرونت (user-${targetUserId})`);
   }
 }
+
 // ================ الوظيفة الرئيسية لتنفيذ الإجراء ================
 async function executeAction(
   cmdObj,
@@ -1115,7 +1116,7 @@ async function executeAction(
     duration = 5,
   } = cmdObj;
 
-  // استخراج الاسم الحقيقي والصورة (نفس الكود السابق)
+  // استخراج الاسم الحقيقي والصورة
   let realName = triggerUser;
   let avatar = "";
   if (data) {
@@ -1147,7 +1148,7 @@ async function executeAction(
     }
   }
 
-  // oncePerLive: نمنع التنفيذ بعد أول مرة
+  // oncePerLive
   if (oncePerLive && _id && userId) {
     const idStr = `${userId}:${String(_id)}`;
     if (executedOncePerLive.has(idStr)) {
@@ -1157,16 +1158,12 @@ async function executeAction(
     executedOncePerLive.set(idStr, true);
   }
 
-  // التأخير الأولي (مرة واحدة قبل التكرارات)
-  // ... بداية الدالة كما هي ...
-
-  // التأخير الأولي (مرة واحدة قبل كل شيء)
+  // التأخير الأولي
   if (delayBefore > 0) {
     await new Promise((resolve) => setTimeout(resolve, delayBefore));
   }
 
-  // ----- 1. تشغيل الصوت والفيديو فوراً (بدون انتظار interval) -----
-  // ----- 1. تشغيل الصوت والفيديو فوراً (بدون انتظار interval) -----
+  // ----- 1. تشغيل الصوت والفيديو (مرة واحدة لكل تكرار) -----
   for (let i = 0; i < repeat; i++) {
     // الصوت
     if (playSound && audio) {
@@ -1211,6 +1208,7 @@ async function executeAction(
       }
     }
   }
+
   // ----- 2. التراكب (مرة واحدة فقط) -----
   if (cmdObj.showOverlay && userId) {
     const overlayPayload = {
@@ -1227,14 +1225,12 @@ async function executeAction(
     if (hasScreen) {
       io.to(screenRoom).emit("show-overlay", overlayPayload);
     } else {
-      // إذا لم توجد شاشة، نرسل إلى واجهة الإدارة (لكن التراكب قد لا يكون موجوداً في الفرونت)
       io.to(`user-${userId}`).emit("show-overlay", overlayPayload);
     }
   }
 
   // ----- 3. تنفيذ الأوامر والكيستروك والويبهوك مع interval -----
   for (let i = 0; i < repeat; i++) {
-    // تأخير بين التكرارات (باستثناء الأول)
     if (i > 0 && interval > 0) {
       await new Promise((r) => setTimeout(r, interval));
     }
@@ -1268,7 +1264,6 @@ async function executeAction(
         .map((l) => l.trim())
         .filter((l) => l);
       if (lines.length > 1) {
-        // منطق المجموعات العشوائية (or)
         const groups = [];
         let currentGroup = [];
         for (const line of lines) {
