@@ -1084,12 +1084,16 @@ async function playAudio(
     }
   }
 
+  // إنشاء معرف فريد لتجنب التكرار في حال وصول الحدث إلى نفس العميل عبر غرفتين
+  const uniqueId = `${targetUserId || "global"}-${giftId || "default"}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+
   const payload = {
     filename: audioUrl,
     volume: Math.min(100, Math.max(0, parseInt(volume) || 100)),
     timestamp: Date.now(),
     giftId: giftId || "default",
     screen: screen,
+    id: uniqueId, // إضافة معرف فريد
   };
 
   if (!targetUserId) {
@@ -1097,15 +1101,18 @@ async function playAudio(
     return;
   }
 
+  const userRoom = `user-${targetUserId}`;
   const screenRoom = `screen-${targetUserId}`;
   const hasScreen = io.sockets.adapter.rooms.has(screenRoom);
 
+  // دائماً أرسل إلى غرفة المستخدم (الفرونت)
+  io.to(userRoom).emit("play-sound", payload);
+  console.log(`🔊 صوت إلى الفرونت (${userRoom}) - ${audioUrl}`);
+
+  // إذا كانت الشاشة موجودة، أرسل إليها أيضاً
   if (hasScreen) {
     io.to(screenRoom).emit("play-sound", payload);
     console.log(`🔊 صوت إلى الشاشة (${screenRoom}) - ${audioUrl}`);
-  } else {
-    io.to(`user-${targetUserId}`).emit("play-sound", payload);
-    console.log(`🔊 صوت إلى الفرونت (user-${targetUserId}) - ${audioUrl}`);
   }
 }
 
