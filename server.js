@@ -1191,7 +1191,13 @@ async function executeAction(
     // الصوت
     if (playSound && audio) {
       const giftId = cmdObj.giftId || cmdObj._id || "default";
-      playAudio(audio, volume, userId, String(giftId), cmdObj.screen || 1);
+      await playAudio(
+        audio,
+        volume,
+        userId,
+        String(giftId),
+        cmdObj.screen || 1,
+      );
     }
 
     // الفيديو
