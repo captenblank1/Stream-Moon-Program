@@ -1058,15 +1058,25 @@ async function playAudio(
   giftId = null,
   screen = 1,
 ) {
-  // 1. البحث عن رابط الصوت في قاعدة البيانات
+  // 1. تحديد الرابط النهائي
   let audioUrl = file;
-  if (file && !file.startsWith("http://") && !file.startsWith("https://")) {
+
+  // إذا كان الرابط مكتملاً (http/https) استخدمه مباشرة
+  if (file && (file.startsWith("http://") || file.startsWith("https://"))) {
+    audioUrl = file;
+  }
+  // إذا كان يبدأ بـ /audios/ فهو افتراضي، استخدمه كما هو
+  else if (file && file.startsWith("/audios/")) {
+    audioUrl = file;
+  }
+  // وإلا فهو اسم ملف مرفوع، ابحث في قاعدة البيانات
+  else {
     try {
       const audioDoc = await Audio.findOne({ file: file });
       if (audioDoc && audioDoc.cloudinaryUrl) {
         audioUrl = audioDoc.cloudinaryUrl;
       } else {
-        // إذا لم يكن في قاعدة البيانات، استخدم المسار المحلي (كحل احتياطي)
+        // لم نجد في قاعدة البيانات، اعتبره افتراضي (قد يكون اسم ملف فقط)
         audioUrl = `/audios/${file}`;
       }
     } catch (err) {
@@ -1075,7 +1085,7 @@ async function playAudio(
   }
 
   const payload = {
-    filename: audioUrl, // ← الآن يرسل الرابط الكامل
+    filename: audioUrl,
     volume: Math.min(100, Math.max(0, parseInt(volume) || 100)),
     timestamp: Date.now(),
     giftId: giftId || "default",
@@ -1087,16 +1097,15 @@ async function playAudio(
     return;
   }
 
-  // التحقق من وجود غرفة الشاشة
   const screenRoom = `screen-${targetUserId}`;
   const hasScreen = io.sockets.adapter.rooms.has(screenRoom);
 
   if (hasScreen) {
     io.to(screenRoom).emit("play-sound", payload);
-    console.log(`🔊 صوت إلى الشاشة (${screenRoom})`);
+    console.log(`🔊 صوت إلى الشاشة (${screenRoom}) - ${audioUrl}`);
   } else {
     io.to(`user-${targetUserId}`).emit("play-sound", payload);
-    console.log(`🔊 صوت إلى الفرونت (user-${targetUserId})`);
+    console.log(`🔊 صوت إلى الفرونت (user-${targetUserId}) - ${audioUrl}`);
   }
 }
 
