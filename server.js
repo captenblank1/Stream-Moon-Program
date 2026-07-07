@@ -4917,9 +4917,23 @@ app.post("/api/agent/register", authenticateToken, async (req, res) => {
 });
 
 io.use(async (socket, next) => {
-  // حاول قراءة التوكن من auth
-  let token = socket.handshake.auth?.token;
-  // إذا لم يوجد، حاول من الكوكيز
+  // 1. التحقق من screenToken (للاستخدام من الشاشات)
+  const screenToken = socket.handshake.query.token;
+  if (screenToken) {
+    try {
+      const user = await User.findOne({ screenToken });
+      if (user) {
+        socket.userId = String(user._id);
+        socket.isScreen = true;
+        return next();
+      }
+    } catch (err) {
+      return next(new Error("Invalid screen token"));
+    }
+  }
+
+  // 2. إذا لم يكن screenToken، جرب JWT من auth أو query أو cookies
+  let token = socket.handshake.auth?.token || socket.handshake.query.token;
   if (!token) {
     const cookieHeader = socket.handshake.headers.cookie;
     if (cookieHeader) {
@@ -4963,6 +4977,15 @@ io.on("connection", (socket) => {
   } else {
     logger.info(`📱 عميل Socket.IO بدون userId: ${socket.id}`);
   }
+
+  // ✅ أضف هذا الحدث الجديد لاستقبال الانضمام اليدوي من الفرونت
+  socket.on("join-room", ({ room }) => {
+    if (room && typeof room === "string") {
+      socket.join(room);
+      logger.info(`📌 عميل ${socket.id} انضم يدوياً إلى ${room}`);
+    }
+  });
+
   socket.on("disconnect", () => {
     logger.info("📱 عميل Socket.IO قطع الاتصال:", socket.id);
   });
