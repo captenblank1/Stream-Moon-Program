@@ -1051,12 +1051,19 @@ async function sendWebhook(webhookUrl, data, userId = null) {
 }
 
 // ================ تشغيل الصوت ================
-function playAudio(file, volume = 100, targetUserId = null, giftId = null) {
+function playAudio(
+  file,
+  volume = 100,
+  targetUserId = null,
+  giftId = null,
+  screen = 1,
+) {
   const payload = {
     filename: file,
     volume: Math.min(100, Math.max(0, parseInt(volume) || 100)),
     timestamp: Date.now(),
     giftId: giftId || "default",
+    screen: screen,
   };
 
   if (!targetUserId) {
@@ -1164,7 +1171,7 @@ async function executeAction(
     // الصوت
     if (playSound && audio) {
       const giftId = cmdObj.giftId || cmdObj._id || "default";
-      playAudio(audio, volume, userId, String(giftId));
+      playAudio(audio, volume, userId, String(giftId), cmdObj.screen || 1);
     }
 
     // الفيديو
@@ -1211,6 +1218,7 @@ async function executeAction(
       avatar: avatar,
       text: cmdObj.overlayText || "",
       duration: (duration || 5) * 1000,
+      screen: cmdObj.screen || 1,
     };
 
     const screenRoom = `screen-${userId}`;
@@ -2349,6 +2357,7 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
     socket.on('play-sound', async (payload) => {
       try {
         if (!payload || !payload.filename) return;
+        if (payload.screen && payload.screen !== SCREEN_NUMBER) return;
         if (!audioUnlocked) await tryUnlockAudio();
 
         const giftId = payload.giftId || 'default';
@@ -2466,7 +2475,10 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
     socket.on('show-overlay', (data) => {
       try {
         if (!data) return;
-        console.log('📢 استقبال تراكب:', data);
+        // ✅ منع ظهور التراكب على شاشات غير مخصصة له
+        if (data.screen && data.screen !== SCREEN_NUMBER) return;
+
+        console.log('📢 استقبال تراكب للشاشة ' + SCREEN_NUMBER + ':', data);
 
         const avatarSrc = data.avatar || 'https://via.placeholder.com/70?text=User';
         overlayAvatar.src = avatarSrc;
