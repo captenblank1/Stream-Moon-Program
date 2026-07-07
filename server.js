@@ -1105,13 +1105,14 @@ async function playAudio(
   const screenRoom = `screen-${targetUserId}`;
   const hasScreen = io.sockets.adapter.rooms.has(screenRoom);
 
-  // إرسال إلى الشاشة إذا كانت موجودة، وإلا إلى الفرونت
+  // دائماً أرسل إلى غرفة المستخدم (الفرونت)
+  io.to(userRoom).emit("play-sound", payload);
+  console.log(`🔊 صوت إلى الفرونت (${userRoom}) - ${audioUrl}`);
+
+  // إذا كانت الشاشة موجودة، أرسل إليها أيضاً
   if (hasScreen) {
     io.to(screenRoom).emit("play-sound", payload);
     console.log(`🔊 صوت إلى الشاشة (${screenRoom}) - ${audioUrl}`);
-  } else {
-    io.to(userRoom).emit("play-sound", payload);
-    console.log(`🔊 صوت إلى الفرونت (${userRoom}) - ${audioUrl}`);
   }
 }
 
