@@ -4964,7 +4964,7 @@ io.use(async (socket, next) => {
         return next();
       }
     } catch (err) {
-      return next(new Error("Invalid screen token"));
+      // تجاهل الخطأ والمتابعة للتحقق من JWT
     }
   }
 
@@ -4996,6 +4996,7 @@ io.use(async (socket, next) => {
 io.on("connection", (socket) => {
   if (socket.userId) {
     if (socket.isScreen) {
+      // الشاشة: تنضم إلى غرفة الشاشة فقط (أو يمكنها الانضمام إلى كلتا الغرفتين)
       const screenRoom = `screen-${socket.userId}`;
       socket.join(screenRoom);
       logger.info(
@@ -5003,6 +5004,7 @@ io.on("connection", (socket) => {
       );
       socket.emit("connected", { room: screenRoom });
     } else {
+      // الفرونت: ينضم إلى غرفة المستخدم
       const userRoom = `user-${socket.userId}`;
       socket.join(userRoom);
       logger.info(
@@ -5014,7 +5016,7 @@ io.on("connection", (socket) => {
     logger.info(`📱 عميل Socket.IO بدون userId: ${socket.id}`);
   }
 
-  // ✅ أضف هذا الحدث الجديد لاستقبال الانضمام اليدوي من الفرونت
+  // حدث الانضمام اليدوي (اختياري)
   socket.on("join-room", ({ room }) => {
     if (room && typeof room === "string") {
       socket.join(room);
