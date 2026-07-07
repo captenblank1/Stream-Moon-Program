@@ -1051,56 +1051,33 @@ async function sendWebhook(webhookUrl, data, userId = null) {
 }
 
 // ================ تشغيل الصوت ================
-function playAudio(file, volume = 100, targetUserId = null) {
-  if (file && file.startsWith("/audios/")) {
-    const payload = {
-      filename: file,
-      volume: Math.min(100, Math.max(0, parseInt(volume) || 100)),
-      timestamp: Date.now(),
-      isDefault: true,
-    };
-    if (targetUserId) {
-      io.to(`user-${targetUserId}`).emit("play-sound", payload);
-    } else {
-      io.emit("play-sound", payload);
-    }
+function playAudio(file, volume = 100, targetUserId = null, giftId = null) {
+  const payload = {
+    filename: file,
+    volume: Math.min(100, Math.max(0, parseInt(volume) || 100)),
+    timestamp: Date.now(),
+    giftId: giftId || "default",
+  };
+
+  if (!targetUserId) {
+    io.emit("play-sound", payload);
     return;
   }
 
-  Audio.findOne({ file })
-    .then((audio) => {
-      let audioUrl = file;
-      if (audio && audio.cloudinaryUrl) {
-        audioUrl = audio.cloudinaryUrl;
-      } else {
-        audioUrl = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/raw/upload/${encodeURIComponent(file)}`;
-      }
-      const payload = {
-        filename: audioUrl,
-        volume: Math.min(100, Math.max(0, parseInt(volume) || 100)),
-        timestamp: Date.now(),
-      };
-      if (targetUserId) {
-        io.to(`user-${targetUserId}`).emit("play-sound", payload);
-      } else {
-        io.emit("play-sound", payload);
-      }
-    })
-    .catch((err) => {
-      logger.error("❌ خطأ في استرجاع رابط الصوت:", err.message);
-      const payload = {
-        filename: file,
-        volume: Math.min(100, Math.max(0, parseInt(volume) || 100)),
-        timestamp: Date.now(),
-      };
-      if (targetUserId) {
-        io.to(`user-${targetUserId}`).emit("play-sound", payload);
-      } else {
-        io.emit("play-sound", payload);
-      }
-    });
-}
+  // التحقق من وجود شاشة للمستخدم
+  const screenRoom = `screen-${targetUserId}`;
+  const hasScreen = io.sockets.adapter.rooms.has(screenRoom);
 
+  if (hasScreen) {
+    // إرسال فقط إلى الشاشات
+    io.to(screenRoom).emit("play-sound", payload);
+    logger.info(`🔊 إرسال صوت إلى الشاشة (${screenRoom})`);
+  } else {
+    // إرسال إلى واجهة الإدارة (الفرونت)
+    io.to(`user-${targetUserId}`).emit("play-sound", payload);
+    logger.info(`🔊 إرسال صوت إلى واجهة الإدارة (user-${targetUserId})`);
+  }
+}
 // ================ الوظيفة الرئيسية لتنفيذ الإجراء ================
 async function executeAction(
   cmdObj,
@@ -1163,75 +1140,108 @@ async function executeAction(
     }
   }
 
-  // oncePerLive check يبقى كما هو
+  // oncePerLive: نمنع التنفيذ بعد أول مرة
   if (oncePerLive && _id && userId) {
     const idStr = `${userId}:${String(_id)}`;
     if (executedOncePerLive.has(idStr)) {
       logger.info(`⏭️ الأمر ${name} تم تنفيذه مرة واحدة - تخطي`);
       return;
     }
-    executedOncePerLive.add(idStr);
+    executedOncePerLive.set(idStr, true);
   }
 
-  // ✅ 1. الصوت والفيديو والتراكب يشتغلوا فوراً (بدون تأخير)
-  if (playSound && audio) {
-    playAudio(audio, volume, userId);
-    if (duration && duration > 0) {
-      setTimeout(() => {
-        io.to(`user-${userId}`).emit("stop-sound");
-      }, duration * 1000);
-    }
-  }
+  // التأخير الأولي (مرة واحدة قبل التكرارات)
+  // ... بداية الدالة كما هي ...
 
-  if (playVideo && video && userId) {
-    const room = `user-${userId}`;
-    let videoUrl = video;
-    try {
-      const videoDoc = await Video.findOne({ file: video, userId });
-      videoUrl =
-        videoDoc?.cloudinaryUrl ||
-        `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload/${encodeURIComponent(video)}`;
-    } catch (e) {}
-    io.to(room).emit("gift-video", {
-      videoId: videoUrl,
-      user: triggerUser,
-      screen,
-      volume: videoVolume,
-    });
-    if (duration && duration > 0) {
-      setTimeout(() => {
-        io.to(`user-${userId}`).emit("stop-video");
-      }, duration * 1000);
-    }
-  }
-
-  if (cmdObj.showOverlay && userId) {
-    io.to(`user-${userId}`).emit("show-overlay", {
-      username: realName,
-      avatar: avatar,
-      text: cmdObj.overlayText || "",
-      duration: (duration || 5) * 1000,
-    });
-  }
-
-  // ✅ 2. بعد كده نطبق التأخير (خاص بالأمر والكيستروك فقط)
+  // التأخير الأولي (مرة واحدة قبل كل شيء)
   if (delayBefore > 0) {
     await new Promise((resolve) => setTimeout(resolve, delayBefore));
   }
 
-  // ✅ 3. تنفيذ الكيستروك والأوامر
-  if (keystrokeText) {
-    const finalKeystroke = replacePlaceholders(
-      keystrokeText,
-      realName,
-      triggerUser,
-      "",
-    );
-    const userIdStr = userId ? userId.toString() : null;
-    const agentSocket = userLocalAgents.get(userIdStr);
-    for (let i = 0; i < repeat; i++) {
-      if (i > 0 && interval > 0)
-        await new Promise((r) => setTimeout(r, interval));
+  // ----- 1. تشغيل الصوت والفيديو فوراً (بدون انتظار interval) -----
+  // ----- 1. تشغيل الصوت والفيديو فوراً (بدون انتظار interval) -----
+  for (let i = 0; i < repeat; i++) {
+    // الصوت
+    if (playSound && audio) {
+      const giftId = cmdObj.giftId || cmdObj._id || "default";
+      playAudio(audio, volume, userId, String(giftId));
+    }
+
+    // الفيديو
+    if (playVideo && video && userId) {
+      let videoUrl = video;
+      try {
+        const videoDoc = await Video.findOne({ file: video, userId });
+        videoUrl =
+          videoDoc?.cloudinaryUrl ||
+          `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload/${encodeURIComponent(video)}`;
+      } catch (e) {}
+
+      const payload = {
+        videoId: videoUrl,
+        user: triggerUser,
+        screen,
+        volume: videoVolume,
+      };
+
+      const screenRoom = `screen-${userId}`;
+      const hasScreen = io.sockets.adapter.rooms.has(screenRoom);
+
+      if (hasScreen) {
+        io.to(screenRoom).emit("gift-video", payload);
+      } else {
+        io.to(`user-${userId}`).emit("gift-video", payload);
+      }
+
+      if (duration && duration > 0) {
+        setTimeout(() => {
+          if (hasScreen) {
+            io.to(screenRoom).emit("stop-video");
+          } else {
+            io.to(`user-${userId}`).emit("stop-video");
+          }
+        }, duration * 1000);
+      }
+    }
+  }
+  // ----- 2. التراكب (مرة واحدة فقط) -----
+  // ----- 2. التراكب (مرة واحدة فقط) -----
+  if (cmdObj.showOverlay && userId) {
+    const overlayPayload = {
+      username: realName,
+      avatar: avatar,
+      text: cmdObj.overlayText || "",
+      duration: (duration || 5) * 1000,
+    };
+
+    const screenRoom = `screen-${userId}`;
+    const hasScreen = io.sockets.adapter.rooms.has(screenRoom);
+
+    if (hasScreen) {
+      io.to(screenRoom).emit("show-overlay", overlayPayload);
+    } else {
+      // إذا لم توجد شاشة، نرسل إلى واجهة الإدارة (لكن التراكب قد لا يكون موجوداً في الفرونت)
+      io.to(`user-${userId}`).emit("show-overlay", overlayPayload);
+    }
+  }
+
+  // ----- 3. تنفيذ الأوامر والكيستروك والويبهوك مع interval -----
+  for (let i = 0; i < repeat; i++) {
+    // تأخير بين التكرارات (باستثناء الأول)
+    if (i > 0 && interval > 0) {
+      await new Promise((r) => setTimeout(r, interval));
+    }
+
+    // الكيستروك
+    if (keystrokeText) {
+      const finalKeystroke = replacePlaceholders(
+        keystrokeText,
+        realName,
+        triggerUser,
+        "",
+      );
+      const userIdStr = userId ? userId.toString() : null;
+      const agentSocket = userLocalAgents.get(userIdStr);
       if (agentSocket && agentSocket.connected) {
         agentSocket.emit("execute-keys", {
           command: finalKeystroke,
@@ -1243,93 +1253,67 @@ async function executeAction(
         await executeNativeKeystroke(finalKeystroke, 1, 0);
       }
     }
-  }
 
-  if (command && command.trim()) {
-    const lines = command
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter((l) => l);
-    if (lines.length > 1) {
-      // منطق المجموعات العشوائية
-      const groups = [];
-      let currentGroup = [];
-      for (const line of lines) {
-        if (line.toLowerCase() === "or") {
-          if (currentGroup.length) {
-            groups.push(currentGroup);
-            currentGroup = [];
-          }
-        } else currentGroup.push(line);
-      }
-      if (currentGroup.length) groups.push(currentGroup);
-      const selectedGroup = groups.length
-        ? groups[Math.floor(Math.random() * groups.length)]
-        : [];
-      let cumulativeDelay = 0;
-      for (const cmdLine of selectedGroup) {
-        if (cmdLine.toLowerCase().startsWith("delay ")) {
-          const sec = parseFloat(cmdLine.split(/\s+/)[1]);
-          if (!isNaN(sec)) cumulativeDelay += sec * 1000;
-          continue;
+    // أوامر RCON
+    if (command && command.trim()) {
+      const lines = command
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l);
+      if (lines.length > 1) {
+        // منطق المجموعات العشوائية (or)
+        const groups = [];
+        let currentGroup = [];
+        for (const line of lines) {
+          if (line.toLowerCase() === "or") {
+            if (currentGroup.length) {
+              groups.push(currentGroup);
+              currentGroup = [];
+            }
+          } else currentGroup.push(line);
         }
-        setTimeout(() => {
-          for (let i = 0; i < repeat; i++) {
-            if (interval === 0)
-              sendRconCommand(userId, cmdLine, {
-                nickname: realName,
-                username: triggerUser,
-              });
-            else
-              setTimeout(
-                () =>
-                  sendRconCommand(userId, cmdLine, {
-                    nickname: realName,
-                    username: triggerUser,
-                  }),
-                i * interval,
-              );
+        if (currentGroup.length) groups.push(currentGroup);
+        const selectedGroup = groups.length
+          ? groups[Math.floor(Math.random() * groups.length)]
+          : [];
+        let cumulativeDelay = 0;
+        for (const cmdLine of selectedGroup) {
+          if (cmdLine.toLowerCase().startsWith("delay ")) {
+            const sec = parseFloat(cmdLine.split(/\s+/)[1]);
+            if (!isNaN(sec)) cumulativeDelay += sec * 1000;
+            continue;
           }
-        }, cumulativeDelay);
-        cumulativeDelay += DEFAULT_COMMAND_DELAY_MS;
-      }
-    } else {
-      const singleCmd = lines[0];
-      for (let i = 0; i < repeat; i++) {
-        if (interval === 0)
-          sendRconCommand(userId, singleCmd, {
-            nickname: realName,
-            username: triggerUser,
-          });
-        else
-          setTimeout(
-            () =>
-              sendRconCommand(userId, singleCmd, {
-                nickname: realName,
-                username: triggerUser,
-              }),
-            i * interval,
-          );
+          setTimeout(() => {
+            sendRconCommand(userId, cmdLine, {
+              nickname: realName,
+              username: triggerUser,
+            });
+          }, cumulativeDelay);
+          cumulativeDelay += DEFAULT_COMMAND_DELAY_MS;
+        }
+      } else {
+        const singleCmd = lines[0];
+        sendRconCommand(userId, singleCmd, {
+          nickname: realName,
+          username: triggerUser,
+        });
       }
     }
-  }
 
-  // ✅ 4. الويبهوك (يبقى بنفس الترتيب لكن ممكن يكون بعد الأوامر أيضاً لو حابب)
-  if (webhookUrl && webhookUrl.trim()) {
-    const webhookData = {
-      name: name || "",
-      user: triggerUser,
-      displayName: realName,
-      type: cmdObj.type || "keyboard",
-      timestamp: new Date().toISOString(),
-      profile: cmdObj.profile || 1,
-      event: "webhook_execution",
-      repeat,
-      interval,
-    };
-    for (let i = 0; i < repeat; i++) {
-      if (i > 0 && interval > 0)
-        await new Promise((r) => setTimeout(r, interval));
+    // الويبهوك
+    if (webhookUrl && webhookUrl.trim()) {
+      const webhookData = {
+        name: name || "",
+        user: triggerUser,
+        displayName: realName,
+        type: cmdObj.type || "keyboard",
+        timestamp: new Date().toISOString(),
+        profile: cmdObj.profile || 1,
+        event: "webhook_execution",
+        repeat: 1,
+        interval: 0,
+        iteration: i + 1,
+      };
       await sendWebhook(webhookUrl, webhookData, userId);
     }
   }
@@ -1623,6 +1607,15 @@ function addKeystrokeToCommand(cmd) {
   return cmdObj;
 }
 
+// ================ دالة تحديث وقت النشاط ================
+function updateLastActivity(userId) {
+  if (userTikTokConnections.has(userId)) {
+    const conn = userTikTokConnections.get(userId);
+    conn.lastRoomUpdate = Date.now();
+    userTikTokConnections.set(userId, conn);
+  }
+}
+
 // تعريف الدالة
 function startLiveHeartbeat(userId) {
   // نستخدم خريطة لتخزين المؤقتات
@@ -1644,7 +1637,8 @@ function startLiveHeartbeat(userId) {
       // بدلاً من ذلك، نقوم بفحص الوقت منذ آخر تحديث للغرفة
       const now = Date.now();
       const lastUpdate = conn.lastRoomUpdate || now;
-      if (now - lastUpdate > 60000) {
+      if (now - lastUpdate > 300000) {
+        // 5 دقائق
         // أكثر من دقيقة بدون تحديث
         conn.isLive = false;
         userTikTokConnections.set(userId, conn);
@@ -1685,6 +1679,7 @@ async function connectUser(userId, username) {
   let debugOnce = false;
 
   connection.on(WebcastEvent.GIFT, async (data) => {
+    updateLastActivity(userId);
     if (!debugOnce) {
       console.log("🔍 هيكل بيانات الهدية (GIFT) - أول مرة:");
       console.log(JSON.stringify(data, null, 2).substring(0, 2000));
@@ -1828,6 +1823,7 @@ async function connectUser(userId, username) {
   }
 
   connection.on(WebcastEvent.CHAT, async (data) => {
+    updateLastActivity(userId);
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
       const comment = (data.comment || "").toString();
@@ -1845,6 +1841,23 @@ async function connectUser(userId, username) {
         )
           continue;
 
+        // ✅ منطق oncePerLive
+        if (cmd.oncePerLive) {
+          const key = `${userId}:${String(cmd._id)}`;
+          if (executedOncePerLive.has(key)) continue;
+          // تحقق من الكلمة المفتاحية
+          if (cmd.keyword && cmd.keyword.trim()) {
+            if (
+              !comment.toLowerCase().includes(cmd.keyword.trim().toLowerCase())
+            )
+              continue;
+          }
+          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
+          executedOncePerLive.set(key, true);
+          continue;
+        }
+
+        // الباقي كما هو (بدون oncePerLive)
         if (cmd.keyword && cmd.keyword.trim()) {
           if (
             comment.toLowerCase().includes(cmd.keyword.trim().toLowerCase())
@@ -1866,6 +1879,7 @@ async function connectUser(userId, username) {
   });
 
   connection.on(WebcastEvent.FOLLOW, async (data) => {
+    updateLastActivity(userId);
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
       const userProfile = await getUserSelectedProfile(userId);
@@ -1881,14 +1895,12 @@ async function connectUser(userId, username) {
         )
           continue;
 
-        if (cmd.oncePerLive) {
-          const key = `${userId}:follow:${String(cmd._id)}:${sender}`;
-          if (followExecutedUsers.has(key)) continue;
-          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
-          followExecutedUsers.add(key);
-        } else {
-          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
-        }
+        // ✅ منطق موحد: مرة واحدة في البث (بغض النظر عن المستخدم)
+        // ✅ تم تعديل الفولو ليصبح تلقائياً مرة واحدة (دون الحاجة لتفعيل الخيار)
+        const key = `${userId}:${String(cmd._id)}`;
+        if (executedOncePerLive.has(key)) continue;
+        await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
+        executedOncePerLive.set(key, true);
       }
     } catch (err) {
       logger.error("❌ FOLLOW handler error:", err.message);
@@ -1896,6 +1908,7 @@ async function connectUser(userId, username) {
   });
 
   connection.on(WebcastEvent.LIKE, async (data) => {
+    updateLastActivity(userId);
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
       let delta =
@@ -1921,6 +1934,16 @@ async function connectUser(userId, username) {
         )
           continue;
 
+        // ✅ إضافة منطق oncePerLive
+        if (cmd.oncePerLive) {
+          const key = `${userId}:${String(cmd._id)}`;
+          if (executedOncePerLive.has(key)) continue;
+          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
+          executedOncePerLive.set(key, true);
+          continue; // تخطي باقي معالجة العداد
+        }
+
+        // الباقي كما هو (معالجة العداد)
         const threshold = parseInt(cmd.threshold || 0, 10) || 0;
         const keyUser = `${userId}:${String(cmd._id)}:${sender}`;
         likeCounters.set(keyUser, (likeCounters.get(keyUser) || 0) + delta);
@@ -1943,6 +1966,7 @@ async function connectUser(userId, username) {
   });
 
   connection.on(WebcastEvent.SHARE, async (data) => {
+    updateLastActivity(userId);
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
       const userProfile = await getUserSelectedProfile(userId);
@@ -1958,7 +1982,15 @@ async function connectUser(userId, username) {
         )
           continue;
 
-        await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
+        // ✅ منطق oncePerLive
+        if (cmd.oncePerLive) {
+          const key = `${userId}:${String(cmd._id)}`;
+          if (executedOncePerLive.has(key)) continue;
+          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
+          executedOncePerLive.set(key, true);
+        } else {
+          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
+        }
       }
     } catch (err) {
       logger.error("❌ SHARE handler error:", err.message);
@@ -1995,20 +2027,23 @@ async function connectUser(userId, username) {
   connection.on(WebcastEvent.ERROR, (err) => {
     if (err?.message?.includes("illegal tag")) return;
     logger.error(`❌ خطأ في اتصال TikTok للمستخدم ${userId}:`, err.message);
-    const conn = userTikTokConnections.get(userId);
-    if (conn) {
-      conn.isLive = false;
-      conn.roomId = null;
-      userTikTokConnections.set(userId, conn);
-      resetOncePerLiveForUser(userId);
-    }
+    // ❌ لا نعيّن isLive = false هنا، نكتفي بتسجيل الخطأ
+    // const conn = userTikTokConnections.get(userId);
+    // if (conn) {
+    //   conn.isLive = false;
+    //   conn.roomId = null;
+    //   userTikTokConnections.set(userId, conn);
+    //   resetOncePerLiveForUser(userId);
+    // }
   });
-
   try {
     await connection.connect();
 
     // ======== ✅ الحل: تحميل الأوامر في الكاش فور نجاح الاتصال ========
     await refreshCachesForUser(userId);
+
+    // ✅ إعادة تعيين حالة oncePerLive عند بداية بث جديد
+    resetOncePerLiveForUser(userId);
 
     userTikTokConnections.set(userId, {
       connection,
@@ -2194,33 +2229,33 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       top: 20%;
       left: 50%;
       transform: translate(-50%, -50%);
-      background: transparent;          /* ✅ شفاف بالكامل */
-      backdrop-filter: none;           /* إزالة الضبابية */
+      background: transparent;
+      backdrop-filter: none;
       color: white;
-      padding: 10px 20px;              /* تقليل الحشو شوية */
+      padding: 10px 20px;
       border-radius: 0;
       text-align: center;
       z-index: 9999;
       display: none;
       flex-direction: column;
       align-items: center;
-      gap: 5px;                        /* تقليل المسافات بين العناصر */
-      border: none;                    /* بدون إطار */
+      gap: 5px;
+      border: none;
       min-width: auto;
-      box-shadow: none;                /* بدون ظل */
+      box-shadow: none;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
     .overlay-avatar { width:100px; height:100px; border-radius:50%; object-fit:cover; border:3px solid #4caf50; background: transparent; }
     .overlay-username { font-size:20px; font-weight:bold; margin:0; text-shadow:1px 1px 2px black; }
     .overlay-text {
-    font-size: 17px;
-    color: #ffd966;
-    background: transparent;
-    padding: 3px 10px;
-    border-radius: 0;
-    margin-top: 2px;
-    text-shadow: 1px 1px 2px rgba(0,0,0,0.8), 0 0 5px rgba(0,0,0,0.5);
-  }
+      font-size: 17px;
+      color: #ffd966;
+      background: transparent;
+      padding: 3px 10px;
+      border-radius: 0;
+      margin-top: 2px;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.8), 0 0 5px rgba(0,0,0,0.5);
+    }
   </style>
 </head>
 <body>
@@ -2240,29 +2275,15 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
 
     const socket = io(window.location.origin, { query: { token: USER_TOKEN }, transports: ['websocket', 'polling'] });
     let audioUnlocked = false;
-    let currentAudioElement = null;
+    
+    // ===== إدارة الطوابير لكل هدية على حدة =====
+    const audioQueues = {};        // key: giftId, value: array of { filename, volume }
+    const isPlaying = {};          // key: giftId, value: boolean
+    const currentAudio = {};       // key: giftId, value: Audio element currently playing
 
-    function getAudioElement(){
-      if (currentAudioElement) {
-        currentAudioElement.pause();
-        currentAudioElement.currentTime = 0;
-        currentAudioElement.src = '';
-        currentAudioElement.load();
-      }
-      const a = new Audio();
-      a.preload = 'auto';
-      a.crossOrigin = 'anonymous';
-      a.onended = () => {
-        a.src = '';
-        a.load();
-        if (currentAudioElement === a) currentAudioElement = null;
-      };
-      currentAudioElement = a;
-      return a;
-    }
-
-    async function tryUnlockAudio(){
-      if(audioUnlocked) return true;
+    // دالة فتح الصوت (تشغيل صامت لتجاوز قيود المتصفح)
+    async function tryUnlockAudio() {
+      if (audioUnlocked) return true;
       try {
         if (typeof AudioContext !== 'undefined') {
           const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -2271,9 +2292,9 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
           g.gain.value = 0;
           o.connect(g); g.connect(ctx.destination);
           o.start(0);
-          setTimeout(()=>{ try{ o.stop(); ctx.close(); }catch(e){} }, 50);
+          setTimeout(() => { try { o.stop(); ctx.close(); } catch(e) {} }, 50);
         }
-        const silent = getAudioElement();
+        const silent = new Audio();
         silent.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
         silent.volume = 0;
         await silent.play().catch(()=>{});
@@ -2287,37 +2308,95 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       }
     }
 
-    window.addEventListener('load', ()=>{ tryUnlockAudio(); });
+    // معالجة الطابور الخاص بكل هدية
+    function processQueue(giftId) {
+      if (!audioQueues[giftId] || audioQueues[giftId].length === 0) {
+        isPlaying[giftId] = false;
+        currentAudio[giftId] = null;
+        return;
+      }
+      if (isPlaying[giftId]) return;
+      isPlaying[giftId] = true;
+      
+      const item = audioQueues[giftId].shift();
+      const a = new Audio();
+      a.src = item.filename;
+      a.volume = item.volume;
+      a.preload = 'auto';
+      a.crossOrigin = 'anonymous';
+      currentAudio[giftId] = a;
 
+      a.onended = () => {
+        currentAudio[giftId] = null;
+        isPlaying[giftId] = false;
+        processQueue(giftId);
+      };
+
+      a.onerror = () => {
+        currentAudio[giftId] = null;
+        isPlaying[giftId] = false;
+        processQueue(giftId);
+      };
+
+      a.play().catch(err => {
+        console.warn('audio play blocked for gift', giftId, err);
+        currentAudio[giftId] = null;
+        isPlaying[giftId] = false;
+        processQueue(giftId);
+      });
+    }
+
+    // استقبال أمر تشغيل الصوت
     socket.on('play-sound', async (payload) => {
       try {
         if (!payload || !payload.filename) return;
         if (!audioUnlocked) await tryUnlockAudio();
-        const filename = payload.filename;
+
+        const giftId = payload.giftId || 'default';
         const vol100 = typeof payload.volume !== 'undefined' ? Number(payload.volume) : 100;
         const vol = Math.min(100, Math.max(0, vol100)) / 100;
-        const a = getAudioElement();
-        a.src = filename;
-        a.volume = vol;
-        a.currentTime = 0;
-        a.play().catch(err => console.warn('audio play blocked', err));
+
+        if (!audioQueues[giftId]) audioQueues[giftId] = [];
+        audioQueues[giftId].push({ filename: payload.filename, volume: vol });
+
+        if (!isPlaying[giftId]) {
+          processQueue(giftId);
+        }
       } catch (err) {
         console.error('play-sound handler error', err);
       }
     });
 
+    // إيقاف جميع الأصوات وإفراغ الطوابير
+    socket.on('stop-sound', () => {
+      for (const giftId in currentAudio) {
+        if (currentAudio[giftId]) {
+          try {
+            currentAudio[giftId].pause();
+            currentAudio[giftId].currentTime = 0;
+            currentAudio[giftId].src = '';
+            currentAudio[giftId].load();
+          } catch(e) {}
+          currentAudio[giftId] = null;
+        }
+        if (audioQueues[giftId]) audioQueues[giftId] = [];
+        isPlaying[giftId] = false;
+      }
+    });
+
+    // ===== إدارة الفيديو =====
     const video = document.getElementById('videoPlayer');
     const videoQueue = [];
-    let isPlaying = false;
+    let isVideoPlaying = false;
     let videoVolume = 1;
 
     video.muted = !UNMUTED;
     video.volume = UNMUTED ? videoVolume : 0;
 
     function playNextVideo() {
-      if (isPlaying || videoQueue.length === 0) return;
+      if (isVideoPlaying || videoQueue.length === 0) return;
       const src = videoQueue.shift();
-      isPlaying = true;
+      isVideoPlaying = true;
       video.src = src;
       video.muted = true;
       video.volume = 0;
@@ -2335,7 +2414,7 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       }).catch(e => console.warn('video autoplay blocked', e));
       
       video.onended = () => {
-        isPlaying = false;
+        isVideoPlaying = false;
         video.style.display = 'none';
         video.src = '';
         playNextVideo();
@@ -2368,6 +2447,17 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       }
     });
 
+    socket.on('stop-video', () => {
+      if (video && !video.paused) {
+        video.pause();
+        video.currentTime = 0;
+        video.style.display = 'none';
+        isVideoPlaying = false;
+        while(videoQueue.length) videoQueue.pop();
+      }
+    });
+
+    // ===== التراكب =====
     const overlayDiv = document.getElementById('overlay');
     const overlayAvatar = document.getElementById('overlayAvatar');
     const overlayUsername = document.getElementById('overlayUsername');
@@ -2379,11 +2469,8 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
         if (!data) return;
         console.log('📢 استقبال تراكب:', data);
 
-        // رابط الصورة، مع fallback لو فاضي
         const avatarSrc = data.avatar || 'https://via.placeholder.com/70?text=User';
         overlayAvatar.src = avatarSrc;
-
-        // لو الصورة فشل تحميلها، نعرض placeholder
         overlayAvatar.onerror = () => {
           overlayAvatar.src = 'https://via.placeholder.com/70?text=User';
         };
@@ -2398,24 +2485,6 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
         }, data.duration || 5000);
       } catch (err) {
         console.error('خطأ في عرض التراكب:', err);
-      }
-    });
-
-    socket.on('stop-sound', () => {
-      if (currentAudioElement) {
-        currentAudioElement.pause();
-        currentAudioElement.currentTime = 0;
-        currentAudioElement = null;
-      }
-    });
-
-    socket.on('stop-video', () => {
-      if (video && !video.paused) {
-        video.pause();
-        video.currentTime = 0;
-        video.style.display = 'none';
-        isPlaying = false;
-        while(videoQueue.length) videoQueue.pop();
       }
     });
 
@@ -4847,7 +4916,8 @@ io.use(async (socket, next) => {
   }
 }).on("connection", (socket) => {
   if (socket.userId) {
-    const room = `user-${socket.userId}`;
+    // ✅ تغيير الغرفة من user- إلى screen-
+    const room = `screen-${socket.userId}`;
     socket.join(room);
     logger.info(
       `📱 شاشة متصلة للمستخدم ${socket.userId}، انضم إلى غرفة ${room}`,
