@@ -4917,41 +4917,29 @@ app.post("/api/agent/register", authenticateToken, async (req, res) => {
 });
 
 io.use(async (socket, next) => {
-  // 1. محاولة الحصول على userId من screenToken (للاستخدام من الشاشات)
-  const screenToken = socket.handshake.query.token;
-  if (screenToken) {
-    try {
-      const user = await User.findOne({ screenToken });
-      if (user) {
-        socket.userId = String(user._id);
-        socket.isScreen = true; // علامة أنه شاشة
-        return next();
-      }
-    } catch (err) {
-      return next(new Error("Invalid screen token"));
+  // حاول قراءة التوكن من auth
+  let token = socket.handshake.auth?.token;
+  // إذا لم يوجد، حاول من الكوكيز
+  if (!token) {
+    const cookieHeader = socket.handshake.headers.cookie;
+    if (cookieHeader) {
+      const cookies = cookieHeader.split(";").reduce((acc, c) => {
+        const [key, val] = c.trim().split("=");
+        acc[key] = val;
+        return acc;
+      }, {});
+      token = cookies.token;
     }
   }
+  if (!token) return next(new Error("No token"));
 
-  // 2. إذا لم يكن هناك screenToken، نتحقق من توكن المصادقة (JWT) من الكوكيز
   try {
-    const cookieHeader = socket.handshake.headers.cookie;
-    if (!cookieHeader) return next(new Error("No cookies"));
-
-    const cookies = cookieHeader.split(";").reduce((acc, c) => {
-      const [key, val] = c.trim().split("=");
-      acc[key] = val;
-      return acc;
-    }, {});
-    const jwtToken = cookies.token;
-    if (!jwtToken) return next(new Error("No JWT token"));
-
-    const decoded = jwt.verify(jwtToken, JWT_SECRET);
-    if (!decoded || !decoded.id) return next(new Error("Invalid JWT"));
+    const decoded = jwt.verify(token, JWT_SECRET);
     socket.userId = String(decoded.id);
-    socket.isScreen = false; // فرونت (ليس شاشة)
+    socket.isScreen = false;
     next();
   } catch (err) {
-    next(new Error("Authentication error: " + err.message));
+    next(new Error("Invalid token"));
   }
 });
 
