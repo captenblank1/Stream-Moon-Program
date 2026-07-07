@@ -2318,6 +2318,9 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
     const socket = io(window.location.origin, { query: { token: USER_TOKEN }, transports: ['websocket', 'polling'] });
     let audioUnlocked = false;
     
+      let lastPlayedSoundId = null;
+
+
     // ===== إدارة الطوابير لكل هدية على حدة =====
     const audioQueues = {};
     const isPlaying = {};
@@ -2391,26 +2394,38 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       });
     }
 
-    socket.on('play-sound', async (payload) => {
-      try {
-        if (!payload || !payload.filename) return;
-        if (payload.screen && payload.screen !== SCREEN_NUMBER) return;
-        if (!audioUnlocked) await tryUnlockAudio();
 
-        const giftId = payload.giftId || 'default';
-        const vol100 = typeof payload.volume !== 'undefined' ? Number(payload.volume) : 100;
-        const vol = Math.min(100, Math.max(0, vol100)) / 100;
+socket.on('play-sound', async (payload) => {
+  try {
+    if (!payload || !payload.filename) return;
+    if (payload.screen && payload.screen !== SCREEN_NUMBER) return;
 
-        if (!audioQueues[giftId]) audioQueues[giftId] = [];
-        audioQueues[giftId].push({ filename: payload.filename, volume: vol });
+    // ⭐ تجاهل التكرار
+    if (payload.id && payload.id === lastPlayedSoundId) {
+      console.log('⏭️ تجاهل صوت مكرر في الشاشة');
+      return;
+    }
+    lastPlayedSoundId = payload.id;
 
-        if (!isPlaying[giftId]) {
-          processQueue(giftId);
-        }
-      } catch (err) {
-        console.error('play-sound handler error', err);
-      }
-    });
+    // فتح الصوت (لتجاوز سياسة autoplay)
+    if (!audioUnlocked) await tryUnlockAudio();
+
+    const giftId = payload.giftId || 'default';
+    const vol100 = typeof payload.volume !== 'undefined' ? Number(payload.volume) : 100;
+    const vol = Math.min(100, Math.max(0, vol100)) / 100;
+
+    // إضافة إلى طابور الهدية
+    if (!audioQueues[giftId]) audioQueues[giftId] = [];
+    audioQueues[giftId].push({ filename: payload.filename, volume: vol });
+
+    // بدء تشغيل الطابور إذا لم يكن مشغلاً
+    if (!isPlaying[giftId]) {
+      processQueue(giftId);
+    }
+  } catch (err) {
+    console.error('play-sound handler error', err);
+  }
+});
 
     socket.on('stop-sound', () => {
       for (const giftId in currentAudio) {
