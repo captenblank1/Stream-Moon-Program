@@ -1162,9 +1162,27 @@ async function executeAction(
   // ----- 1. تشغيل الصوت والفيديو فوراً (بدون انتظار interval) -----
   for (let i = 0; i < repeat; i++) {
     // الصوت
+    // داخل executeAction، بعد استخراج المتغيرات وقبل حلقة الصوت
+    let audioUrl = audio;
     if (playSound && audio) {
-      const giftId = cmdObj.giftId || cmdObj._id || "default";
-      playAudio(audio, volume, userId, String(giftId));
+      // إذا كان اسم ملف فقط (وليس رابطاً ولا مساراً محلياً)
+      if (
+        !audio.startsWith("http://") &&
+        !audio.startsWith("https://") &&
+        !audio.startsWith("/audios/")
+      ) {
+        try {
+          const audioDoc = await Audio.findOne({ file: audio, userId });
+          if (audioDoc && audioDoc.cloudinaryUrl) {
+            audioUrl = audioDoc.cloudinaryUrl;
+          } else {
+            audioUrl = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/raw/upload/${encodeURIComponent(audio)}`;
+          }
+        } catch (err) {
+          logger.warn(`⚠️ فشل البحث عن الصوت ${audio}: ${err.message}`);
+          audioUrl = audio;
+        }
+      }
     }
 
     // الفيديو
@@ -1204,7 +1222,6 @@ async function executeAction(
       }
     }
   }
-  // ----- 2. التراكب (مرة واحدة فقط) -----
   // ----- 2. التراكب (مرة واحدة فقط) -----
   if (cmdObj.showOverlay && userId) {
     const overlayPayload = {
