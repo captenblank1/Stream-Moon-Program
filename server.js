@@ -2280,15 +2280,18 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
     const UNMUTED = ${safeUnmuted};
     console.log('🎬 Screen ' + SCREEN_NUMBER + ' loaded' + (UNMUTED ? ' (مع الصوت)' : ' (مكتوم)'));
 
+    // ===== تعريفات المسارات =====
+    const AUDIO_BASE = "/audios/";
+    const VIDEO_BASE = "/videos/";
+
     const socket = io(window.location.origin, { query: { token: USER_TOKEN }, transports: ['websocket', 'polling'] });
     let audioUnlocked = false;
     
     // ===== إدارة الطوابير لكل هدية على حدة =====
-    const audioQueues = {};        // key: giftId, value: array of { filename, volume }
-    const isPlaying = {};          // key: giftId, value: boolean
-    const currentAudio = {};       // key: giftId, value: Audio element currently playing
+    const audioQueues = {};
+    const isPlaying = {};
+    const currentAudio = {};
 
-    // دالة فتح الصوت (تشغيل صامت لتجاوز قيود المتصفح)
     async function tryUnlockAudio() {
       if (audioUnlocked) return true;
       try {
@@ -2315,7 +2318,6 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       }
     }
 
-    // معالجة الطابور الخاص بكل هدية
     function processQueue(giftId) {
       if (!audioQueues[giftId] || audioQueues[giftId].length === 0) {
         isPlaying[giftId] = false;
@@ -2327,7 +2329,12 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       
       const item = audioQueues[giftId].shift();
       const a = new Audio();
-      a.src = item.filename;
+      
+      let src = item.filename;
+      if (!src.startsWith('http://') && !src.startsWith('https://')) {
+        src = AUDIO_BASE + encodeURIComponent(src);
+      }
+      a.src = src;
       a.volume = item.volume;
       a.preload = 'auto';
       a.crossOrigin = 'anonymous';
@@ -2353,7 +2360,6 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       });
     }
 
-    // استقبال أمر تشغيل الصوت
     socket.on('play-sound', async (payload) => {
       try {
         if (!payload || !payload.filename) return;
@@ -2375,7 +2381,6 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       }
     });
 
-    // إيقاف جميع الأصوات وإفراغ الطوابير
     socket.on('stop-sound', () => {
       for (const giftId in currentAudio) {
         if (currentAudio[giftId]) {
@@ -2446,7 +2451,10 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
           videoVolume = Math.min(1, Math.max(0, Number(data.volume) / 100));
           if (!video.muted) video.volume = videoVolume;
         }
-        const vidName = data.videoId;
+        let vidName = data.videoId;
+        if (!vidName.startsWith('http://') && !vidName.startsWith('https://')) {
+          vidName = VIDEO_BASE + encodeURIComponent(vidName);
+        }
         console.log('🎬 Screen ' + SCREEN_NUMBER + ' playing:', vidName);
         videoQueue.push(vidName);
         playNextVideo();
@@ -2475,7 +2483,6 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
     socket.on('show-overlay', (data) => {
       try {
         if (!data) return;
-        // ✅ منع ظهور التراكب على شاشات غير مخصصة له
         if (data.screen && data.screen !== SCREEN_NUMBER) return;
 
         console.log('📢 استقبال تراكب للشاشة ' + SCREEN_NUMBER + ':', data);
@@ -4915,25 +4922,61 @@ app.post("/api/agent/register", authenticateToken, async (req, res) => {
 });
 
 io.use(async (socket, next) => {
-  const token = socket.handshake.query.token;
-  if (!token) return next(new Error("Missing token"));
+  // 1. محاولة الحصول على userId من screenToken (للاستخدام من الشاشات)
+  const screenToken = socket.handshake.query.token;
+  if (screenToken) {
+    try {
+      const user = await User.findOne({ screenToken });
+      if (user) {
+        socket.userId = String(user._id);
+        socket.isScreen = true; // علامة أنه شاشة
+        return next();
+      }
+    } catch (err) {
+      return next(new Error("Invalid screen token"));
+    }
+  }
+
+  // 2. إذا لم يكن هناك screenToken، نتحقق من توكن المصادقة (JWT) من الكوكيز
   try {
-    const user = await User.findOne({ screenToken: token });
-    if (!user) return next(new Error("Invalid token"));
-    socket.userId = String(user._id);
+    const cookieHeader = socket.handshake.headers.cookie;
+    if (!cookieHeader) return next(new Error("No cookies"));
+
+    const cookies = cookieHeader.split(";").reduce((acc, c) => {
+      const [key, val] = c.trim().split("=");
+      acc[key] = val;
+      return acc;
+    }, {});
+    const jwtToken = cookies.token;
+    if (!jwtToken) return next(new Error("No JWT token"));
+
+    const decoded = jwt.verify(jwtToken, JWT_SECRET);
+    if (!decoded || !decoded.id) return next(new Error("Invalid JWT"));
+    socket.userId = String(decoded.id);
+    socket.isScreen = false; // فرونت (ليس شاشة)
     next();
   } catch (err) {
     next(new Error("Authentication error: " + err.message));
   }
-}).on("connection", (socket) => {
+});
+
+io.on("connection", (socket) => {
   if (socket.userId) {
-    // ✅ تغيير الغرفة من user- إلى screen-
-    const room = `screen-${socket.userId}`;
-    socket.join(room);
-    logger.info(
-      `📱 شاشة متصلة للمستخدم ${socket.userId}، انضم إلى غرفة ${room}`,
-    );
-    socket.emit("connected", { room });
+    if (socket.isScreen) {
+      const screenRoom = `screen-${socket.userId}`;
+      socket.join(screenRoom);
+      logger.info(
+        `📱 شاشة متصلة للمستخدم ${socket.userId}، انضم إلى ${screenRoom}`,
+      );
+      socket.emit("connected", { room: screenRoom });
+    } else {
+      const userRoom = `user-${socket.userId}`;
+      socket.join(userRoom);
+      logger.info(
+        `🖥️ فرونت متصل للمستخدم ${socket.userId}، انضم إلى ${userRoom}`,
+      );
+      socket.emit("connected", { room: userRoom });
+    }
   } else {
     logger.info(`📱 عميل Socket.IO بدون userId: ${socket.id}`);
   }
