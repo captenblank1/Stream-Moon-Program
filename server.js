@@ -1051,15 +1051,31 @@ async function sendWebhook(webhookUrl, data, userId = null) {
 }
 
 // ================ تشغيل الصوت ================
-function playAudio(
+async function playAudio(
   file,
   volume = 100,
   targetUserId = null,
   giftId = null,
   screen = 1,
 ) {
+  // 1. البحث عن رابط الصوت في قاعدة البيانات
+  let audioUrl = file;
+  if (file && !file.startsWith("http://") && !file.startsWith("https://")) {
+    try {
+      const audioDoc = await Audio.findOne({ file: file });
+      if (audioDoc && audioDoc.cloudinaryUrl) {
+        audioUrl = audioDoc.cloudinaryUrl;
+      } else {
+        // إذا لم يكن في قاعدة البيانات، استخدم المسار المحلي (كحل احتياطي)
+        audioUrl = `/audios/${file}`;
+      }
+    } catch (err) {
+      audioUrl = `/audios/${file}`;
+    }
+  }
+
   const payload = {
-    filename: file,
+    filename: audioUrl, // ← الآن يرسل الرابط الكامل
     volume: Math.min(100, Math.max(0, parseInt(volume) || 100)),
     timestamp: Date.now(),
     giftId: giftId || "default",
@@ -1076,11 +1092,9 @@ function playAudio(
   const hasScreen = io.sockets.adapter.rooms.has(screenRoom);
 
   if (hasScreen) {
-    // الشاشة موجودة → نرسل إليها فقط
     io.to(screenRoom).emit("play-sound", payload);
     console.log(`🔊 صوت إلى الشاشة (${screenRoom})`);
   } else {
-    // لا توجد شاشة → نرسل إلى الفرونت (غرفة المستخدم)
     io.to(`user-${targetUserId}`).emit("play-sound", payload);
     console.log(`🔊 صوت إلى الفرونت (user-${targetUserId})`);
   }
