@@ -1156,7 +1156,7 @@ async function executeAction(
     duration = 5,
   } = cmdObj;
 
-  // استخراج الاسم الحقيقي والصورة
+  // استخراج الاسم الحقيقي والصورة (نفس الكود السابق)
   let realName = triggerUser;
   let avatar = "";
   if (data) {
@@ -1203,59 +1203,54 @@ async function executeAction(
     await new Promise((resolve) => setTimeout(resolve, delayBefore));
   }
 
-  // ----- 1. تشغيل الصوت والفيديو (مرة واحدة لكل تكرار) -----
-  for (let i = 0; i < repeat; i++) {
-    // الصوت
-    if (playSound && audio) {
-      const giftId = cmdObj.giftId || cmdObj._id || "default";
-      await playAudio(
-        audio,
-        volume,
-        userId,
-        String(giftId),
-        cmdObj.screen || 1,
-      );
+  // ============================================================
+  // تشغيل الصوت والفيديو والتراكب (مرة واحدة فقط)
+  // ============================================================
+
+  // 1. الصوت
+  if (playSound && audio) {
+    const giftId = cmdObj.giftId || cmdObj._id || "default";
+    await playAudio(audio, volume, userId, String(giftId), cmdObj.screen || 1);
+  }
+
+  // 2. الفيديو
+  if (playVideo && video && userId) {
+    let videoUrl = video;
+    try {
+      const videoDoc = await Video.findOne({ file: video, userId });
+      videoUrl =
+        videoDoc?.cloudinaryUrl ||
+        `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload/${encodeURIComponent(video)}`;
+    } catch (e) {}
+
+    const payload = {
+      videoId: videoUrl,
+      user: triggerUser,
+      screen,
+      volume: videoVolume,
+    };
+
+    const screenRoom = `screen-${userId}`;
+    const hasScreen = io.sockets.adapter.rooms.has(screenRoom);
+
+    if (hasScreen) {
+      io.to(screenRoom).emit("gift-video", payload);
+    } else {
+      io.to(`user-${userId}`).emit("gift-video", payload);
     }
 
-    // الفيديو
-    if (playVideo && video && userId) {
-      let videoUrl = video;
-      try {
-        const videoDoc = await Video.findOne({ file: video, userId });
-        videoUrl =
-          videoDoc?.cloudinaryUrl ||
-          `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload/${encodeURIComponent(video)}`;
-      } catch (e) {}
-
-      const payload = {
-        videoId: videoUrl,
-        user: triggerUser,
-        screen,
-        volume: videoVolume,
-      };
-
-      const screenRoom = `screen-${userId}`;
-      const hasScreen = io.sockets.adapter.rooms.has(screenRoom);
-
-      if (hasScreen) {
-        io.to(screenRoom).emit("gift-video", payload);
-      } else {
-        io.to(`user-${userId}`).emit("gift-video", payload);
-      }
-
-      if (duration && duration > 0) {
-        setTimeout(() => {
-          if (hasScreen) {
-            io.to(screenRoom).emit("stop-video");
-          } else {
-            io.to(`user-${userId}`).emit("stop-video");
-          }
-        }, duration * 1000);
-      }
+    if (duration && duration > 0) {
+      setTimeout(() => {
+        if (hasScreen) {
+          io.to(screenRoom).emit("stop-video");
+        } else {
+          io.to(`user-${userId}`).emit("stop-video");
+        }
+      }, duration * 1000);
     }
   }
 
-  // ----- 2. التراكب (مرة واحدة فقط) -----
+  // 3. التراكب
   if (cmdObj.showOverlay && userId) {
     const overlayPayload = {
       username: realName,
@@ -1275,7 +1270,9 @@ async function executeAction(
     }
   }
 
-  // ----- 3. تنفيذ الأوامر والكيستروك والويبهوك مع interval -----
+  // ============================================================
+  // تنفيذ الأوامر والكيستروك والويبهوك (مع التكرار)
+  // ============================================================
   for (let i = 0; i < repeat; i++) {
     if (i > 0 && interval > 0) {
       await new Promise((r) => setTimeout(r, interval));
@@ -1294,7 +1291,7 @@ async function executeAction(
       if (agentSocket && agentSocket.connected) {
         agentSocket.emit("execute-keys", {
           command: finalKeystroke,
-          repeat: 1,
+          repeat: 1, // نرسل مرة واحدة لكل تكرار (يمكن تعديله حسب الحاجة)
           interval: 0,
           combo,
         });
