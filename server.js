@@ -997,36 +997,46 @@ async function sendRconCommand(userId, command, { nickname, username } = {}) {
 }
 // ================ وظيفة Webhook ================
 async function sendWebhook(webhookUrl, data, userId = null) {
+  // ★ التحقق من وجود الرابط وصحته
   if (!webhookUrl || !webhookUrl.trim()) return;
+  webhookUrl = webhookUrl.trim();
+  if (!webhookUrl.startsWith("http://") && !webhookUrl.startsWith("https://")) {
+    logger.warn(`⚠️ تجاهل webhook: رابط غير صالح (${webhookUrl})`);
+    return;
+  }
+
   const isLocalhost =
     webhookUrl.includes("localhost") || webhookUrl.includes("127.0.0.1");
   if (isLocalhost && userId) {
     const userIdStr = userId.toString();
     const agentSocket = userLocalAgents.get(userIdStr);
-    logger.info(
-      `🔍 البحث عن عميل محلي للمستخدم ${userId}: ${agentSocket ? "موجود" : "غير موجود"}`,
-    );
-    if (agentSocket && agentSocket.connected) {
-      logger.info(
-        `📡 إرسال webhook إلى العميل المحلي للمستخدم ${userId}: ${webhookUrl}`,
+    if (!agentSocket || !agentSocket.connected) {
+      logger.warn(
+        `⚠️ لا يوجد عميل محلي للمستخدم ${userId}، تجاهل webhook إلى ${webhookUrl}`,
       );
-      agentSocket.emit("webhook-request", {
+      // إرسال إشعار للواجهة الأمامية (اختياري)
+      io.to(`user-${userId}`).emit("webhook-error", {
+        message: "العميل المحلي غير متصل",
         url: webhookUrl,
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: data,
-        repeat: 1,
-        interval: 0,
-        delayBefore: 0,
       });
       return;
-    } else {
-      logger.warn(
-        `⚠️ لا يوجد عميل محلي متصل للمستخدم ${userId} لتوجيه webhook إلى localhost`,
-      );
-      return;
     }
+    logger.info(
+      `📡 إرسال webhook إلى العميل المحلي للمستخدم ${userId}: ${webhookUrl}`,
+    );
+    agentSocket.emit("webhook-request", {
+      url: webhookUrl,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: data,
+      repeat: 1,
+      interval: 0,
+      delayBefore: 0,
+    });
+    return;
   }
+
+  // إرسال webhook عادي
   logger.info(`🌐 إرسال Webhook إلى: ${webhookUrl.substring(0, 50)}...`);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 5000);
