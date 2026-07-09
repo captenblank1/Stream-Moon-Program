@@ -1325,7 +1325,7 @@ async function executeAction(
         for (const cmdLine of selectedGroup) {
           if (cmdLine.toLowerCase().startsWith("delay ")) {
             const sec = parseFloat(cmdLine.split(/\s+/)[1]);
-            if (!isNaN(sec)) cumulativeDelay += sec * 1000;
+            if (!isNaN(sec)) cumulativeDelay += sec; // الآن sec بالميلي ثانية
             continue;
           }
           setTimeout(() => {
