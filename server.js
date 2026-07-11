@@ -1156,7 +1156,7 @@ async function executeAction(
     duration = 5,
   } = cmdObj;
 
-  // استخراج الاسم الحقيقي والصورة
+  // استخراج الاسم الحقيقي والصورة (نفس الكود السابق)
   let realName = triggerUser;
   let avatar = "";
   if (data) {
@@ -1273,66 +1273,35 @@ async function executeAction(
   // ============================================================
   // تنفيذ الأوامر والكيستروك والويبهوك (مع التكرار)
   // ============================================================
-
-  // ⭐ تحديد النص الذي سيُرسل ككيستروك (من keystrokeText أو command)
-  let effectiveKeystroke = keystrokeText;
-  if (!effectiveKeystroke && command && command.trim()) {
-    effectiveKeystroke = command.trim();
-  }
-
   for (let i = 0; i < repeat; i++) {
     if (i > 0 && interval > 0) {
       await new Promise((r) => setTimeout(r, interval));
     }
 
-    // ======== تنفيذ الكيستروك (الأولوية القصوى) ========
-    if (effectiveKeystroke) {
+    // الكيستروك
+    if (keystrokeText) {
       const finalKeystroke = replacePlaceholders(
-        effectiveKeystroke,
+        keystrokeText,
         realName,
         triggerUser,
         "",
       );
       const userIdStr = userId ? userId.toString() : null;
       const agentSocket = userLocalAgents.get(userIdStr);
-
-      // المحاولة الأولى: عبر العميل المحلي (Agent)
       if (agentSocket && agentSocket.connected) {
         agentSocket.emit("execute-keys", {
           command: finalKeystroke,
-          repeat: 1,
+          repeat: 1, // نرسل مرة واحدة لكل تكرار (يمكن تعديله حسب الحاجة)
           interval: 0,
           combo,
         });
-        io.to(`user-${userId}`).emit("keystroke-status", {
-          success: true,
-          method: "agent",
-          command: finalKeystroke,
-        });
-      }
-      // المحاولة الثانية: عبر node-key-sender (Windows فقط)
-      else if (keySenderReady) {
+      } else if (keySenderReady) {
         await executeNativeKeystroke(finalKeystroke, 1, 0);
-        io.to(`user-${userId}`).emit("keystroke-status", {
-          success: true,
-          method: "native",
-          command: finalKeystroke,
-        });
-      }
-      // في حال عدم وجود أي وسيلة تنفيذ، نرسل تحذيراً للمستخدم
-      else {
-        io.to(`user-${userId}`).emit("keystroke-status", {
-          success: false,
-          message:
-            "⚠️ لا يوجد عميل محلي (Agent) متصل، ولا تتوفر أداة nircmd. يُرجى تشغيل العميل المحلي.",
-        });
-        logger.warn(
-          `⚠️ لا يمكن تنفيذ الكيستروك للمستخدم ${userId}: لا Agent ولا nircmd`,
-        );
       }
     }
-    // ======== إذا لم يكن هناك كيستروك، نرسل RCON (كحل احتياطي) ========
-    else if (command && command.trim()) {
+
+    // أوامر RCON
+    if (command && command.trim()) {
       const lines = command
         .split(/\r?\n/)
         .map((l) => l.trim())
@@ -1356,7 +1325,7 @@ async function executeAction(
         for (const cmdLine of selectedGroup) {
           if (cmdLine.toLowerCase().startsWith("delay ")) {
             const sec = parseFloat(cmdLine.split(/\s+/)[1]);
-            if (!isNaN(sec)) cumulativeDelay += sec;
+            if (!isNaN(sec)) cumulativeDelay += sec; // الآن sec بالميلي ثانية
             continue;
           }
           setTimeout(() => {
@@ -1376,7 +1345,7 @@ async function executeAction(
       }
     }
 
-    // ======== إرسال Webhook ========
+    // الويبهوك
     if (webhookUrl && webhookUrl.trim()) {
       const webhookData = {
         name: name || "",
@@ -3551,46 +3520,43 @@ app.post(
         return res
           .status(400)
           .json({ success: false, message: "معرف غير صالح" });
-
       const gift = await GiftCommand.findById(req.params.id);
       if (!gift)
         return res.status(404).json({ success: false, message: "غير موجود" });
       if (gift.userId.toString() !== req.user.id)
         return res.status(403).json({ success: false, message: "غير مصرح به" });
-
       const canAccess = await canAccessProfile(req.user.id, gift.profile);
       if (!canAccess)
         return res.status(403).json({
           success: false,
           message: "لا يمكنك تنفيذ أمر من بروفايل غير مصرح به",
         });
-
       const count = Math.max(1, parseInt(req.body?.count || 1, 10) || 1);
       const timesToRun = Math.min(count, 10);
       const requestedScreen = req.body?.screen
         ? parseInt(req.body.screen)
         : null;
-
-      // ⭐ تحضير cmdObj مع تعيين keystrokeText
       const cmdObj = gift.toObject ? { ...gift.toObject() } : { ...gift };
-      // تحديد keystrokeText من command أو combo
-      cmdObj.keystrokeText =
+      const configuredRepeat = Math.max(
+        1,
+        parseInt(cmdObj.repeat || 1, 10) || 1,
+      );
+      const keystrokeText =
         cmdObj.command && cmdObj.command.trim() !== ""
           ? cmdObj.command
           : cmdObj.combo || "";
-      // إذا كان هناك command وليس combo، نأخذ command أيضاً (تأكيد)
-      if (!cmdObj.keystrokeText && cmdObj.command && cmdObj.command.trim()) {
-        cmdObj.keystrokeText = cmdObj.command.trim();
-      }
-      cmdObj.screen = requestedScreen || cmdObj.screen || 1;
-
-      // تنفيذ الأمر (مع التكرار)
       for (let t = 0; t < timesToRun; t++) {
-        await executeAction(cmdObj, "StreamMoon", req.user.id);
+        const one = {
+          ...cmdObj,
+          repeat: configuredRepeat,
+          screen: requestedScreen || cmdObj.screen || 1,
+          keystrokeText,
+          combo: cmdObj.combo,
+        };
+        await executeAction(one, "StreamMoon", req.user.id);
         if (t < timesToRun - 1 && cmdObj.interval > 0)
           await new Promise((r) => setTimeout(r, cmdObj.interval));
       }
-
       res.json({ success: true, message: "تم التنفيذ", count: timesToRun });
     } catch (err) {
       logger.error("❌ خطأ في تنفيذ أمر الهدية:", err.message);
@@ -3635,44 +3601,62 @@ app.post(
         return res
           .status(400)
           .json({ success: false, message: "معرف غير صالح" });
-
       const cmd = await InteractionCommand.findById(req.params.id);
       if (!cmd)
         return res.status(404).json({ success: false, message: "غير موجود" });
       if (cmd.userId.toString() !== req.user.id)
         return res.status(403).json({ success: false, message: "غير مصرح به" });
-
       const canAccess = await canAccessProfile(req.user.id, cmd.profile);
       if (!canAccess)
         return res.status(403).json({
           success: false,
           message: "لا يمكنك تنفيذ أمر من بروفايل غير مصرح به",
         });
-
       const count = Math.max(1, parseInt(req.body?.count || 1, 10) || 1);
       const timesToRun = Math.min(count, 10);
       const requestedScreen = req.body?.screen
         ? parseInt(req.body.screen)
         : null;
-
-      // ⭐ تحضير cmdObj مع تعيين keystrokeText
       const cmdObj = cmd.toObject ? { ...cmd.toObject() } : { ...cmd };
-      cmdObj.keystrokeText =
+      const configuredRepeat = Math.max(
+        1,
+        parseInt(cmdObj.repeat || 1, 10) || 1,
+      );
+      const keystrokeText =
         cmdObj.command && cmdObj.command.trim() !== ""
           ? cmdObj.command
           : cmdObj.combo || "";
-      if (!cmdObj.keystrokeText && cmdObj.command && cmdObj.command.trim()) {
-        cmdObj.keystrokeText = cmdObj.command.trim();
+      const agentSocket = userLocalAgents.get(req.user.id);
+      if (agentSocket && agentSocket.connected && keystrokeText) {
+        for (let t = 0; t < timesToRun; t++) {
+          agentSocket.emit("execute-keys", {
+            command: keystrokeText,
+            repeat: configuredRepeat,
+            interval: cmdObj.interval || 500,
+            combo: cmdObj.combo,
+          });
+          if (t < timesToRun - 1 && cmdObj.interval > 0)
+            await new Promise((r) => setTimeout(r, cmdObj.interval));
+        }
+      } else if (keySenderReady && keystrokeText) {
+        for (let t = 0; t < timesToRun; t++) {
+          await executeNativeKeystroke(
+            keystrokeText,
+            configuredRepeat,
+            cmdObj.interval || 500,
+          );
+          if (t < timesToRun - 1 && cmdObj.interval > 0)
+            await new Promise((r) => setTimeout(r, cmdObj.interval));
+        }
       }
-      cmdObj.screen = requestedScreen || cmdObj.screen || 1;
-
-      // تنفيذ الأمر (مع التكرار)
       for (let t = 0; t < timesToRun; t++) {
-        await executeAction(cmdObj, "StreamMoon", req.user.id);
-        if (t < timesToRun - 1 && cmdObj.interval > 0)
-          await new Promise((r) => setTimeout(r, cmdObj.interval));
+        const one = {
+          ...cmdObj,
+          repeat: configuredRepeat,
+          screen: requestedScreen || cmdObj.screen || 1,
+        };
+        await executeAction(one, "StreamMoon", req.user.id);
       }
-
       res.json({ success: true, message: "تم التنفيذ", count: timesToRun });
     } catch (err) {
       logger.error("❌ خطأ في تنفيذ أمر التفاعل:", err.message);
@@ -4131,7 +4115,6 @@ app.post("/api/execute-keystroke", authenticateToken, async (req, res) => {
     const { combo } = req.body;
     if (!combo)
       return res.status(400).json({ success: false, message: "combo مطلوب" });
-
     const profile = await getUserSelectedProfile(req.user.id);
     let command = await InteractionCommand.findOne({
       userId: req.user.id,
@@ -4150,13 +4133,10 @@ app.post("/api/execute-keystroke", authenticateToken, async (req, res) => {
       return res
         .status(404)
         .json({ success: false, message: "اختصار غير معروف" });
-
-    // ⭐ استخدام keystrokeText من command أو combo
     let keystrokeText =
       command.command && command.command.trim() !== ""
         ? command.command
         : combo;
-
     const agentSocket = userLocalAgents.get(req.user.id);
     if (agentSocket && agentSocket.connected) {
       agentSocket.emit("execute-keys", {
@@ -4192,6 +4172,7 @@ app.post("/api/execute-keystroke", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
+
 // ================ نقاط نهاية أخرى ================
 app.post("/api/play-sound", authenticateToken, (req, res) => {
   const { filename, volume = 100 } = req.body;
