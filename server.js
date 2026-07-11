@@ -1156,7 +1156,7 @@ async function executeAction(
     duration = 5,
   } = cmdObj;
 
-  // استخراج الاسم الحقيقي والصورة (نفس الكود السابق)
+  // استخراج الاسم الحقيقي والصورة
   let realName = triggerUser;
   let avatar = "";
   if (data) {
@@ -1188,7 +1188,7 @@ async function executeAction(
     }
   }
 
-  // oncePerLive
+  // oncePerLive (يبقى أولاً)
   if (oncePerLive && _id && userId) {
     const idStr = `${userId}:${String(_id)}`;
     if (executedOncePerLive.has(idStr)) {
@@ -1198,22 +1198,24 @@ async function executeAction(
     executedOncePerLive.set(idStr, true);
   }
 
-  // التأخير الأولي
-  if (delayBefore > 0) {
-    await new Promise((resolve) => setTimeout(resolve, delayBefore));
-  }
-
   // ============================================================
-  // تشغيل الصوت والفيديو والتراكب (مرة واحدة فقط)
+  // تشغيل الصوت فوراً (بدون انتظار التأخير)
   // ============================================================
-
-  // 1. الصوت
   if (playSound && audio) {
     const giftId = cmdObj.giftId || cmdObj._id || "default";
     await playAudio(audio, volume, userId, String(giftId), cmdObj.screen || 1);
   }
 
-  // 2. الفيديو
+  // ============================================================
+  // التأخير (يُطبق على كل ما تبقى: فيديو، تراكب، أوامر)
+  // ============================================================
+  if (delayBefore > 0) {
+    await new Promise((resolve) => setTimeout(resolve, delayBefore));
+  }
+
+  // ============================================================
+  // تشغيل الفيديو والتراكب (بعد التأخير)
+  // ============================================================
   if (playVideo && video && userId) {
     let videoUrl = video;
     try {
@@ -1250,7 +1252,6 @@ async function executeAction(
     }
   }
 
-  // 3. التراكب
   if (cmdObj.showOverlay && userId) {
     const overlayPayload = {
       username: realName,
@@ -1271,7 +1272,7 @@ async function executeAction(
   }
 
   // ============================================================
-  // تنفيذ الأوامر والكيستروك والويبهوك (مع التكرار)
+  // تنفيذ الأوامر والكيستروك والويبهوك (مع التكرار، بعد التأخير)
   // ============================================================
   for (let i = 0; i < repeat; i++) {
     if (i > 0 && interval > 0) {
@@ -1291,7 +1292,7 @@ async function executeAction(
       if (agentSocket && agentSocket.connected) {
         agentSocket.emit("execute-keys", {
           command: finalKeystroke,
-          repeat: 1, // نرسل مرة واحدة لكل تكرار (يمكن تعديله حسب الحاجة)
+          repeat: 1,
           interval: 0,
           combo,
         });
@@ -1325,7 +1326,7 @@ async function executeAction(
         for (const cmdLine of selectedGroup) {
           if (cmdLine.toLowerCase().startsWith("delay ")) {
             const sec = parseFloat(cmdLine.split(/\s+/)[1]);
-            if (!isNaN(sec)) cumulativeDelay += sec; // الآن sec بالميلي ثانية
+            if (!isNaN(sec)) cumulativeDelay += sec;
             continue;
           }
           setTimeout(() => {
