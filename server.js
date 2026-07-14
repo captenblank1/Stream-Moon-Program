@@ -2000,9 +2000,12 @@ async function connectUser(userId, username) {
         const current = likeCounters.get(keyUser);
         const times = Math.floor(current / threshold);
         if (times <= 0) continue;
-        let cmdObj = addKeystrokeToCommand(cmd);
-        cmdObj.repeat = Math.max(1, (cmdObj.repeat || 1) * times);
-        await executeAction(cmdObj, sender, userId, data);
+
+        // تنفيذ الأمر بعدد مرات يساوي times، مع إعادة تعيين العداد
+        for (let i = 0; i < times; i++) {
+          let cmdObj = addKeystrokeToCommand(cmd);
+          await executeAction(cmdObj, sender, userId, data);
+        }
         likeCounters.set(keyUser, current - times * threshold);
         if (likeCounters.get(keyUser) < 0) likeCounters.delete(keyUser);
       }
@@ -2261,13 +2264,14 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
     });
     const safeUnmuted = unmuted ? "true" : "false";
 
-    const html = `<!DOCTYPE html>
+const html = `<!DOCTYPE html>
 <html lang="ar">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Screen ${screenNum} - ${safeEmailForTitle}</title>
   <style>
+    /* الأنماط القديمة تبقى كما هي */
     html,body{ margin:0;padding:0;width:100%;height:100%; background:transparent; overflow:hidden; }
     video{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:transparent; display:none; }
     .overlay-container {
@@ -2302,15 +2306,63 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       margin-top: 2px;
       text-shadow: 1px 1px 2px rgba(0,0,0,0.8), 0 0 5px rgba(0,0,0,0.5);
     }
+
+    /* ====== الأنماط الجديدة للطبقة ====== */
+    #audioUnlockOverlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.85);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 99999;
+      color: white;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      flex-direction: column;
+      cursor: pointer;
+      user-select: none;
+      transition: opacity 0.5s;
+    }
+    #audioUnlockOverlay h1 {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+      text-shadow: 0 0 10px rgba(255,255,255,0.3);
+    }
+    #audioUnlockOverlay p {
+      font-size: 1.2rem;
+      opacity: 0.8;
+    }
+    #audioUnlockOverlay .icon {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+      100% { transform: scale(1); }
+    }
   </style>
 </head>
 <body>
+  <!-- ====== طبقة الترحيب (تظهر مرة واحدة) ====== -->
+  <div id="audioUnlockOverlay">
+    <div class="icon">🔊</div>
+    <h1>اضغط هنا لتفعيل الصوت</h1>
+    <p>لن تحتاج لتكرار ذلك مرة أخرى</p>
+  </div>
+
+  <!-- باقي العناصر القديمة -->
   <div id="overlay" class="overlay-container">
     <img id="overlayAvatar" class="overlay-avatar" src="" alt="">
     <div id="overlayUsername" class="overlay-username"></div>
     <div id="overlayText" class="overlay-text"></div>
   </div>
   <video id="videoPlayer" autoplay playsinline ${unmuted ? "" : "muted"}></video>
+
   <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
   <script>
   (function(){
@@ -2319,46 +2371,98 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
     const UNMUTED = ${safeUnmuted};
     console.log('🎬 Screen ' + SCREEN_NUMBER + ' loaded' + (UNMUTED ? ' (مع الصوت)' : ' (مكتوم)'));
 
-    // ===== تعريفات المسارات =====
     const AUDIO_BASE = "/audios/";
     const VIDEO_BASE = "/videos/";
 
     const socket = io(window.location.origin, { query: { token: USER_TOKEN }, transports: ['websocket', 'polling'] });
+
+    // ====== متغيرات الصوت ======
+    let audioCtx = null;
     let audioUnlocked = false;
-    
-      let lastPlayedSoundId = null;
+    let keepAliveInterval = null;
+    let lastPlayedSoundId = null;
 
-
-    // ===== إدارة الطوابير لكل هدية على حدة =====
-    const audioQueues = {};
-    const isPlaying = {};
-    const currentAudio = {};
-
-    async function tryUnlockAudio() {
+    // ====== دالة فتح الصوت (مرة واحدة فقط) ======
+    async function unlockAudio() {
       if (audioUnlocked) return true;
       try {
-        if (typeof AudioContext !== 'undefined') {
-          const ctx = new (window.AudioContext || window.webkitAudioContext)();
-          const o = ctx.createOscillator();
-          const g = ctx.createGain();
-          g.gain.value = 0;
-          o.connect(g); g.connect(ctx.destination);
-          o.start(0);
-          setTimeout(() => { try { o.stop(); ctx.close(); } catch(e) {} }, 50);
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
+        if (audioCtx.state === "suspended") {
+          await audioCtx.resume();
+        }
+        // تشغيل صوت صامت
+        const buffer = audioCtx.createBuffer(1, 1, 22050);
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioCtx.destination);
+        source.start(0);
+
+        // تأكيد عبر عنصر audio صامت
         const silent = new Audio();
         silent.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
         silent.volume = 0;
-        await silent.play().catch(()=>{});
+        await silent.play();
         silent.pause();
         silent.src = '';
+
         audioUnlocked = true;
+        console.log('✅ تم فتح الصوت بنجاح (مرة واحدة)');
+
+        // بدء نبضات الحفاظ على النشاط (keep-alive)
+        if (!keepAliveInterval) {
+          keepAliveInterval = setInterval(() => {
+            if (audioCtx && audioCtx.state === "suspended") {
+              audioCtx.resume().catch(() => {});
+            }
+            try {
+              if (audioCtx) {
+                const buf = audioCtx.createBuffer(1, 1, 22050);
+                const src = audioCtx.createBufferSource();
+                src.buffer = buf;
+                const gain = audioCtx.createGain();
+                gain.gain.value = 0.001;
+                src.connect(gain);
+                gain.connect(audioCtx.destination);
+                src.start(0);
+                setTimeout(() => { try { src.stop(); gain.disconnect(); } catch(e) {} }, 100);
+              }
+            } catch(e) {}
+          }, 3000);
+        }
+
+        // إخفاء الطبقة
+        const overlay = document.getElementById('audioUnlockOverlay');
+        if (overlay) {
+          overlay.style.opacity = '0';
+          setTimeout(() => overlay.style.display = 'none', 500);
+        }
+
         return true;
       } catch (e) {
-        console.warn('audio unlock failed', e);
+        console.warn('فشل فتح الصوت:', e);
         return false;
       }
     }
+
+    // ====== مستمع النقرة الأولى (مرة واحدة) ======
+    const overlay = document.getElementById('audioUnlockOverlay');
+    overlay.addEventListener('click', unlockAudio, { once: true });
+    // أيضاً إذا نقر المستخدم في أي مكان آخر (احتياطي)
+    document.addEventListener('click', unlockAudio, { once: true });
+
+    // ====== استئناف الصوت عند عودة الصفحة للظهور ======
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && audioCtx && audioCtx.state === "suspended") {
+        audioCtx.resume().catch(() => {});
+      }
+    });
+
+    // ====== إدارة الطوابير (الكود القديم) ======
+    const audioQueues = {};
+    const isPlaying = {};
+    const currentAudio = {};
 
     function processQueue(giftId) {
       if (!audioQueues[giftId] || audioQueues[giftId].length === 0) {
@@ -2402,39 +2506,40 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
       });
     }
 
+    // ====== معالج play-sound المعدل ======
+    socket.on('play-sound', async (payload) => {
+      try {
+        if (!payload || !payload.filename) return;
+        if (payload.screen && payload.screen !== SCREEN_NUMBER) return;
 
-socket.on('play-sound', async (payload) => {
-  try {
-    if (!payload || !payload.filename) return;
-    if (payload.screen && payload.screen !== SCREEN_NUMBER) return;
+        // ⭐ تجاهل التكرار
+        if (payload.id && payload.id === lastPlayedSoundId) {
+          console.log('⏭️ تجاهل صوت مكرر في الشاشة');
+          return;
+        }
+        lastPlayedSoundId = payload.id;
 
-    // ⭐ تجاهل التكرار
-    if (payload.id && payload.id === lastPlayedSoundId) {
-      console.log('⏭️ تجاهل صوت مكرر في الشاشة');
-      return;
-    }
-    lastPlayedSoundId = payload.id;
+        // ⭐ فتح الصوت تلقائياً (إذا لم يكن مفتوحاً)
+        if (!audioUnlocked) {
+          await unlockAudio();
+        }
 
-    // فتح الصوت (لتجاوز سياسة autoplay)
-    if (!audioUnlocked) await tryUnlockAudio();
+        const giftId = payload.giftId || 'default';
+        const vol100 = typeof payload.volume !== 'undefined' ? Number(payload.volume) : 100;
+        const vol = Math.min(100, Math.max(0, vol100)) / 100;
 
-    const giftId = payload.giftId || 'default';
-    const vol100 = typeof payload.volume !== 'undefined' ? Number(payload.volume) : 100;
-    const vol = Math.min(100, Math.max(0, vol100)) / 100;
+        if (!audioQueues[giftId]) audioQueues[giftId] = [];
+        audioQueues[giftId].push({ filename: payload.filename, volume: vol });
 
-    // إضافة إلى طابور الهدية
-    if (!audioQueues[giftId]) audioQueues[giftId] = [];
-    audioQueues[giftId].push({ filename: payload.filename, volume: vol });
+        if (!isPlaying[giftId]) {
+          processQueue(giftId);
+        }
+      } catch (err) {
+        console.error('play-sound handler error', err);
+      }
+    });
 
-    // بدء تشغيل الطابور إذا لم يكن مشغلاً
-    if (!isPlaying[giftId]) {
-      processQueue(giftId);
-    }
-  } catch (err) {
-    console.error('play-sound handler error', err);
-  }
-});
-
+    // باقي الأحداث (stop-sound, gift-video, stop-video, show-overlay) كما هي بدون تغيير
     socket.on('stop-sound', () => {
       for (const giftId in currentAudio) {
         if (currentAudio[giftId]) {
@@ -2451,7 +2556,6 @@ socket.on('play-sound', async (payload) => {
       }
     });
 
-    // ===== إدارة الفيديو =====
     const video = document.getElementById('videoPlayer');
     const videoQueue = [];
     let isVideoPlaying = false;
@@ -2527,7 +2631,6 @@ socket.on('play-sound', async (payload) => {
       }
     });
 
-    // ===== التراكب =====
     const overlayDiv = document.getElementById('overlay');
     const overlayAvatar = document.getElementById('overlayAvatar');
     const overlayUsername = document.getElementById('overlayUsername');
@@ -2538,19 +2641,15 @@ socket.on('play-sound', async (payload) => {
       try {
         if (!data) return;
         if (data.screen && data.screen !== SCREEN_NUMBER) return;
-
         console.log('📢 استقبال تراكب للشاشة ' + SCREEN_NUMBER + ':', data);
-
         const avatarSrc = data.avatar || 'https://via.placeholder.com/70?text=User';
         overlayAvatar.src = avatarSrc;
         overlayAvatar.onerror = () => {
           overlayAvatar.src = 'https://via.placeholder.com/70?text=User';
         };
-
         overlayUsername.textContent = data.username || 'مستخدم';
         overlayText.textContent = data.text || '';
         overlayDiv.style.display = 'flex';
-
         if (overlayTimeout) clearTimeout(overlayTimeout);
         overlayTimeout = setTimeout(() => {
           overlayDiv.style.display = 'none';
