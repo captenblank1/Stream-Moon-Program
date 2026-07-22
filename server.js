@@ -1067,26 +1067,20 @@ async function playAudio(
   targetUserId = null,
   giftId = null,
   screen = 1,
+  sendToUser = false,
 ) {
-  // 1. تحديد الرابط النهائي
+  // تحديد الرابط النهائي
   let audioUrl = file;
-
-  // إذا كان الرابط مكتملاً (http/https) استخدمه مباشرة
   if (file && (file.startsWith("http://") || file.startsWith("https://"))) {
     audioUrl = file;
-  }
-  // إذا كان يبدأ بـ /audios/ فهو افتراضي، استخدمه كما هو
-  else if (file && file.startsWith("/audios/")) {
+  } else if (file && file.startsWith("/audios/")) {
     audioUrl = file;
-  }
-  // وإلا فهو اسم ملف مرفوع، ابحث في قاعدة البيانات
-  else {
+  } else {
     try {
       const audioDoc = await Audio.findOne({ file: file });
       if (audioDoc && audioDoc.cloudinaryUrl) {
         audioUrl = audioDoc.cloudinaryUrl;
       } else {
-        // لم نجد في قاعدة البيانات، اعتبره افتراضي (قد يكون اسم ملف فقط)
         audioUrl = `/audios/${file}`;
       }
     } catch (err) {
@@ -1094,7 +1088,6 @@ async function playAudio(
     }
   }
 
-  // إنشاء معرف فريد لتجنب التكرار في حال وصول الحدث إلى نفس العميل عبر غرفتين
   const uniqueId = `${targetUserId || "global"}-${giftId || "default"}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
 
   const payload = {
@@ -1103,35 +1096,37 @@ async function playAudio(
     timestamp: Date.now(),
     giftId: giftId || "default",
     screen: screen,
-    id: uniqueId, // إضافة معرف فريد
+    id: uniqueId,
   };
 
-  if (!targetUserId) {
-    io.emit("play-sound", payload);
-    return;
-  }
+  if (!targetUserId) return;
 
-  const userRoom = `user-${targetUserId}`;
   const screenRoom = `screen-${targetUserId}`;
   const hasScreen = io.sockets.adapter.rooms.has(screenRoom);
 
-  // دائماً أرسل إلى غرفة المستخدم (الفرونت)
-  io.to(userRoom).emit("play-sound", payload);
-  console.log(`🔊 صوت إلى الفرونت (${userRoom}) - ${audioUrl}`);
-
-  // إذا كانت الشاشة موجودة، أرسل إليها أيضاً
-  if (hasScreen) {
-    io.to(screenRoom).emit("play-sound", payload);
-    console.log(`🔊 صوت إلى الشاشة (${screenRoom}) - ${audioUrl}`);
+  if (sendToUser) {
+    // ✅ تنفيذ يدوي → إرسال إلى الفرونت فقط
+    io.to(`user-${targetUserId}`).emit("play-sound", payload);
+    console.log(`🔊 صوت إلى الفرونت (user-${targetUserId}) - ${audioUrl}`);
+  } else {
+    // ✅ تنفيذ آلي → إرسال إلى الشاشة فقط (إذا كانت موجودة)
+    if (hasScreen) {
+      io.to(screenRoom).emit("play-sound", payload);
+      console.log(`🔊 صوت إلى الشاشة (${screenRoom}) - ${audioUrl}`);
+    } else {
+      console.log(
+        `⚠️ لا توجد شاشة للمستخدم ${targetUserId}، تم تجاهل الصوت للشاشات`,
+      );
+    }
   }
 }
-
 // ================ الوظيفة الرئيسية لتنفيذ الإجراء ================
 async function executeAction(
   cmdObj,
   triggerUser = "Unknown",
   userId,
   data = null,
+  source = "auto",
 ) {
   if (!cmdObj.active) return;
 
@@ -1203,7 +1198,15 @@ async function executeAction(
   // ============================================================
   if (playSound && audio) {
     const giftId = cmdObj.giftId || cmdObj._id || "default";
-    await playAudio(audio, volume, userId, String(giftId), cmdObj.screen || 1);
+    const sendToUser = source === "manual";
+    await playAudio(
+      audio,
+      volume,
+      userId,
+      String(giftId),
+      cmdObj.screen || 1,
+      sendToUser,
+    );
   }
 
   // ============================================================
@@ -1214,7 +1217,7 @@ async function executeAction(
   }
 
   // ============================================================
-  // تشغيل الفيديو والتراكب (بعد التأخير)
+  // تشغيل الفيديو (بعد التأخير)
   // ============================================================
   if (playVideo && video && userId) {
     let videoUrl = video;
@@ -1228,26 +1231,23 @@ async function executeAction(
     const payload = {
       videoId: videoUrl,
       user: triggerUser,
-      screen,
+      screen: screen,
       volume: videoVolume,
     };
 
     const screenRoom = `screen-${userId}`;
     const hasScreen = io.sockets.adapter.rooms.has(screenRoom);
 
+    // إرسال الفيديو فقط إلى الشاشات (لا نرسل إلى الفرونت أبداً)
     if (hasScreen) {
       io.to(screenRoom).emit("gift-video", payload);
     } else {
-      io.to(`user-${userId}`).emit("gift-video", payload);
+      console.log(`⚠️ لا توجد شاشة للمستخدم ${userId}، تم تجاهل الفيديو`);
     }
 
     if (duration && duration > 0) {
       setTimeout(() => {
-        if (hasScreen) {
-          io.to(screenRoom).emit("stop-video");
-        } else {
-          io.to(`user-${userId}`).emit("stop-video");
-        }
+        if (hasScreen) io.to(screenRoom).emit("stop-video");
       }, duration * 1000);
     }
   }
@@ -1264,10 +1264,11 @@ async function executeAction(
     const screenRoom = `screen-${userId}`;
     const hasScreen = io.sockets.adapter.rooms.has(screenRoom);
 
+    // لا نرسل إلى الفرونت أبداً في التراكب، فقط إلى الشاشات
     if (hasScreen) {
       io.to(screenRoom).emit("show-overlay", overlayPayload);
     } else {
-      io.to(`user-${userId}`).emit("show-overlay", overlayPayload);
+      console.log(`⚠️ لا توجد شاشة للمستخدم ${userId}، تم تجاهل التراكب`);
     }
   }
 
@@ -3557,7 +3558,8 @@ app.post(
           keystrokeText,
           combo: cmdObj.combo,
         };
-        await executeAction(one, "StreamMoon", req.user.id);
+        // داخل POST /api/gift-commands/:id/execute
+        await executeAction(one, "StreamMoon", req.user.id, null, "manual");
         if (t < timesToRun - 1 && cmdObj.interval > 0)
           await new Promise((r) => setTimeout(r, cmdObj.interval));
       }
@@ -3659,7 +3661,7 @@ app.post(
           repeat: configuredRepeat,
           screen: requestedScreen || cmdObj.screen || 1,
         };
-        await executeAction(one, "StreamMoon", req.user.id);
+        await executeAction(one, "StreamMoon", req.user.id, null, "manual");
       }
       res.json({ success: true, message: "تم التنفيذ", count: timesToRun });
     } catch (err) {
