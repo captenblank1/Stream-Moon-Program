@@ -1069,23 +1069,17 @@ async function playAudio(
   screen = 1,
   sendToUser = false,
 ) {
-  // تحديد الرابط النهائي: إما رابط كامل أو اسم ملف فقط
+  // تنظيف المسار: إزالة أي /audios/ مكررة أو بداية خاطئة
   let audioUrl = file;
-  if (file && (file.startsWith("http://") || file.startsWith("https://"))) {
-    audioUrl = file; // رابط كامل (مثل روابط Cloudinary)
-  } else {
-    // إزالة /audios/ إذا كانت موجودة، ليكون اسم الملف فقط
-    if (file && file.startsWith("/audios/")) {
-      audioUrl = file.substring(8); // إزالة "/audios/"
-    } else {
-      audioUrl = file; // اسم الملف فقط
+  if (audioUrl) {
+    if (!audioUrl.startsWith("http://") && !audioUrl.startsWith("https://")) {
+      audioUrl = audioUrl.replace(/^\/audios\//, "").replace(/^audios\//, "");
     }
   }
-
   const uniqueId = `${targetUserId || "global"}-${giftId || "default"}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
 
   const payload = {
-    filename: audioUrl, // الآن هو اسم الملف فقط (بدون /audios/) أو رابط كامل
+    filename: audioUrl, // الآن اسم الملف فقط (بدون /audios/)
     volume: Math.min(100, Math.max(0, parseInt(volume) || 100)),
     timestamp: Date.now(),
     giftId: giftId || "default",
@@ -2333,78 +2327,86 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
     const isPlaying = {};
     const currentAudio = {};
 
-    async function tryUnlockAudio() {
-      if (audioUnlocked) return true;
-      try {
-        if (typeof AudioContext !== 'undefined') {
-          const ctx = new (window.AudioContext || window.webkitAudioContext)();
-          const o = ctx.createOscillator();
-          const g = ctx.createGain();
-          g.gain.value = 0;
-          o.connect(g); g.connect(ctx.destination);
-          o.start(0);
-          setTimeout(() => { try { o.stop(); ctx.close(); } catch(e) {} }, 50);
-        }
-        const silent = new Audio();
-        silent.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
-        silent.volume = 0;
-        await silent.play().catch(()=>{});
-        silent.pause();
-        silent.src = '';
-        audioUnlocked = true;
-        return true;
-      } catch (e) {
-        console.warn('audio unlock failed', e);
-        return false;
-      }
+async function tryUnlockAudio() {
+  if (audioUnlocked) return true;
+  try {
+    // محاولة فتح AudioContext
+    if (typeof AudioContext !== 'undefined') {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state === 'suspended') await ctx.resume();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(0);
+      osc.stop(0.01);
+      setTimeout(() => ctx.close(), 200);
     }
+    // تشغيل صوت مكتوم (حل OBS)
+    const silentAudio = new Audio();
+    silentAudio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
+    silentAudio.muted = true;
+    silentAudio.volume = 0;
+    await silentAudio.play();
+    silentAudio.pause();
+    silentAudio.src = '';
+    audioUnlocked = true;
+    console.log('✅ فتح الصوت بنجاح (طريقة الصوت المكتوم)');
+    return true;
+  } catch (e) {
+    console.warn('❌ فشل فتح الصوت:', e);
+    return false;
+  }
+}
+function processQueue(giftId) {
+  if (!audioQueues[giftId] || audioQueues[giftId].length === 0) {
+    isPlaying[giftId] = false;
+    currentAudio[giftId] = null;
+    return;
+  }
+  if (isPlaying[giftId]) return;
+  isPlaying[giftId] = true;
 
-    function processQueue(giftId) {
-      if (!audioQueues[giftId] || audioQueues[giftId].length === 0) {
-        isPlaying[giftId] = false;
-        currentAudio[giftId] = null;
-        return;
-      }
-      if (isPlaying[giftId]) return;
-      isPlaying[giftId] = true;
-      
-      const item = audioQueues[giftId].shift();
-      const a = new Audio();
-      
-      let src = item.filename;
-      if (!src.startsWith('http://') && !src.startsWith('https://')) {
-        src = AUDIO_BASE + encodeURIComponent(src);
-      }
-      a.src = src;
-      a.volume = item.volume;
-      a.preload = 'auto';
-      a.crossOrigin = 'anonymous';
-      currentAudio[giftId] = a;
+  const item = audioQueues[giftId].shift();
+  const a = new Audio();
 
-      a.onended = () => {
-        currentAudio[giftId] = null;
-        isPlaying[giftId] = false;
-        processQueue(giftId);
-      };
+  let src = item.filename;
+  // إذا لم يكن رابطاً كاملاً، أضف المسار الأساسي (لكن src جاهز بالفعل)
+  a.src = src;
+  a.volume = item.volume;
+  a.preload = 'auto';
+  a.crossOrigin = 'anonymous';
+  currentAudio[giftId] = a;
 
-      a.onerror = () => {
-        currentAudio[giftId] = null;
-        isPlaying[giftId] = false;
-        processQueue(giftId);
-      };
+  a.onended = () => {
+    currentAudio[giftId] = null;
+    isPlaying[giftId] = false;
+    processQueue(giftId);
+  };
 
-      a.play().catch(err => {
-        console.warn('audio play blocked for gift', giftId, err);
-        currentAudio[giftId] = null;
-        isPlaying[giftId] = false;
-        processQueue(giftId);
-      });
-    }
+  a.onerror = () => {
+    console.warn('❌ خطأ في تحميل الصوت:', src);
+    currentAudio[giftId] = null;
+    isPlaying[giftId] = false;
+    processQueue(giftId);
+  };
+
+  a.play().catch(err => {
+    console.warn('❌ فشل تشغيل الصوت:', err.message, src);
+    currentAudio[giftId] = null;
+    isPlaying[giftId] = false;
+    processQueue(giftId);
+  });
+}
 
 
 socket.on('play-sound', async (payload) => {
   try {
-    if (!payload || !payload.filename) return;
+    if (!payload || !payload.filename) {
+      console.warn('⚠️ play-sound بدون filename');
+      return;
+    }
     if (payload.screen && payload.screen !== SCREEN_NUMBER) return;
 
     // تجاهل التكرار
@@ -2414,7 +2416,7 @@ socket.on('play-sound', async (payload) => {
     }
     lastPlayedSoundId = payload.id;
 
-    // فتح الصوت (لتجاوز سياسة autoplay)
+    // فتح الصوت (إذا لم يكن مفتوحاً)
     if (!audioUnlocked) await tryUnlockAudio();
 
     const giftId = payload.giftId || 'default';
@@ -2431,6 +2433,8 @@ socket.on('play-sound', async (payload) => {
       src = AUDIO_BASE + encodeURIComponent(src);
     }
 
+    console.log('🔊 تشغيل الصوت من المسار:', src);
+
     // إضافة إلى الطابور
     if (!audioQueues[giftId]) audioQueues[giftId] = [];
     audioQueues[giftId].push({ filename: src, volume: vol });
@@ -2442,7 +2446,6 @@ socket.on('play-sound', async (payload) => {
     console.error('play-sound handler error', err);
   }
 });
-
     socket.on('stop-sound', () => {
       for (const giftId in currentAudio) {
         if (currentAudio[giftId]) {
