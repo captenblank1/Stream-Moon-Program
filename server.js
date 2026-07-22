@@ -1072,11 +1072,11 @@ async function playAudio(
   // تحديد الرابط النهائي: إما رابط كامل أو اسم ملف فقط
   let audioUrl = file;
   if (file && (file.startsWith("http://") || file.startsWith("https://"))) {
-    audioUrl = file;
+    audioUrl = file; // رابط كامل (مثل روابط Cloudinary)
   } else {
     // إزالة /audios/ إذا كانت موجودة، ليكون اسم الملف فقط
     if (file && file.startsWith("/audios/")) {
-      audioUrl = file.substring(8);
+      audioUrl = file.substring(8); // إزالة "/audios/"
     } else {
       audioUrl = file; // اسم الملف فقط
     }
@@ -1085,7 +1085,7 @@ async function playAudio(
   const uniqueId = `${targetUserId || "global"}-${giftId || "default"}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
 
   const payload = {
-    filename: audioUrl, // الآن هو اسم الملف فقط أو رابط كامل
+    filename: audioUrl, // الآن هو اسم الملف فقط (بدون /audios/) أو رابط كامل
     volume: Math.min(100, Math.max(0, parseInt(volume) || 100)),
     timestamp: Date.now(),
     giftId: giftId || "default",
@@ -1093,17 +1093,20 @@ async function playAudio(
     id: uniqueId,
   };
 
-  if (!targetUserId) return;
+  if (!targetUserId) {
+    // إذا لم يوجد مستخدم مستهدف، لا نرسل
+    return;
+  }
 
   const screenRoom = `screen-${targetUserId}`;
   const hasScreen = io.sockets.adapter.rooms.has(screenRoom);
 
   if (sendToUser) {
-    // يدوي → فرونت
+    // تنفيذ يدوي → إرسال إلى الفرونت فقط
     io.to(`user-${targetUserId}`).emit("play-sound", payload);
     console.log(`🔊 صوت إلى الفرونت (user-${targetUserId}) - ${audioUrl}`);
   } else {
-    // آلي → شاشة (إن وجدت)
+    // تنفيذ آلي → إرسال إلى الشاشة فقط (إذا كانت موجودة)
     if (hasScreen) {
       io.to(screenRoom).emit("play-sound", payload);
       console.log(`🔊 صوت إلى الشاشة (${screenRoom}) - ${audioUrl}`);
