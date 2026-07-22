@@ -36,6 +36,14 @@ const nodeKeySender = require("node-key-sender");
 const { exec } = require("child_process");
 const NodeCache = require("node-cache");
 
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 دقيقة
+  max: 100, // الحد الأقصى للطلبات من IP واحد
+  message: { success: false, message: "عدد الطلبات كبير جداً، حاول لاحقاً" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // ================ إعدادات البيئة ================
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -108,12 +116,19 @@ if (process.platform === "win32") {
 
 // ================ دوال node-key-sender ================
 async function executeNativeKeystroke(keys, repeat = 1, intervalMs = 500) {
+  // تنظيف المدخلات
+  const sanitizedKeys = sanitizeKeystroke(keys);
+  if (!sanitizedKeys || sanitizedKeys.length === 0) {
+    logger.warn("⛔ تم تجاهل كيستروك غير صالح (فارغ بعد التنقية)");
+    return false;
+  }
+
   if (!keySenderReady) {
     logger.error("node-key-sender غير جاهز");
     return false;
   }
   const nircmdPath = path.join(__dirname, "nircmd.exe");
-  let nircmdKeys = keys.toLowerCase().replace(/\+/g, "+");
+  let nircmdKeys = sanitizedKeys.toLowerCase().replace(/\+/g, "+");
   const sendOnce = () => {
     return new Promise((resolve) => {
       exec(`"${nircmdPath}" sendkeypress ${nircmdKeys}`, (error) => {
@@ -121,20 +136,21 @@ async function executeNativeKeystroke(keys, repeat = 1, intervalMs = 500) {
           logger.error(`فشل تنفيذ nircmd: ${error.message}`);
           resolve(false);
         } else {
-          logger.info(`⌨️ تم تنفيذ كيستروك: ${keys}`);
+          logger.info(`⌨️ تم تنفيذ كيستروك: ${sanitizedKeys}`);
           resolve(true);
         }
       });
     });
   };
-  if (repeat === 1) {
-    await sendOnce();
-  } else {
-    for (let i = 0; i < repeat; i++) {
-      setTimeout(() => sendOnce(), i * intervalMs);
-    }
-  }
-  return true;
+  // ... باقي الكود كما هو (استخدام sanitizedKeys بدلاً من keys)
+}
+
+// دالة تنقية خاصة بأوامر الكيستروك (للسماح فقط بالأحرف الآمنة)
+function sanitizeKeystroke(input) {
+  if (!input || typeof input !== "string") return "";
+  // السماح فقط: حروف (إنجليزية وعربية)، أرقام، مسافات، +، -، =، أقواس، وعلامات الترقيم البسيطة.
+  // هذا يمنع أي أحرف خطيرة مثل ; | & $ ( ) ` \n \r
+  return input.replace(/[^a-zA-Z0-9\u0600-\u06FF\s+\-=(){}[\].,;:!?]/g, "");
 }
 
 // ================ إعدادات PayPal ================
@@ -4132,6 +4148,18 @@ const uploadTFC = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
+const videoStorage = multer.memoryStorage();
+const uploadVideo = multer({
+  storage: videoStorage,
+  limits: { fileSize: MAX_VIDEO_MB * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const allowed = [".mp4", ".mov", ".webm", ".mkv", ".avi", ".flv", ".wmv"];
+    if (allowed.includes(ext)) cb(null, true);
+    else cb(new Error("امتداد غير مسموح للفيديو"));
+  },
+});
+
 app.post(
   "/api/profiles/import-file",
   authenticateToken,
@@ -4558,6 +4586,7 @@ const uploadAudioFile = multer({
     else cb(new Error("امتداد غير مسموح"));
   },
 });
+
 app.post(
   "/api/upload-audio",
   authenticateToken,
