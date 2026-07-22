@@ -1069,29 +1069,23 @@ async function playAudio(
   screen = 1,
   sendToUser = false,
 ) {
-  // تحديد الرابط النهائي
+  // تحديد الرابط النهائي: إما رابط كامل أو اسم ملف فقط
   let audioUrl = file;
   if (file && (file.startsWith("http://") || file.startsWith("https://"))) {
     audioUrl = file;
-  } else if (file && file.startsWith("/audios/")) {
-    audioUrl = file;
   } else {
-    try {
-      const audioDoc = await Audio.findOne({ file: file });
-      if (audioDoc && audioDoc.cloudinaryUrl) {
-        audioUrl = audioDoc.cloudinaryUrl;
-      } else {
-        audioUrl = `/audios/${file}`;
-      }
-    } catch (err) {
-      audioUrl = `/audios/${file}`;
+    // إزالة /audios/ إذا كانت موجودة، ليكون اسم الملف فقط
+    if (file && file.startsWith("/audios/")) {
+      audioUrl = file.substring(8);
+    } else {
+      audioUrl = file; // اسم الملف فقط
     }
   }
 
   const uniqueId = `${targetUserId || "global"}-${giftId || "default"}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
 
   const payload = {
-    filename: audioUrl,
+    filename: audioUrl, // الآن هو اسم الملف فقط أو رابط كامل
     volume: Math.min(100, Math.max(0, parseInt(volume) || 100)),
     timestamp: Date.now(),
     giftId: giftId || "default",
@@ -1105,18 +1099,16 @@ async function playAudio(
   const hasScreen = io.sockets.adapter.rooms.has(screenRoom);
 
   if (sendToUser) {
-    // ✅ تنفيذ يدوي → إرسال إلى الفرونت فقط
+    // يدوي → فرونت
     io.to(`user-${targetUserId}`).emit("play-sound", payload);
     console.log(`🔊 صوت إلى الفرونت (user-${targetUserId}) - ${audioUrl}`);
   } else {
-    // ✅ تنفيذ آلي → إرسال إلى الشاشة فقط (إذا كانت موجودة)
+    // آلي → شاشة (إن وجدت)
     if (hasScreen) {
       io.to(screenRoom).emit("play-sound", payload);
       console.log(`🔊 صوت إلى الشاشة (${screenRoom}) - ${audioUrl}`);
     } else {
-      console.log(
-        `⚠️ لا توجد شاشة للمستخدم ${targetUserId}، تم تجاهل الصوت للشاشات`,
-      );
+      console.log(`⚠️ لا توجد شاشة للمستخدم ${targetUserId}، تم تجاهل الصوت`);
     }
   }
 }
@@ -2412,7 +2404,7 @@ socket.on('play-sound', async (payload) => {
     if (!payload || !payload.filename) return;
     if (payload.screen && payload.screen !== SCREEN_NUMBER) return;
 
-    // ⭐ تجاهل التكرار
+    // تجاهل التكرار
     if (payload.id && payload.id === lastPlayedSoundId) {
       console.log('⏭️ تجاهل صوت مكرر في الشاشة');
       return;
@@ -2426,11 +2418,20 @@ socket.on('play-sound', async (payload) => {
     const vol100 = typeof payload.volume !== 'undefined' ? Number(payload.volume) : 100;
     const vol = Math.min(100, Math.max(0, vol100)) / 100;
 
-    // إضافة إلى طابور الهدية
-    if (!audioQueues[giftId]) audioQueues[giftId] = [];
-    audioQueues[giftId].push({ filename: payload.filename, volume: vol });
+    // بناء المسار الصحيح
+    let src = payload.filename;
+    if (!src.startsWith('http://') && !src.startsWith('https://')) {
+      // إذا كان يبدأ بـ /audios/ نزيلها (احتياطاً)
+      if (src.startsWith('/audios/')) {
+        src = src.substring(8);
+      }
+      src = AUDIO_BASE + encodeURIComponent(src);
+    }
 
-    // بدء تشغيل الطابور إذا لم يكن مشغلاً
+    // إضافة إلى الطابور
+    if (!audioQueues[giftId]) audioQueues[giftId] = [];
+    audioQueues[giftId].push({ filename: src, volume: vol });
+
     if (!isPlaying[giftId]) {
       processQueue(giftId);
     }
