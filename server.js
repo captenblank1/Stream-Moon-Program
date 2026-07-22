@@ -1069,17 +1069,59 @@ async function playAudio(
   screen = 1,
   sendToUser = false,
 ) {
-  // تنظيف المسار: إزالة أي /audios/ مكررة أو بداية خاطئة
-  let audioUrl = file;
-  if (audioUrl) {
-    if (!audioUrl.startsWith("http://") && !audioUrl.startsWith("https://")) {
-      audioUrl = audioUrl.replace(/^\/audios\//, "").replace(/^audios\//, "");
+  // 1. تطبيع المسار: استخراج اسم الملف فقط
+  let fileName = file;
+  let isLocal = false;
+
+  if (file.startsWith("/audios/")) {
+    fileName = file.substring(8); // إزالة '/audios/'
+    isLocal = true;
+  } else if (file.startsWith("http://") || file.startsWith("https://")) {
+    // رابط كامل (سحابي أو خارجي) نتركه كما هو
+    // ولا نعدّل fileName
+  } else {
+    // اسم ملف فقط (بدون مسار)
+    fileName = file;
+  }
+
+  // 2. إذا كان المستخدم معروفاً، نحاول جلب الرابط السحابي من قاعدة البيانات
+  let audioUrl = file; // القيمة الافتراضية
+
+  if (
+    targetUserId &&
+    !file.startsWith("http://") &&
+    !file.startsWith("https://")
+  ) {
+    // البحث باستخدام اسم الملف النظيف (بدون مسار)
+    const audioDoc = await Audio.findOne({
+      file: fileName,
+      userId: targetUserId,
+    });
+    if (audioDoc && audioDoc.cloudinaryUrl) {
+      audioUrl = audioDoc.cloudinaryUrl; // رابط Cloudinary كامل
+    } else {
+      // الملف غير موجود في قاعدة البيانات → نعتبره محلياً
+      if (!file.startsWith("/audios/") && !file.startsWith("http")) {
+        audioUrl = `/audios/${fileName}`;
+      } else {
+        audioUrl = file; // محلي أو رابط
+      }
+    }
+  } else {
+    // بدون مستخدم مستهدف أو رابط خارجي → نتركه كما هو
+    audioUrl = file;
+    // إذا كان اسم ملف فقط ولم يبدأ بـ /audios/، نضيفه
+    if (!audioUrl.startsWith("http") && !audioUrl.startsWith("/audios/")) {
+      audioUrl = `/audios/${audioUrl}`;
     }
   }
+
+  // 3. الآن audioUrl هو الرابط الكامل (إما /audios/... أو رابط Cloudinary)
+  // نرسله كما هو في حدث play-sound
   const uniqueId = `${targetUserId || "global"}-${giftId || "default"}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
 
   const payload = {
-    filename: audioUrl, // الآن اسم الملف فقط (بدون /audios/)
+    filename: audioUrl, // الآن رابط كامل
     volume: Math.min(100, Math.max(0, parseInt(volume) || 100)),
     timestamp: Date.now(),
     giftId: giftId || "default",
@@ -1087,26 +1129,18 @@ async function playAudio(
     id: uniqueId,
   };
 
-  if (!targetUserId) {
-    // إذا لم يوجد مستخدم مستهدف، لا نرسل
-    return;
-  }
+  // بعد بناء payload
+  if (!targetUserId) return; // إذا لم يوجد مستخدم لا نرسل
 
   const screenRoom = `screen-${targetUserId}`;
   const hasScreen = io.sockets.adapter.rooms.has(screenRoom);
 
   if (sendToUser) {
-    // تنفيذ يدوي → إرسال إلى الفرونت فقط
     io.to(`user-${targetUserId}`).emit("play-sound", payload);
-    console.log(`🔊 صوت إلى الفرونت (user-${targetUserId}) - ${audioUrl}`);
+  } else if (hasScreen) {
+    io.to(screenRoom).emit("play-sound", payload);
   } else {
-    // تنفيذ آلي → إرسال إلى الشاشة فقط (إذا كانت موجودة)
-    if (hasScreen) {
-      io.to(screenRoom).emit("play-sound", payload);
-      console.log(`🔊 صوت إلى الشاشة (${screenRoom}) - ${audioUrl}`);
-    } else {
-      console.log(`⚠️ لا توجد شاشة للمستخدم ${targetUserId}، تم تجاهل الصوت`);
-    }
+    console.log(`⚠️ لا توجد شاشة للمستخدم ${targetUserId}، تم تجاهل الصوت`);
   }
 }
 // ================ الوظيفة الرئيسية لتنفيذ الإجراء ================
@@ -1188,6 +1222,9 @@ async function executeAction(
   if (playSound && audio) {
     const giftId = cmdObj.giftId || cmdObj._id || "default";
     const sendToUser = source === "manual";
+    console.log(
+      `🔍 playSound: ${playSound}, audio: ${audio}, userId: ${userId}`,
+    );
     await playAudio(
       audio,
       volume,
