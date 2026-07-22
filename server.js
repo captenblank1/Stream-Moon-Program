@@ -1697,31 +1697,53 @@ function startLiveHeartbeat(userId) {
   if (global.liveHeartbeats.has(userId)) {
     clearInterval(global.liveHeartbeats.get(userId));
   }
+
   const interval = setInterval(async () => {
     const conn = userTikTokConnections.get(userId);
-    if (!conn || !conn.connection || !conn.isLive) {
+
+    // إذا لم يكن هناك اتصال صحيح، ننهي المؤقت
+    if (!conn || !conn.connection) {
       clearInterval(interval);
       global.liveHeartbeats.delete(userId);
       return;
     }
+
+    // إذا كانت isLive بالفعل false، ننهي المؤقت
+    if (!conn.isLive) {
+      clearInterval(interval);
+      global.liveHeartbeats.delete(userId);
+      return;
+    }
+
     try {
-      // محاولة جلب معلومات الغرفة (استخدم أي endpoint متاح في المكتبة)
-      // إذا لم توجد طريقة، يمكننا الاعتماد على حدث ROOM_UPDATE فقط
-      // بدلاً من ذلك، نقوم بفحص الوقت منذ آخر تحديث للغرفة
-      const now = Date.now();
-      const lastUpdate = conn.lastRoomUpdate || now;
-      if (now - lastUpdate > 300000) {
-        // 5 دقائق
-        // أكثر من دقيقة بدون تحديث
+      // 1. التحقق من وجود roomId (إذا كان null، فالبث انتهى)
+      if (!conn.roomId) {
         conn.isLive = false;
         userTikTokConnections.set(userId, conn);
         resetOncePerLiveForUser(userId);
         clearInterval(interval);
         global.liveHeartbeats.delete(userId);
-        logger.info(`🔄 انتهاء البث للمستخدم ${userId} (لا توجد تحديثات)`);
+        logger.info(`🔄 انتهاء البث للمستخدم ${userId} (roomId فارغ)`);
+        return;
+      }
+
+      // 2. التحقق من آخر تحديث (في حال عدم وصول ROOM_UPDATE)
+      const now = Date.now();
+      const lastUpdate = conn.lastRoomUpdate || now;
+      if (now - lastUpdate > 120000) {
+        // دقيقتان (كانت 5 دقائق)
+        conn.isLive = false;
+        userTikTokConnections.set(userId, conn);
+        resetOncePerLiveForUser(userId);
+        clearInterval(interval);
+        global.liveHeartbeats.delete(userId);
+        logger.info(
+          `🔄 انتهاء البث للمستخدم ${userId} (لا توجد تحديثات لأكثر من دقيقتين)`,
+        );
+        return;
       }
     } catch (err) {
-      // في حالة خطأ، نعتبر البث منتهياً
+      // في حالة حدوث خطأ، نعتبر البث منتهياً
       conn.isLive = false;
       userTikTokConnections.set(userId, conn);
       resetOncePerLiveForUser(userId);
@@ -1729,7 +1751,8 @@ function startLiveHeartbeat(userId) {
       global.liveHeartbeats.delete(userId);
       logger.warn(`⚠️ خطأ في heartbeat للمستخدم ${userId}: ${err.message}`);
     }
-  }, 30000); // كل 30 ثانية
+  }, 15000); // كل 15 ثانية بدلاً من 30
+
   global.liveHeartbeats.set(userId, interval);
 }
 
@@ -1968,12 +1991,22 @@ async function connectUser(userId, username) {
         )
           continue;
 
-        // ✅ منطق موحد: مرة واحدة في البث (بغض النظر عن المستخدم)
-        // ✅ تم تعديل الفولو ليصبح تلقائياً مرة واحدة (دون الحاجة لتفعيل الخيار)
-        const key = `${userId}:${String(cmd._id)}`;
-        if (executedOncePerLive.has(key)) continue;
-        await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
-        executedOncePerLive.set(key, true);
+        // ✅ المفتاح الجديد: userId + commandId + sender
+        const key = `${userId}:${String(cmd._id)}:${sender}`;
+
+        // إذا كان الأمر يحتوي على oncePerLive (اختياري) أو دائمًا لكل مستخدم
+        if (cmd.oncePerLive) {
+          if (executedOncePerLive.has(key)) continue;
+          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
+          executedOncePerLive.set(key, true);
+        } else {
+          // إذا لم يكن oncePerLive مفعلاً، ينفذ كل مرة (قد يكون مكرراً)
+          // لكننا هنا نريد تطبيق السلوك الافتراضي: مرة لكل مستخدم
+          // لذا نطبق نفس المنطق بغض النظر عن oncePerLive
+          if (executedOncePerLive.has(key)) continue;
+          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
+          executedOncePerLive.set(key, true);
+        }
       }
     } catch (err) {
       logger.error("❌ FOLLOW handler error:", err.message);
