@@ -213,16 +213,12 @@ const authLimiter = rateLimit({
 });
 
 // ================ إعدادات Express ================
+// ================ إعدادات Express ================
 const app = express();
 app.set("trust proxy", 1);
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: FRONTEND_URL, credentials: true },
-  allowEIO3: true,
-  transports: ["websocket", "polling"],
-});
 
-// قائمة المواقع المسموح بها
+// قائمة المواقع المسموح بها (تعريفها أولاً)
 const allowedOrigins = [
   "https://streammoon.net",
   "https://www.streammoon.net",
@@ -235,6 +231,29 @@ const allowedOrigins = [
 if (process.env.FRONTEND_URL) {
   allowedOrigins.push(process.env.FRONTEND_URL);
 }
+
+// ثم إنشاء io باستخدام allowedOrigins
+const io = new Server(server, {
+  cors: {
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true);
+      if (
+        allowedOrigins.includes(origin) ||
+        origin.includes("localhost") ||
+        origin.includes("127.0.0.1")
+      ) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+  },
+  allowEIO3: true,
+  transports: ["websocket", "polling"],
+  pingInterval: 25000,
+  pingTimeout: 60000,
+});
 
 app.use(
   cors({
