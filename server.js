@@ -1756,7 +1756,7 @@ function startLiveHeartbeat(userId) {
       // 2. التحقق من آخر تحديث (في حال عدم وصول ROOM_UPDATE)
       const now = Date.now();
       const lastUpdate = conn.lastRoomUpdate || now;
-      if (now - lastUpdate > 120000) {
+      if (now - lastUpdate > 300000) {
         // دقيقتان (كانت 5 دقائق)
         conn.isLive = false;
         userTikTokConnections.set(userId, conn);
@@ -1802,6 +1802,14 @@ async function connectUser(userId, username) {
 
   connection.on(WebcastEvent.GIFT, async (data) => {
     updateLastActivity(userId);
+
+    if (userTikTokConnections.has(userId)) {
+      const conn = userTikTokConnections.get(userId);
+      if (!conn.isLive) {
+        conn.isLive = true;
+        userTikTokConnections.set(userId, conn);
+      }
+    }
     if (!debugOnce) {
       console.log("🔍 هيكل بيانات الهدية (GIFT) - أول مرة:");
       console.log(JSON.stringify(data, null, 2).substring(0, 2000));
@@ -1947,6 +1955,14 @@ async function connectUser(userId, username) {
 
   connection.on(WebcastEvent.CHAT, async (data) => {
     updateLastActivity(userId);
+    // 🔹 إضافة هذا الجزء
+    if (userTikTokConnections.has(userId)) {
+      const conn = userTikTokConnections.get(userId);
+      if (!conn.isLive) {
+        conn.isLive = true;
+        userTikTokConnections.set(userId, conn);
+      }
+    }
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
       const comment = (data.comment || "").toString();
@@ -2003,6 +2019,14 @@ async function connectUser(userId, username) {
 
   connection.on(WebcastEvent.FOLLOW, async (data) => {
     updateLastActivity(userId);
+    // 🔹 إضافة هذا الجزء
+    if (userTikTokConnections.has(userId)) {
+      const conn = userTikTokConnections.get(userId);
+      if (!conn.isLive) {
+        conn.isLive = true;
+        userTikTokConnections.set(userId, conn);
+      }
+    }
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
       const userProfile = await getUserSelectedProfile(userId);
@@ -2042,6 +2066,14 @@ async function connectUser(userId, username) {
 
   connection.on(WebcastEvent.LIKE, async (data) => {
     updateLastActivity(userId);
+    // 🔹 إضافة هذا الجزء
+    if (userTikTokConnections.has(userId)) {
+      const conn = userTikTokConnections.get(userId);
+      if (!conn.isLive) {
+        conn.isLive = true;
+        userTikTokConnections.set(userId, conn);
+      }
+    }
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
 
@@ -2082,10 +2114,16 @@ async function connectUser(userId, username) {
         userProfile,
       ).filter((c) => c.type === "like" && c.active);
 
-          console.log(`🔍 LIKE: sender=${sender}, currentTotal=${currentTotal}, lastTotal=${lastTotal}, delta=${delta}`);
-    console.log(`🔍 userProfile=${userProfile}`);
-    console.log(`🔍 عدد أوامر LIKE المسترجعة: ${commands.length}`);
-    commands.forEach(c => console.log(`  - ${c.name} (threshold=${c.threshold}, targetUser=${c.targetUser})`));
+      console.log(
+        `🔍 LIKE: sender=${sender}, currentTotal=${currentTotal}, lastTotal=${lastTotal}, delta=${delta}`,
+      );
+      console.log(`🔍 userProfile=${userProfile}`);
+      console.log(`🔍 عدد أوامر LIKE المسترجعة: ${commands.length}`);
+      commands.forEach((c) =>
+        console.log(
+          `  - ${c.name} (threshold=${c.threshold}, targetUser=${c.targetUser})`,
+        ),
+      );
 
       for (let cmd of commands) {
         if (
@@ -2132,6 +2170,14 @@ async function connectUser(userId, username) {
 
   connection.on(WebcastEvent.SHARE, async (data) => {
     updateLastActivity(userId);
+    // 🔹 إضافة هذا الجزء
+    if (userTikTokConnections.has(userId)) {
+      const conn = userTikTokConnections.get(userId);
+      if (!conn.isLive) {
+        conn.isLive = true;
+        userTikTokConnections.set(userId, conn);
+      }
+    }
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
       const userProfile = await getUserSelectedProfile(userId);
@@ -2163,16 +2209,30 @@ async function connectUser(userId, username) {
   });
 
   connection.on(WebcastEvent.ROOM_UPDATE, (data) => {
-    const prev = userTikTokConnections.get(userId)?.isLive;
     const newRoomId = data?.roomId ?? data?.room_id ?? null;
     const newIsLive =
       typeof data?.isLive === "boolean" ? data.isLive : !!newRoomId;
-    if (!prev && newIsLive) resetOncePerLiveForUser(userId);
-    if (prev && !newIsLive) resetOncePerLiveForUser(userId);
+
     if (userTikTokConnections.has(userId)) {
       const conn = userTikTokConnections.get(userId);
-      conn.isLive = newIsLive;
-      conn.roomId = newIsLive ? newRoomId : null;
+      // إذا كان لدينا roomId سابق ولم يتغير، ولا توجد إشارة واضحة بانتهاء البث، نبقيه كما هو
+      if (newIsLive === false && conn.roomId && !newRoomId) {
+        // قد يكون هذا مجرد تحديث عابر، لا نغيّر isLive
+        // ولكن نحدّث lastRoomUpdate فقط
+        conn.lastRoomUpdate = Date.now();
+        userTikTokConnections.set(userId, conn);
+        return;
+      }
+      // تحديث الحالة فقط إذا كانت القيمة الجديدة مختلفة
+      if (conn.isLive !== newIsLive) {
+        if (!conn.isLive && newIsLive) resetOncePerLiveForUser(userId);
+        if (conn.isLive && !newIsLive) resetOncePerLiveForUser(userId);
+        conn.isLive = newIsLive;
+        conn.roomId = newIsLive ? newRoomId : null;
+      } else {
+        // حتى لو لم تتغير isLive، نحدّث roomId و lastRoomUpdate
+        conn.roomId = newIsLive ? newRoomId : null;
+      }
       conn.lastRoomUpdate = Date.now();
       userTikTokConnections.set(userId, conn);
     }
