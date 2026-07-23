@@ -1,7 +1,3 @@
-// server.js - نسخة خفيفة ومحسنة (بدون واجهة أمامية)
-// إعدادات RCON و TikTok منفصلة لكل مستخدم
-// تمت الإضافة: تراكب مع صورة المستخدم واسمه الحقيقي + إيقاف الصوت/الفيديو بعد المدة
-
 require("dotenv").config();
 const FRONTEND_URL = process.env.FRONTEND_URL;
 if (!FRONTEND_URL && process.env.NODE_ENV === "production") {
@@ -114,9 +110,6 @@ let bindingTokens = new Map(); // key: token, value: { userId, expires }
 
 let userAvatarCache = new Map();
 let userInfoCache = new Map(); // ✅ أضف هذا السطر هنا
-
-// أضفها في أعلى الملف مع باقي الدوال المساعدة
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ================ إعدادات السجلات (خفيفة) ================
 const logger = winston.createLogger({
@@ -1220,26 +1213,33 @@ async function executeAction(
   }
 
   // ============================================================
-  // 🎵 تشغيل الصوت فوراً (أولاً وقبل أي شيء)
+  // تشغيل الصوت فوراً (بدون انتظار التأخير)
   // ============================================================
   if (playSound && audio) {
     const giftId = cmdObj.giftId || cmdObj._id || "default";
     const sendToUser = source === "manual";
-    // لا ننتظر اكتمال تشغيل الصوت، نطلقه في الخلفية ليكون فورياً
-    playAudio(audio, volume, userId, String(giftId), screen, sendToUser).catch(
-      (err) => logger.warn("❌ خطأ في تشغيل الصوت:", err.message),
+    console.log(
+      `🔍 playSound: ${playSound}, audio: ${audio}, userId: ${userId}`,
+    );
+    await playAudio(
+      audio,
+      volume,
+      userId,
+      String(giftId),
+      cmdObj.screen || 1,
+      sendToUser,
     );
   }
 
   // ============================================================
-  // ⏳ تطبيق التأخير (على باقي الإجراءات فقط)
+  // التأخير (يُطبق على كل ما تبقى: فيديو، تراكب، أوامر)
   // ============================================================
   if (delayBefore > 0) {
-    await sleep(delayBefore);
+    await new Promise((resolve) => setTimeout(resolve, delayBefore));
   }
 
   // ============================================================
-  // 🎬 تشغيل الفيديو (بعد التأخير)
+  // تشغيل الفيديو (بعد التأخير)
   // ============================================================
   if (playVideo && video && userId) {
     let videoUrl = video;
@@ -1263,26 +1263,24 @@ async function executeAction(
     // إرسال الفيديو فقط إلى الشاشات (لا نرسل إلى الفرونت أبداً)
     if (hasScreen) {
       io.to(screenRoom).emit("gift-video", payload);
-      if (duration && duration > 0) {
-        setTimeout(() => {
-          if (hasScreen) io.to(screenRoom).emit("stop-video");
-        }, duration * 1000);
-      }
     } else {
       console.log(`⚠️ لا توجد شاشة للمستخدم ${userId}، تم تجاهل الفيديو`);
     }
+
+    if (duration && duration > 0) {
+      setTimeout(() => {
+        if (hasScreen) io.to(screenRoom).emit("stop-video");
+      }, duration * 1000);
+    }
   }
 
-  // ============================================================
-  // 🖼️ التراكب (بعد التأخير)
-  // ============================================================
   if (cmdObj.showOverlay && userId) {
     const overlayPayload = {
       username: realName,
       avatar: avatar,
       text: cmdObj.overlayText || "",
       duration: (duration || 5) * 1000,
-      screen: screen,
+      screen: cmdObj.screen || 1,
     };
 
     const screenRoom = `screen-${userId}`;
@@ -1297,11 +1295,13 @@ async function executeAction(
   }
 
   // ============================================================
-  // ⚙️ تنفيذ التكرارات (أوامر RCON، كيستروك، ويبهوك)
+  // تنفيذ الأوامر والكيستروك والويبهوك (مع التكرار، بعد التأخير)
   // ============================================================
+  for (let i = 0; i < repeat; i++) {
+    if (i > 0 && interval > 0) {
+      await new Promise((r) => setTimeout(r, interval));
+    }
 
-  // دالة مساعدة لتكرار واحد
-  const executeIteration = async (i) => {
     // الكيستروك
     if (keystrokeText) {
       const finalKeystroke = replacePlaceholders(
@@ -1330,9 +1330,7 @@ async function executeAction(
         .split(/\r?\n/)
         .map((l) => l.trim())
         .filter((l) => l);
-
       if (lines.length > 1) {
-        // معالجة المجموعات العشوائية
         const groups = [];
         let currentGroup = [];
         for (const line of lines) {
@@ -1344,11 +1342,9 @@ async function executeAction(
           } else currentGroup.push(line);
         }
         if (currentGroup.length) groups.push(currentGroup);
-
         const selectedGroup = groups.length
           ? groups[Math.floor(Math.random() * groups.length)]
           : [];
-
         let cumulativeDelay = 0;
         for (const cmdLine of selectedGroup) {
           if (cmdLine.toLowerCase().startsWith("delay ")) {
@@ -1356,26 +1352,24 @@ async function executeAction(
             if (!isNaN(sec)) cumulativeDelay += sec;
             continue;
           }
-          if (cumulativeDelay > 0) {
-            await sleep(cumulativeDelay * 1000);
-            cumulativeDelay = 0;
-          }
-          await sendRconCommand(userId, cmdLine, {
-            nickname: realName,
-            username: triggerUser,
-          });
-          await sleep(DEFAULT_COMMAND_DELAY_MS);
+          setTimeout(() => {
+            sendRconCommand(userId, cmdLine, {
+              nickname: realName,
+              username: triggerUser,
+            });
+          }, cumulativeDelay);
+          cumulativeDelay += DEFAULT_COMMAND_DELAY_MS;
         }
       } else {
         const singleCmd = lines[0];
-        await sendRconCommand(userId, singleCmd, {
+        sendRconCommand(userId, singleCmd, {
           nickname: realName,
           username: triggerUser,
         });
       }
     }
 
-    // ويبهوك (لا ننتظر)
+    // الويبهوك
     if (webhookUrl && webhookUrl.trim()) {
       const webhookData = {
         name: name || "",
@@ -1389,25 +1383,7 @@ async function executeAction(
         interval: 0,
         iteration: i + 1,
       };
-      sendWebhook(webhookUrl, webhookData, userId).catch((err) =>
-        logger.warn("❌ Webhook error:", err.message),
-      );
-    }
-  };
-
-  // تنفيذ التكرارات
-  if (repeat <= 1 || interval === 0) {
-    // تنفيذ متوازي (جميع التكرارات دفعة واحدة)
-    const tasks = [];
-    for (let i = 0; i < repeat; i++) {
-      tasks.push(executeIteration(i));
-    }
-    await Promise.all(tasks);
-  } else {
-    // تنفيذ متسلسل مع تأخير بين كل تكرار وآخر
-    for (let i = 0; i < repeat; i++) {
-      if (i > 0) await sleep(interval);
-      await executeIteration(i);
+      await sendWebhook(webhookUrl, webhookData, userId);
     }
   }
 }
@@ -1418,25 +1394,17 @@ function resetOncePerLiveForUser(userId) {
     if (key.startsWith(`${userId}:`)) toDelete.push(key);
   }
   toDelete.forEach((k) => executedOncePerLive.delete(k));
-
   const likeKeyPrefix = `${userId}:`;
   for (const key of likeCounters.keys()) {
     if (key.startsWith(likeKeyPrefix)) likeCounters.delete(key);
   }
-
-  // ✅ تنظيف lastLikeCount
-  const lastLikeKeyPrefix = `${userId}:`;
-  for (const key of lastLikeCount.keys()) {
-    if (key.startsWith(lastLikeKeyPrefix)) lastLikeCount.delete(key);
-  }
-
   const followKeyPrefix = `${userId}:`;
   for (const key of followExecutedUsers.keys()) {
     if (key.startsWith(followKeyPrefix)) followExecutedUsers.delete(key);
   }
-
   logger.info(`♻️ تم إعادة تعيين حالة oncePerLive للمستخدم ${userId}`);
 }
+
 function getSenderFromEvent(data) {
   if (!data) return "Unknown";
   const user = data.user || {};
@@ -1804,14 +1772,6 @@ async function connectUser(userId, username) {
 
   connection.on(WebcastEvent.GIFT, async (data) => {
     updateLastActivity(userId);
-
-    if (userTikTokConnections.has(userId)) {
-      const conn = userTikTokConnections.get(userId);
-      if (!conn.isLive) {
-        conn.isLive = true;
-        userTikTokConnections.set(userId, conn);
-      }
-    }
     if (!debugOnce) {
       console.log("🔍 هيكل بيانات الهدية (GIFT) - أول مرة:");
       console.log(JSON.stringify(data, null, 2).substring(0, 2000));
@@ -1942,7 +1902,6 @@ async function connectUser(userId, username) {
           await executeAction(cmdObj, sender, userId, data);
         }
       }
-      // معالجة أوامر التفاعل من نوع gift إن وجدت
       const giftInteractions = getInteractionCommandsForProfile(
         userId,
         userProfile,
@@ -1957,14 +1916,6 @@ async function connectUser(userId, username) {
 
   connection.on(WebcastEvent.CHAT, async (data) => {
     updateLastActivity(userId);
-    // 🔹 إضافة هذا الجزء
-    if (userTikTokConnections.has(userId)) {
-      const conn = userTikTokConnections.get(userId);
-      if (!conn.isLive) {
-        conn.isLive = true;
-        userTikTokConnections.set(userId, conn);
-      }
-    }
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
       const comment = (data.comment || "").toString();
@@ -2021,14 +1972,6 @@ async function connectUser(userId, username) {
 
   connection.on(WebcastEvent.FOLLOW, async (data) => {
     updateLastActivity(userId);
-    // 🔹 إضافة هذا الجزء
-    if (userTikTokConnections.has(userId)) {
-      const conn = userTikTokConnections.get(userId);
-      if (!conn.isLive) {
-        conn.isLive = true;
-        userTikTokConnections.set(userId, conn);
-      }
-    }
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
       const userProfile = await getUserSelectedProfile(userId);
@@ -2068,65 +2011,23 @@ async function connectUser(userId, username) {
 
   connection.on(WebcastEvent.LIKE, async (data) => {
     updateLastActivity(userId);
-    // 🔹 إضافة هذا الجزء
-    if (userTikTokConnections.has(userId)) {
-      const conn = userTikTokConnections.get(userId);
-      if (!conn.isLive) {
-        conn.isLive = true;
-        userTikTokConnections.set(userId, conn);
-      }
-    }
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
-
-      // 1. الحصول على العدد الإجمالي الحالي من الحدث
-      const currentTotal =
+      let delta =
         parseInt(
-          String(data.likeCount ?? data.like_count ?? data.count ?? 0).replace(
+          String(data.likeCount ?? data.like_count ?? data.count ?? 1).replace(
             /\D/g,
             "",
           ),
           10,
-        ) || 0;
-      if (currentTotal <= 0) return;
-
-      // 2. حساب الزيادة الفعلية باستخدام lastLikeCount
-      const keyTotal = `${userId}:${sender}`;
-      const lastTotal = lastLikeCount.get(keyTotal) || 0;
-      let delta = currentTotal - lastTotal;
-
-      // 3. معالجة الحالات الخاصة
-      if (delta < 0) {
-        // إعادة تعيين العداد (مثلاً بداية بث جديد)
-        lastLikeCount.set(keyTotal, currentTotal);
-        delta = currentTotal;
-      } else if (delta === 0) {
-        return; // حدث مكرر، نتجاهله
-      } else {
-        lastLikeCount.set(keyTotal, currentTotal);
-      }
-
-      // 4. تطبيق الحد الأقصى للزيادة (اختياري)
+        ) || 1;
       if (delta > LIKE_MAX_DELTA) delta = LIKE_MAX_DELTA;
-
-      // 5. باقي المنطق كما هو (معالجة الأوامر)
+      if (delta <= 0) return;
       const userProfile = await getUserSelectedProfile(userId);
       const commands = getInteractionCommandsForProfile(
         userId,
         userProfile,
       ).filter((c) => c.type === "like" && c.active);
-
-      console.log(
-        `🔍 LIKE: sender=${sender}, currentTotal=${currentTotal}, lastTotal=${lastTotal}, delta=${delta}`,
-      );
-      console.log(`🔍 userProfile=${userProfile}`);
-      console.log(`🔍 عدد أوامر LIKE المسترجعة: ${commands.length}`);
-      commands.forEach((c) =>
-        console.log(
-          `  - ${c.name} (threshold=${c.threshold}, targetUser=${c.targetUser})`,
-        ),
-      );
-
       for (let cmd of commands) {
         if (
           cmd.targetUser &&
@@ -2135,25 +2036,23 @@ async function connectUser(userId, username) {
         )
           continue;
 
-        // منطق oncePerLive
+        // ✅ إضافة منطق oncePerLive
         if (cmd.oncePerLive) {
           const key = `${userId}:${String(cmd._id)}`;
           if (executedOncePerLive.has(key)) continue;
           await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
           executedOncePerLive.set(key, true);
-          continue;
+          continue; // تخطي باقي معالجة العداد
         }
 
-        // معالجة العداد مع threshold
+        // الباقي كما هو (معالجة العداد)
         const threshold = parseInt(cmd.threshold || 0, 10) || 0;
         const keyUser = `${userId}:${String(cmd._id)}:${sender}`;
         likeCounters.set(keyUser, (likeCounters.get(keyUser) || 0) + delta);
-
         if (threshold <= 0) {
           await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
           continue;
         }
-
         const current = likeCounters.get(keyUser);
         const times = Math.floor(current / threshold);
         if (times <= 0) continue;
@@ -2173,14 +2072,6 @@ async function connectUser(userId, username) {
 
   connection.on(WebcastEvent.SHARE, async (data) => {
     updateLastActivity(userId);
-    // 🔹 إضافة هذا الجزء
-    if (userTikTokConnections.has(userId)) {
-      const conn = userTikTokConnections.get(userId);
-      if (!conn.isLive) {
-        conn.isLive = true;
-        userTikTokConnections.set(userId, conn);
-      }
-    }
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
       const userProfile = await getUserSelectedProfile(userId);
@@ -2212,30 +2103,16 @@ async function connectUser(userId, username) {
   });
 
   connection.on(WebcastEvent.ROOM_UPDATE, (data) => {
+    const prev = userTikTokConnections.get(userId)?.isLive;
     const newRoomId = data?.roomId ?? data?.room_id ?? null;
     const newIsLive =
       typeof data?.isLive === "boolean" ? data.isLive : !!newRoomId;
-
+    if (!prev && newIsLive) resetOncePerLiveForUser(userId);
+    if (prev && !newIsLive) resetOncePerLiveForUser(userId);
     if (userTikTokConnections.has(userId)) {
       const conn = userTikTokConnections.get(userId);
-      // إذا كان لدينا roomId سابق ولم يتغير، ولا توجد إشارة واضحة بانتهاء البث، نبقيه كما هو
-      if (newIsLive === false && conn.roomId && !newRoomId) {
-        // قد يكون هذا مجرد تحديث عابر، لا نغيّر isLive
-        // ولكن نحدّث lastRoomUpdate فقط
-        conn.lastRoomUpdate = Date.now();
-        userTikTokConnections.set(userId, conn);
-        return;
-      }
-      // تحديث الحالة فقط إذا كانت القيمة الجديدة مختلفة
-      if (conn.isLive !== newIsLive) {
-        if (!conn.isLive && newIsLive) resetOncePerLiveForUser(userId);
-        if (conn.isLive && !newIsLive) resetOncePerLiveForUser(userId);
-        conn.isLive = newIsLive;
-        conn.roomId = newIsLive ? newRoomId : null;
-      } else {
-        // حتى لو لم تتغير isLive، نحدّث roomId و lastRoomUpdate
-        conn.roomId = newIsLive ? newRoomId : null;
-      }
+      conn.isLive = newIsLive;
+      conn.roomId = newIsLive ? newRoomId : null;
       conn.lastRoomUpdate = Date.now();
       userTikTokConnections.set(userId, conn);
     }
@@ -3141,7 +3018,7 @@ app.delete("/api/tiktok-user", authenticateToken, async (req, res) => {
 });
 
 app.post("/api/tiktok-user", authenticateToken, async (req, res) => {
-  const { username, connect = false } = req.body;
+  const { username, connect = true } = req.body;
   if (!username)
     return res
       .status(400)
@@ -3156,53 +3033,21 @@ app.post("/api/tiktok-user", authenticateToken, async (req, res) => {
   res.json({ success: true });
 });
 
-// دالة للتحقق من البث المباشر عبر API خارجي (مجاني)
-async function checkTikTokLiveStatus(username) {
-  if (!username) return false;
-  try {
-    const url = `https://www.tikwm.com/api/room/?unique_id=${username}`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
-    const data = await response.json();
-    // tikwm.com بيرجع status: 2 لو البث شغال
-    return data?.data?.status === 2;
-  } catch (err) {
-    console.warn(`⚠️ فشل التحقق من البث لـ ${username}:`, err.message);
-    return false;
-  }
-}
-
 // ================ نقاط نهاية API العامة ================
 app.get("/api/live-status", authenticateToken, async (req, res) => {
   const userId = req.user.id;
-  const user = await User.findById(userId);
-  const username = user?.tiktokUsername;
+
+  // ======== ✅ الحل: تحديث الكاش عند التحقق من الحالة ========
+  await refreshCachesForUser(userId);
+  // ============================================================
 
   const connection = userTikTokConnections.get(userId);
-  let isLive = connection ? connection.isLive : false;
-
-  // إذا كان هناك roomId مخزن (حتى لو انقطع الاتصال) اعتبره لايف
-  if (!isLive && connection && connection.roomId) {
-    isLive = true;
-  }
-
-  // إذا لم يكن هناك اتصال ولا roomId، نتحقق عبر API (احتياطي)
-  if (!isLive && username) {
-    const liveFromApi = await checkTikTokLiveStatus(username);
-    if (liveFromApi) {
-      isLive = true;
-      // تخزين roomId مؤقتاً (اختياري)
-      if (connection) {
-        connection.roomId = "temp_room_id";
-        userTikTokConnections.set(userId, connection);
-      }
-    }
-  }
-
+  const isLive = connection ? connection.isLive : false;
+  const user = await User.findById(userId);
+  const username = user?.tiktokUsername || null;
   res.json({ isLive, username });
 });
+
 app.get("/api/profiles", authenticateToken, async (req, res) => {
   try {
     await ensureUserProfiles(req.user.id);
