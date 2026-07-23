@@ -1219,37 +1219,6 @@ async function executeAction(
     executedOncePerLive.set(idStr, true);
   }
 
-<<<<<<< HEAD
-  // ============================================================
-  // تشغيل الصوت فوراً (بدون انتظار التأخير)
-  // ============================================================
-  if (playSound && audio) {
-    const giftId = cmdObj.giftId || cmdObj._id || "default";
-    const sendToUser = source === "manual";
-    console.log(
-      `🔍 playSound: ${playSound}, audio: ${audio}, userId: ${userId}`,
-    );
-    await playAudio(
-      audio,
-      volume,
-      userId,
-      String(giftId),
-      cmdObj.screen || 1,
-      sendToUser,
-    );
-  }
-
-  // ============================================================
-  // التأخير (يُطبق على كل ما تبقى: فيديو، تراكب، أوامر)
-  // ============================================================
-  if (delayBefore > 0) {
-    await new Promise((resolve) => setTimeout(resolve, delayBefore));
-  }
-
-  // ============================================================
-  // تشغيل الفيديو (بعد التأخير)
-  // ============================================================
-=======
   // ============================================================
   // 🎵 تشغيل الصوت فوراً (أولاً وقبل أي شيء)
   // ============================================================
@@ -1272,7 +1241,6 @@ async function executeAction(
   // ============================================================
   // 🎬 تشغيل الفيديو (بعد التأخير)
   // ============================================================
->>>>>>> 1ad24e26899f84ff314743770c2518192003c0bf
   if (playVideo && video && userId) {
     let videoUrl = video;
     try {
@@ -1302,24 +1270,12 @@ async function executeAction(
       }
     } else {
       console.log(`⚠️ لا توجد شاشة للمستخدم ${userId}، تم تجاهل الفيديو`);
-<<<<<<< HEAD
-    }
-
-    if (duration && duration > 0) {
-      setTimeout(() => {
-        if (hasScreen) io.to(screenRoom).emit("stop-video");
-      }, duration * 1000);
-    }
-  }
-
-=======
     }
   }
 
   // ============================================================
   // 🖼️ التراكب (بعد التأخير)
   // ============================================================
->>>>>>> 1ad24e26899f84ff314743770c2518192003c0bf
   if (cmdObj.showOverlay && userId) {
     const overlayPayload = {
       username: realName,
@@ -1341,11 +1297,7 @@ async function executeAction(
   }
 
   // ============================================================
-<<<<<<< HEAD
-  // تنفيذ الأوامر والكيستروك والويبهوك (مع التكرار، بعد التأخير)
-=======
   // ⚙️ تنفيذ التكرارات (أوامر RCON، كيستروك، ويبهوك)
->>>>>>> 1ad24e26899f84ff314743770c2518192003c0bf
   // ============================================================
 
   // دالة مساعدة لتكرار واحد
@@ -1806,11 +1758,7 @@ function startLiveHeartbeat(userId) {
       // 2. التحقق من آخر تحديث (في حال عدم وصول ROOM_UPDATE)
       const now = Date.now();
       const lastUpdate = conn.lastRoomUpdate || now;
-<<<<<<< HEAD
       if (now - lastUpdate > 120000) {
-=======
-      if (now - lastUpdate > 300000) {
->>>>>>> 1ad24e26899f84ff314743770c2518192003c0bf
         // دقيقتان (كانت 5 دقائق)
         conn.isLive = false;
         userTikTokConnections.set(userId, conn);
@@ -2210,10 +2158,7 @@ async function connectUser(userId, username) {
         const times = Math.floor(current / threshold);
         if (times <= 0) continue;
 
-<<<<<<< HEAD
         // تنفيذ الأمر بعدد مرات يساوي times، مع إعادة تعيين العداد
-=======
->>>>>>> 1ad24e26899f84ff314743770c2518192003c0bf
         for (let i = 0; i < times; i++) {
           let cmdObj = addKeystrokeToCommand(cmd);
           await executeAction(cmdObj, sender, userId, data);
