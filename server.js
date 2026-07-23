@@ -115,6 +115,9 @@ let bindingTokens = new Map(); // key: token, value: { userId, expires }
 let userAvatarCache = new Map();
 let userInfoCache = new Map(); // ✅ أضف هذا السطر هنا
 
+// أضفها في أعلى الملف مع باقي الدوال المساعدة
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 // ================ إعدادات السجلات (خفيفة) ================
 const logger = winston.createLogger({
   level: NODE_ENV === "production" ? "error" : "info",
@@ -1206,7 +1209,7 @@ async function executeAction(
     }
   }
 
-  // oncePerLive (يبقى أولاً)
+  // oncePerLive
   if (oncePerLive && _id && userId) {
     const idStr = `${userId}:${String(_id)}`;
     if (executedOncePerLive.has(idStr)) {
@@ -1217,33 +1220,26 @@ async function executeAction(
   }
 
   // ============================================================
-  // تشغيل الصوت فوراً (بدون انتظار التأخير)
+  // 🎵 تشغيل الصوت فوراً (أولاً وقبل أي شيء)
   // ============================================================
   if (playSound && audio) {
     const giftId = cmdObj.giftId || cmdObj._id || "default";
     const sendToUser = source === "manual";
-    console.log(
-      `🔍 playSound: ${playSound}, audio: ${audio}, userId: ${userId}`,
-    );
-    await playAudio(
-      audio,
-      volume,
-      userId,
-      String(giftId),
-      cmdObj.screen || 1,
-      sendToUser,
+    // لا ننتظر اكتمال تشغيل الصوت، نطلقه في الخلفية ليكون فورياً
+    playAudio(audio, volume, userId, String(giftId), screen, sendToUser).catch(
+      (err) => logger.warn("❌ خطأ في تشغيل الصوت:", err.message),
     );
   }
 
   // ============================================================
-  // التأخير (يُطبق على كل ما تبقى: فيديو، تراكب، أوامر)
+  // ⏳ تطبيق التأخير (على باقي الإجراءات فقط)
   // ============================================================
   if (delayBefore > 0) {
-    await new Promise((resolve) => setTimeout(resolve, delayBefore));
+    await sleep(delayBefore);
   }
 
   // ============================================================
-  // تشغيل الفيديو (بعد التأخير)
+  // 🎬 تشغيل الفيديو (بعد التأخير)
   // ============================================================
   if (playVideo && video && userId) {
     let videoUrl = video;
@@ -1264,33 +1260,33 @@ async function executeAction(
     const screenRoom = `screen-${userId}`;
     const hasScreen = io.sockets.adapter.rooms.has(screenRoom);
 
-    // إرسال الفيديو فقط إلى الشاشات (لا نرسل إلى الفرونت أبداً)
     if (hasScreen) {
       io.to(screenRoom).emit("gift-video", payload);
+      if (duration && duration > 0) {
+        setTimeout(() => {
+          if (hasScreen) io.to(screenRoom).emit("stop-video");
+        }, duration * 1000);
+      }
     } else {
       console.log(`⚠️ لا توجد شاشة للمستخدم ${userId}، تم تجاهل الفيديو`);
     }
-
-    if (duration && duration > 0) {
-      setTimeout(() => {
-        if (hasScreen) io.to(screenRoom).emit("stop-video");
-      }, duration * 1000);
-    }
   }
 
+  // ============================================================
+  // 🖼️ التراكب (بعد التأخير)
+  // ============================================================
   if (cmdObj.showOverlay && userId) {
     const overlayPayload = {
       username: realName,
       avatar: avatar,
       text: cmdObj.overlayText || "",
       duration: (duration || 5) * 1000,
-      screen: cmdObj.screen || 1,
+      screen: screen,
     };
 
     const screenRoom = `screen-${userId}`;
     const hasScreen = io.sockets.adapter.rooms.has(screenRoom);
 
-    // لا نرسل إلى الفرونت أبداً في التراكب، فقط إلى الشاشات
     if (hasScreen) {
       io.to(screenRoom).emit("show-overlay", overlayPayload);
     } else {
@@ -1299,13 +1295,11 @@ async function executeAction(
   }
 
   // ============================================================
-  // تنفيذ الأوامر والكيستروك والويبهوك (مع التكرار، بعد التأخير)
+  // ⚙️ تنفيذ التكرارات (أوامر RCON، كيستروك، ويبهوك)
   // ============================================================
-  for (let i = 0; i < repeat; i++) {
-    if (i > 0 && interval > 0) {
-      await new Promise((r) => setTimeout(r, interval));
-    }
 
+  // دالة مساعدة لتكرار واحد
+  const executeIteration = async (i) => {
     // الكيستروك
     if (keystrokeText) {
       const finalKeystroke = replacePlaceholders(
@@ -1334,7 +1328,9 @@ async function executeAction(
         .split(/\r?\n/)
         .map((l) => l.trim())
         .filter((l) => l);
+
       if (lines.length > 1) {
+        // معالجة المجموعات العشوائية
         const groups = [];
         let currentGroup = [];
         for (const line of lines) {
@@ -1346,9 +1342,11 @@ async function executeAction(
           } else currentGroup.push(line);
         }
         if (currentGroup.length) groups.push(currentGroup);
+
         const selectedGroup = groups.length
           ? groups[Math.floor(Math.random() * groups.length)]
           : [];
+
         let cumulativeDelay = 0;
         for (const cmdLine of selectedGroup) {
           if (cmdLine.toLowerCase().startsWith("delay ")) {
@@ -1356,24 +1354,26 @@ async function executeAction(
             if (!isNaN(sec)) cumulativeDelay += sec;
             continue;
           }
-          setTimeout(() => {
-            sendRconCommand(userId, cmdLine, {
-              nickname: realName,
-              username: triggerUser,
-            });
-          }, cumulativeDelay);
-          cumulativeDelay += DEFAULT_COMMAND_DELAY_MS;
+          if (cumulativeDelay > 0) {
+            await sleep(cumulativeDelay * 1000);
+            cumulativeDelay = 0;
+          }
+          await sendRconCommand(userId, cmdLine, {
+            nickname: realName,
+            username: triggerUser,
+          });
+          await sleep(DEFAULT_COMMAND_DELAY_MS);
         }
       } else {
         const singleCmd = lines[0];
-        sendRconCommand(userId, singleCmd, {
+        await sendRconCommand(userId, singleCmd, {
           nickname: realName,
           username: triggerUser,
         });
       }
     }
 
-    // الويبهوك
+    // ويبهوك (لا ننتظر)
     if (webhookUrl && webhookUrl.trim()) {
       const webhookData = {
         name: name || "",
@@ -1387,7 +1387,25 @@ async function executeAction(
         interval: 0,
         iteration: i + 1,
       };
-      await sendWebhook(webhookUrl, webhookData, userId);
+      sendWebhook(webhookUrl, webhookData, userId).catch((err) =>
+        logger.warn("❌ Webhook error:", err.message),
+      );
+    }
+  };
+
+  // تنفيذ التكرارات
+  if (repeat <= 1 || interval === 0) {
+    // تنفيذ متوازي (جميع التكرارات دفعة واحدة)
+    const tasks = [];
+    for (let i = 0; i < repeat; i++) {
+      tasks.push(executeIteration(i));
+    }
+    await Promise.all(tasks);
+  } else {
+    // تنفيذ متسلسل مع تأخير بين كل تكرار وآخر
+    for (let i = 0; i < repeat; i++) {
+      if (i > 0) await sleep(interval);
+      await executeIteration(i);
     }
   }
 }
@@ -1914,6 +1932,7 @@ async function connectUser(userId, username) {
           await executeAction(cmdObj, sender, userId, data);
         }
       }
+      // معالجة أوامر التفاعل من نوع gift إن وجدت
       const giftInteractions = getInteractionCommandsForProfile(
         userId,
         userProfile,
