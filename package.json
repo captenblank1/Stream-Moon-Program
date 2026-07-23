@@ -35,7 +35,7 @@
     "rcon": "^1.1.0",
     "socket.io": "^4.8.1",
     "sound-play": "^1.1.0",
-    "tiktok-live-connector": "^2.1.0",
+    "tiktok-live-connector": "^2.4.3",
     "tree-kill": "^1.2.2",
     "winston": "^3.19.0"
   },

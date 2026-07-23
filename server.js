@@ -287,6 +287,11 @@ function deleteTikTokConnection(userId) {
 const app = express();
 app.set("trust proxy", 1);
 const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: FRONTEND_URL, credentials: true },
+  allowEIO3: true,
+  transports: ["websocket", "polling"],
+});
 
 // قائمة المواقع المسموح بها
 const allowedOrigins = [
@@ -298,24 +303,6 @@ const allowedOrigins = [
   "http://127.0.0.1:5500",
 ];
 if (process.env.FRONTEND_URL) allowedOrigins.push(process.env.FRONTEND_URL);
-
-const io = new Server(server, {
-  cors: {
-    origin: function (origin, callback) {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
-    credentials: true,
-  },
-  allowEIO3: true,
-  transports: ["websocket", "polling"],
-  pingInterval: 25000, // إرسال نبضة كل 25 ثانية
-  pingTimeout: 120000, // اعتبر الاتصال مقطوعاً بعد 60 ثانية
-});
 
 app.use(
   cors({
@@ -346,7 +333,8 @@ app.use((req, res, next) => {
   next();
 });
 
-const authenticateToken = async (req, res, next) => {
+// ================ Middleware للمصادقة ================
+const authenticateToken = (req, res, next) => {
   let token = req.cookies?.token;
   if (!token) {
     const authHeader = req.headers["authorization"];
@@ -355,51 +343,12 @@ const authenticateToken = async (req, res, next) => {
   if (!token)
     return res.status(401).json({ success: false, message: "لا يوجد توكن" });
 
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err)
+      return res.status(403).json({ success: false, message: "توكن غير صالح" });
+    req.user = user;
     next();
-  } catch (err) {
-    if (err.name === "TokenExpiredError") {
-      // محاولة تجديد التوكن (إذا كان لدى المستخدم صلاحية)
-      try {
-        const oldDecoded = jwt.decode(token);
-        if (oldDecoded && oldDecoded.id) {
-          const user = await User.findById(oldDecoded.id);
-          if (user) {
-            const newToken = jwt.sign(
-              {
-                id: user._id,
-                email: user.email,
-                plan: user.plan,
-                planType: user.planType,
-                role: user.role,
-              },
-              JWT_SECRET,
-              { expiresIn: JWT_EXPIRES_IN },
-            );
-            res.cookie("token", newToken, {
-              httpOnly: true,
-              secure: true,
-              sameSite: "none",
-              maxAge: 30 * 24 * 60 * 60 * 1000,
-            });
-            req.user = {
-              id: user._id,
-              email: user.email,
-              plan: user.plan,
-              planType: user.planType,
-              role: user.role,
-            };
-            return next();
-          }
-        }
-      } catch (refreshErr) {
-        logger.error("فشل تجديد التوكن:", refreshErr.message);
-      }
-    }
-    return res.status(403).json({ success: false, message: "توكن غير صالح" });
-  }
+  });
 };
 
 const isAdmin = async (req, res, next) => {
@@ -1794,22 +1743,14 @@ function startLiveHeartbeat(userId) {
       }
       const now = Date.now();
       const lastUpdate = conn.lastRoomUpdate || now;
-      if (now - lastUpdate > 30000) {
+      if (now - lastUpdate > 120000) {
         conn.isLive = false;
         setTikTokConnection(userId, conn);
         resetOncePerLiveForUser(userId);
         clearInterval(interval);
-        // محاولة إعادة الاتصال فوراً
-        const user = await User.findById(userId);
-        if (user && user.tiktokUsername) {
-          logger.info(
-            `🔄 محاولة إعادة الاتصال التلقائي للمستخدم ${userId} بسبب انتهاء المهلة`,
-          );
-          await connectUser(userId, user.tiktokUsername);
-        }
         state.heartbeats.delete(userId);
         logger.info(
-          `🔄 انتهاء البث للمستخدم ${userId} (لا توجد تحديثات لأكثر من 30 ثانية)`,
+          `🔄 انتهاء البث للمستخدم ${userId} (لا توجد تحديثات لأكثر من دقيقتين)`,
         );
         return;
       }
@@ -2192,35 +2133,8 @@ async function connectUser(userId, username) {
     }
     resetOncePerLiveForUser(userId);
     logger.info(`⚠️ تم قطع الاتصال بـ TikTok للمستخدم ${userId}`);
-
-    // 🔄 إعادة محاولة الاتصال بعد 5 ثوانٍ (إذا كان المستخدم لا يزال يريد الاتصال)
-    setTimeout(async () => {
-      const currentConn = getTikTokConnection(userId);
-      // إذا كان الاتصال لا يزال مقطوعاً وليس هناك محاولة جارية
-      if (currentConn && !currentConn.isLive && !currentConn.reconnecting) {
-        logger.info(`🔄 محاولة إعادة الاتصال للمستخدم ${userId}...`);
-        currentConn.reconnecting = true;
-        setTikTokConnection(userId, currentConn);
-        try {
-          const user = await User.findById(userId);
-          if (user && user.tiktokUsername) {
-            await connectUser(userId, user.tiktokUsername);
-          }
-        } catch (err) {
-          logger.error(
-            `❌ فشلت إعادة الاتصال للمستخدم ${userId}:`,
-            err.message,
-          );
-        } finally {
-          const updatedConn = getTikTokConnection(userId);
-          if (updatedConn) {
-            updatedConn.reconnecting = false;
-            setTikTokConnection(userId, updatedConn);
-          }
-        }
-      }
-    }, 5000);
   });
+
   connection.on(WebcastEvent.ERROR, (err) => {
     if (err?.message?.includes("illegal tag")) return;
     logger.error(`❌ خطأ في اتصال TikTok للمستخدم ${userId}:`, err.message);
@@ -2236,7 +2150,6 @@ async function connectUser(userId, username) {
       isLive: true,
       roomId: null,
       lastRoomUpdate: Date.now(),
-      reconnecting: false, // ✅ أضف هذا السطر
     });
     startLiveHeartbeat(userId);
     logger.info(`✅ متصل بحساب @${username} للمستخدم ${userId}`);
@@ -2248,7 +2161,6 @@ async function connectUser(userId, username) {
       username,
       isLive: false,
       roomId: null,
-      reconnecting: false, // ✅ أضف هنا أيضاً
     });
     return false;
   }
@@ -5154,28 +5066,6 @@ app.post("/api/agent/exchange-binding", async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
-// كل 30 ثانية، تحقق من المستخدمين الذين لديهم اسم مستخدم محدد وحاول إعادة الاتصال إذا كانوا غير متصلين
-setInterval(async () => {
-  try {
-    const users = await User.find({ tiktokUsername: { $ne: null, $ne: "" } });
-    for (const user of users) {
-      const userId = user._id.toString();
-      const conn = getTikTokConnection(userId);
-      // إذا لم يكن هناك اتصال أو كان غير حي، حاول إعادة الاتصال
-      if (!conn || (!conn.isLive && !conn.reconnecting)) {
-        logger.info(
-          `🔄 محاولة إعادة الاتصال الدورية للمستخدم ${user.email} (@${user.tiktokUsername})`,
-        );
-        await connectUser(userId, user.tiktokUsername);
-        // ننتظر قليلاً بين كل محاولة لتجنب إغراق الخادم
-        await new Promise((r) => setTimeout(r, 2000));
-      }
-    }
-  } catch (err) {
-    logger.error("❌ خطأ في المهمة الدورية لإعادة الاتصال:", err.message);
-  }
-}, 30000); // كل 30 ثانية
 
 // ================ بدء الخادم ================
 server.listen(PORT, "0.0.0.0", () => {
