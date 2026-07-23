@@ -260,6 +260,10 @@ class AppState {
       }
     }
     this.userTikTokConnections.delete(userId);
+    if (conn && conn.keepAlive) {
+  clearInterval(conn.keepAlive);
+  conn.keepAlive = null;
+}
     // حذف البيانات المؤقتة
     this.delTemp("executedOncePerLive", userId);
     this.delTemp("likeCounters", userId);
@@ -1771,16 +1775,18 @@ function startLiveHeartbeat(userId) {
 
   const interval = setInterval(async () => {
     const conn = getTikTokConnection(userId);
-    if (!conn || !conn.connection) {
-      clearInterval(interval);
-      state.heartbeats.delete(userId);
-      return;
-    }
-    if (!conn.isLive) {
-      clearInterval(interval);
-      state.heartbeats.delete(userId);
-      return;
-    }
+if (!conn || !conn.connection) {
+  if (conn && conn.keepAlive) clearInterval(conn.keepAlive);
+  clearInterval(interval);
+  state.heartbeats.delete(userId);
+  return;
+}
+if (!conn.isLive) {
+  if (conn && conn.keepAlive) clearInterval(conn.keepAlive);
+  clearInterval(interval);
+  state.heartbeats.delete(userId);
+  return;
+}
 
     try {
       if (!conn.roomId) {
@@ -1794,7 +1800,7 @@ function startLiveHeartbeat(userId) {
       }
       const now = Date.now();
       const lastUpdate = conn.lastRoomUpdate || now;
-      if (now - lastUpdate > 30000) {
+      if (now - lastUpdate > 120000) {
         conn.isLive = false;
         setTikTokConnection(userId, conn);
         resetOncePerLiveForUser(userId);
@@ -1822,6 +1828,17 @@ function startLiveHeartbeat(userId) {
       logger.warn(`⚠️ خطأ في heartbeat للمستخدم ${userId}: ${err.message}`);
     }
   }, 15000);
+
+  const keepAlive = setInterval(() => {
+  const conn = getTikTokConnection(userId);
+  if (conn) {
+    conn.lastRoomUpdate = Date.now();
+    setTikTokConnection(userId, conn);
+  }
+}, 10000); // كل 10 ثوان
+
+const conn = getTikTokConnection(userId);
+if (conn) conn.keepAlive = keepAlive;
 
   state.heartbeats.set(userId, interval);
 }
@@ -2183,44 +2200,40 @@ async function connectUser(userId, username) {
     }
   });
 
-  connection.on(WebcastEvent.DISCONNECTED, () => {
-    const conn = getTikTokConnection(userId);
-    if (conn) {
-      conn.isLive = false;
-      conn.roomId = null;
-      setTikTokConnection(userId, conn);
-    }
-    resetOncePerLiveForUser(userId);
-    logger.info(`⚠️ تم قطع الاتصال بـ TikTok للمستخدم ${userId}`);
-
-    // 🔄 إعادة محاولة الاتصال بعد 5 ثوانٍ (إذا كان المستخدم لا يزال يريد الاتصال)
+connection.on(WebcastEvent.DISCONNECTED, () => {
+  // ... الكود الحالي (تعيين isLive=false)
+  let attempts = 0;
+  const maxAttempts = 5;
+  const reconnect = () => {
+    if (attempts >= maxAttempts) return;
+    attempts++;
+    const delay = Math.min(30000, 1000 * Math.pow(2, attempts - 1));
     setTimeout(async () => {
-      const currentConn = getTikTokConnection(userId);
-      // إذا كان الاتصال لا يزال مقطوعاً وليس هناك محاولة جارية
-      if (currentConn && !currentConn.isLive && !currentConn.reconnecting) {
-        logger.info(`🔄 محاولة إعادة الاتصال للمستخدم ${userId}...`);
-        currentConn.reconnecting = true;
-        setTikTokConnection(userId, currentConn);
+      const current = getTikTokConnection(userId);
+      if (current && !current.isLive && !current.reconnecting) {
+        logger.info(`🔄 محاولة إعادة الاتصال ${attempts}/${maxAttempts} للمستخدم ${userId}...`);
+        current.reconnecting = true;
+        setTikTokConnection(userId, current);
         try {
           const user = await User.findById(userId);
           if (user && user.tiktokUsername) {
             await connectUser(userId, user.tiktokUsername);
           }
         } catch (err) {
-          logger.error(
-            `❌ فشلت إعادة الاتصال للمستخدم ${userId}:`,
-            err.message,
-          );
+          logger.error(`❌ فشلت المحاولة ${attempts}:`, err.message);
+          reconnect(); // حاول مرة أخرى بعد فشل المحاولة
         } finally {
-          const updatedConn = getTikTokConnection(userId);
-          if (updatedConn) {
-            updatedConn.reconnecting = false;
-            setTikTokConnection(userId, updatedConn);
+          const updated = getTikTokConnection(userId);
+          if (updated) {
+            updated.reconnecting = false;
+            setTikTokConnection(userId, updated);
           }
         }
       }
-    }, 5000);
-  });
+    }, delay);
+  };
+  reconnect();
+});
   connection.on(WebcastEvent.ERROR, (err) => {
     if (err?.message?.includes("illegal tag")) return;
     logger.error(`❌ خطأ في اتصال TikTok للمستخدم ${userId}:`, err.message);
