@@ -1398,17 +1398,25 @@ function resetOncePerLiveForUser(userId) {
     if (key.startsWith(`${userId}:`)) toDelete.push(key);
   }
   toDelete.forEach((k) => executedOncePerLive.delete(k));
+
   const likeKeyPrefix = `${userId}:`;
   for (const key of likeCounters.keys()) {
     if (key.startsWith(likeKeyPrefix)) likeCounters.delete(key);
   }
+
+  // ✅ تنظيف lastLikeCount
+  const lastLikeKeyPrefix = `${userId}:`;
+  for (const key of lastLikeCount.keys()) {
+    if (key.startsWith(lastLikeKeyPrefix)) lastLikeCount.delete(key);
+  }
+
   const followKeyPrefix = `${userId}:`;
   for (const key of followExecutedUsers.keys()) {
     if (key.startsWith(followKeyPrefix)) followExecutedUsers.delete(key);
   }
+
   logger.info(`♻️ تم إعادة تعيين حالة oncePerLive للمستخدم ${userId}`);
 }
-
 function getSenderFromEvent(data) {
   if (!data) return "Unknown";
   const user = data.user || {};
@@ -2017,21 +2025,44 @@ async function connectUser(userId, username) {
     updateLastActivity(userId);
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
-      let delta =
+
+      // 1. الحصول على العدد الإجمالي الحالي من الحدث
+      const currentTotal =
         parseInt(
-          String(data.likeCount ?? data.like_count ?? data.count ?? 1).replace(
+          String(data.likeCount ?? data.like_count ?? data.count ?? 0).replace(
             /\D/g,
             "",
           ),
           10,
-        ) || 1;
+        ) || 0;
+      if (currentTotal <= 0) return;
+
+      // 2. حساب الزيادة الفعلية باستخدام lastLikeCount
+      const keyTotal = `${userId}:${sender}`;
+      const lastTotal = lastLikeCount.get(keyTotal) || 0;
+      let delta = currentTotal - lastTotal;
+
+      // 3. معالجة الحالات الخاصة
+      if (delta < 0) {
+        // إعادة تعيين العداد (مثلاً بداية بث جديد)
+        lastLikeCount.set(keyTotal, currentTotal);
+        delta = currentTotal;
+      } else if (delta === 0) {
+        return; // حدث مكرر، نتجاهله
+      } else {
+        lastLikeCount.set(keyTotal, currentTotal);
+      }
+
+      // 4. تطبيق الحد الأقصى للزيادة (اختياري)
       if (delta > LIKE_MAX_DELTA) delta = LIKE_MAX_DELTA;
-      if (delta <= 0) return;
+
+      // 5. باقي المنطق كما هو (معالجة الأوامر)
       const userProfile = await getUserSelectedProfile(userId);
       const commands = getInteractionCommandsForProfile(
         userId,
         userProfile,
       ).filter((c) => c.type === "like" && c.active);
+
       for (let cmd of commands) {
         if (
           cmd.targetUser &&
@@ -2040,28 +2071,29 @@ async function connectUser(userId, username) {
         )
           continue;
 
-        // ✅ إضافة منطق oncePerLive
+        // منطق oncePerLive
         if (cmd.oncePerLive) {
           const key = `${userId}:${String(cmd._id)}`;
           if (executedOncePerLive.has(key)) continue;
           await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
           executedOncePerLive.set(key, true);
-          continue; // تخطي باقي معالجة العداد
+          continue;
         }
 
-        // الباقي كما هو (معالجة العداد)
+        // معالجة العداد مع threshold
         const threshold = parseInt(cmd.threshold || 0, 10) || 0;
         const keyUser = `${userId}:${String(cmd._id)}:${sender}`;
         likeCounters.set(keyUser, (likeCounters.get(keyUser) || 0) + delta);
+
         if (threshold <= 0) {
           await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
           continue;
         }
+
         const current = likeCounters.get(keyUser);
         const times = Math.floor(current / threshold);
         if (times <= 0) continue;
 
-        // تنفيذ الأمر بعدد مرات يساوي times، مع إعادة تعيين العداد
         for (let i = 0; i < times; i++) {
           let cmdObj = addKeystrokeToCommand(cmd);
           await executeAction(cmdObj, sender, userId, data);
