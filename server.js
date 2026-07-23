@@ -2082,6 +2082,11 @@ async function connectUser(userId, username) {
         userProfile,
       ).filter((c) => c.type === "like" && c.active);
 
+          console.log(`🔍 LIKE: sender=${sender}, currentTotal=${currentTotal}, lastTotal=${lastTotal}, delta=${delta}`);
+    console.log(`🔍 userProfile=${userProfile}`);
+    console.log(`🔍 عدد أوامر LIKE المسترجعة: ${commands.length}`);
+    commands.forEach(c => console.log(`  - ${c.name} (threshold=${c.threshold}, targetUser=${c.targetUser})`));
+
       for (let cmd of commands) {
         if (
           cmd.targetUser &&
