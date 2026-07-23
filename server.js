@@ -3141,7 +3141,7 @@ app.delete("/api/tiktok-user", authenticateToken, async (req, res) => {
 });
 
 app.post("/api/tiktok-user", authenticateToken, async (req, res) => {
-  const { username, connect = true } = req.body;
+  const { username, connect = false } = req.body;
   if (!username)
     return res
       .status(400)
