@@ -261,9 +261,9 @@ class AppState {
     }
     this.userTikTokConnections.delete(userId);
     if (conn && conn.keepAlive) {
-  clearInterval(conn.keepAlive);
-  conn.keepAlive = null;
-}
+      clearInterval(conn.keepAlive);
+      conn.keepAlive = null;
+    }
     // حذف البيانات المؤقتة
     this.delTemp("executedOncePerLive", userId);
     this.delTemp("likeCounters", userId);
@@ -1775,18 +1775,18 @@ function startLiveHeartbeat(userId) {
 
   const interval = setInterval(async () => {
     const conn = getTikTokConnection(userId);
-if (!conn || !conn.connection) {
-  if (conn && conn.keepAlive) clearInterval(conn.keepAlive);
-  clearInterval(interval);
-  state.heartbeats.delete(userId);
-  return;
-}
-if (!conn.isLive) {
-  if (conn && conn.keepAlive) clearInterval(conn.keepAlive);
-  clearInterval(interval);
-  state.heartbeats.delete(userId);
-  return;
-}
+    if (!conn || !conn.connection) {
+      if (conn && conn.keepAlive) clearInterval(conn.keepAlive);
+      clearInterval(interval);
+      state.heartbeats.delete(userId);
+      return;
+    }
+    if (!conn.isLive) {
+      if (conn && conn.keepAlive) clearInterval(conn.keepAlive);
+      clearInterval(interval);
+      state.heartbeats.delete(userId);
+      return;
+    }
 
     try {
       if (!conn.roomId) {
@@ -1830,15 +1830,15 @@ if (!conn.isLive) {
   }, 15000);
 
   const keepAlive = setInterval(() => {
-  const conn = getTikTokConnection(userId);
-  if (conn) {
-    conn.lastRoomUpdate = Date.now();
-    setTikTokConnection(userId, conn);
-  }
-}, 10000); // كل 10 ثوان
+    const conn = getTikTokConnection(userId);
+    if (conn) {
+      conn.lastRoomUpdate = Date.now();
+      setTikTokConnection(userId, conn);
+    }
+  }, 10000); // كل 10 ثوان
 
-const conn = getTikTokConnection(userId);
-if (conn) conn.keepAlive = keepAlive;
+  const conn = getTikTokConnection(userId);
+  if (conn) conn.keepAlive = keepAlive;
 
   state.heartbeats.set(userId, interval);
 }
@@ -2201,7 +2201,17 @@ async function connectUser(userId, username) {
   });
 
 connection.on(WebcastEvent.DISCONNECTED, () => {
-  // ... الكود الحالي (تعيين isLive=false)
+  // تعيين حالة الاتصال إلى false
+  const conn = getTikTokConnection(userId);
+  if (conn) {
+    conn.isLive = false;
+    conn.roomId = null;
+    setTikTokConnection(userId, conn);
+  }
+  resetOncePerLiveForUser(userId);
+  logger.info(`⚠️ تم قطع الاتصال بـ TikTok للمستخدم ${userId}`);
+
+  // آلية إعادة المحاولة (5 محاولات بتأخير تصاعدي)
   let attempts = 0;
   const maxAttempts = 5;
   const reconnect = () => {
