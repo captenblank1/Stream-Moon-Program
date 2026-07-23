@@ -3153,18 +3153,44 @@ app.post("/api/tiktok-user", authenticateToken, async (req, res) => {
   res.json({ success: true });
 });
 
+// دالة للتحقق من البث المباشر عبر API خارجي (مجاني)
+async function checkTikTokLiveStatus(username) {
+  if (!username) return false;
+  try {
+    const url = `https://www.tikwm.com/api/room/?unique_id=${username}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    const data = await response.json();
+    // tikwm.com بيرجع status: 2 لو البث شغال
+    return data?.data?.status === 2;
+  } catch (err) {
+    console.warn(`⚠️ فشل التحقق من البث لـ ${username}:`, err.message);
+    return false;
+  }
+}
+
 // ================ نقاط نهاية API العامة ================
 app.get("/api/live-status", authenticateToken, async (req, res) => {
   const userId = req.user.id;
-
-  // ======== ✅ الحل: تحديث الكاش عند التحقق من الحالة ========
-  await refreshCachesForUser(userId);
-  // ============================================================
-
-  const connection = userTikTokConnections.get(userId);
-  const isLive = connection ? connection.isLive : false;
   const user = await User.findById(userId);
-  const username = user?.tiktokUsername || null;
+  const username = user?.tiktokUsername;
+
+  // 1. نشوف لو فيه اتصال WebSocket شغال فعلاً
+  const connection = userTikTokConnections.get(userId);
+  let isLive = connection ? connection.isLive : false;
+
+  // 2. لو مفيش اتصال، نروح نسأل تيك توك مباشرة
+  if (!isLive && username) {
+    const liveFromApi = await checkTikTokLiveStatus(username);
+    if (liveFromApi) {
+      isLive = true;
+      // (اختياري) لو عايز يشتغل الاتصال الفعلي في الخلفية من هنا:
+      // connectUser(userId, username).catch(e => console.warn(e));
+    }
+  }
+
   res.json({ isLive, username });
 });
 
@@ -5374,7 +5400,6 @@ server.listen(PORT, "0.0.0.0", () => {
   logger.info(`🎬 الفيديو عبر Cloudinary`);
   logger.info(`🖥️ دعم العميل المحلي لتنفيذ الكيبورد الحقيقي عبر /agent`);
 });
-
 
 // تنظيف دوري للذاكرة
 setInterval(
