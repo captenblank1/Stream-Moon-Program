@@ -3177,23 +3177,29 @@ app.get("/api/live-status", authenticateToken, async (req, res) => {
   const user = await User.findById(userId);
   const username = user?.tiktokUsername;
 
-  // 1. نشوف لو فيه اتصال WebSocket شغال فعلاً
   const connection = userTikTokConnections.get(userId);
   let isLive = connection ? connection.isLive : false;
 
-  // 2. لو مفيش اتصال، نروح نسأل تيك توك مباشرة
+  // إذا كان هناك roomId مخزن (حتى لو انقطع الاتصال) اعتبره لايف
+  if (!isLive && connection && connection.roomId) {
+    isLive = true;
+  }
+
+  // إذا لم يكن هناك اتصال ولا roomId، نتحقق عبر API (احتياطي)
   if (!isLive && username) {
     const liveFromApi = await checkTikTokLiveStatus(username);
     if (liveFromApi) {
       isLive = true;
-      // (اختياري) لو عايز يشتغل الاتصال الفعلي في الخلفية من هنا:
-      // connectUser(userId, username).catch(e => console.warn(e));
+      // تخزين roomId مؤقتاً (اختياري)
+      if (connection) {
+        connection.roomId = "temp_room_id";
+        userTikTokConnections.set(userId, connection);
+      }
     }
   }
 
   res.json({ isLive, username });
 });
-
 app.get("/api/profiles", authenticateToken, async (req, res) => {
   try {
     await ensureUserProfiles(req.user.id);
