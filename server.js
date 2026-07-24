@@ -5094,9 +5094,8 @@ cron.schedule("0 * * * *", async () => {
 // ================ صفحة ربط العميل المحلي (آمنة تماماً) ================
 app.get("/agent-auth", async (req, res) => {
   const callbackPort = req.query.callbackPort || 3456;
-  const port = Number(callbackPort); // تأكد أنه رقم
-  const protocol =
-    process.env.NODE_ENV === "production" ? "https" : req.protocol;
+  const port = Number(callbackPort);
+  const protocol = process.env.NODE_ENV === "production" ? "https" : req.protocol;
   const serverUrl = `${protocol}://${req.get("host")}`;
   const bindingToken = crypto.randomBytes(32).toString("hex");
 
@@ -5107,10 +5106,9 @@ app.get("/agent-auth", async (req, res) => {
     serverUrl,
   });
 
-  // ترميز القيم بأمان قبل إدراجها في JavaScript
   const safeToken = encodeURIComponent(JSON.stringify(bindingToken));
   const safeServerUrl = encodeURIComponent(serverUrl);
-  const safePort = port; // رقم آمن
+  const safePort = port;
 
   res.send(`
     <!DOCTYPE html>
@@ -5135,7 +5133,6 @@ app.get("/agent-auth", async (req, res) => {
       </div>
       <script>
         (function(){
-          // استخراج القيم الآمنة باستخدام decodeURIComponent و JSON.parse
           const bindingToken = JSON.parse(decodeURIComponent('${safeToken}'));
           const callbackPort = ${safePort};
           const serverUrl = decodeURIComponent('${safeServerUrl}');
@@ -5174,9 +5171,9 @@ app.get("/agent-auth", async (req, res) => {
               return;
             }
             const finalToken = tokenData.token;
-            // توجيه آمن باستخدام encodeURIComponent
-const secret = new URLSearchParams(window.location.search).get('secret') || '';
-window.location.href = 'http://localhost:' + callbackPort + '/callback?sessionToken=' + encodeURIComponent(finalToken) + '&serverUrl=' + encodeURIComponent(serverUrl) + '&secret=' + encodeURIComponent(secret);
+            // استخراج secret من الرابط وإرساله مع callback
+            const secret = new URLSearchParams(window.location.search).get('secret') || '';
+            window.location.href = 'http://localhost:' + callbackPort + '/callback?sessionToken=' + encodeURIComponent(finalToken) + '&serverUrl=' + encodeURIComponent(serverUrl) + '&secret=' + encodeURIComponent(secret);
           };
 
           checkLogin();
