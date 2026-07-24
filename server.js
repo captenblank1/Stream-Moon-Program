@@ -5060,20 +5060,6 @@ io.on("connection", (socket) => {
   });
 });
 
-app.post("/api/agent/binding-token", authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const token = crypto.randomBytes(32).toString("hex");
-    state.bindingTokens.set(token, {
-      userId,
-      expires: Date.now() + 5 * 60 * 1000,
-    });
-    res.json({ success: true, token });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
 // ================ Cron Job ================
 cron.schedule("0 * * * *", async () => {
   logger.info("Checking expired subscriptions...");
@@ -5105,7 +5091,6 @@ cron.schedule("0 * * * *", async () => {
   }
 });
 
-// ================ صفحة ربط العميل المحلي ================
 // ================ صفحة ربط العميل المحلي (آمنة تماماً) ================
 app.get("/agent-auth", async (req, res) => {
   const callbackPort = req.query.callbackPort || 3456;
