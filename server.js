@@ -77,11 +77,6 @@ const DEFAULT_RCON_PLAYER = process.env.RCON_PLAYER || "Player";
 const CACHE_TTL = 3600; // 1 ساعة
 const CLEANUP_INTERVAL = 15 * 60 * 1000; // 15 دقيقة
 
-// ... بعد المتغيرات العامة الأخرى
-let processedGiftEvents = new Map(); // لمنع تكرار معالجة أحداث الهدايا
-
-let processedInteractionEvents = new Map(); // لمنع تكرار أحداث التفاعل (FOLLOW, SHARE, CHAT)
-
 // ================ السجلات ================
 const logger = winston.createLogger({
   level: NODE_ENV === "production" ? "error" : "info",
@@ -185,7 +180,6 @@ class AppState {
       executedOncePerLive: new NodeCache({ stdTTL: 3600, checkperiod: 120 }),
       likeCounters: new NodeCache({ stdTTL: 3600, checkperiod: 120 }),
       giftStreakState: new NodeCache({ stdTTL: 15, checkperiod: 5 }),
-      processedGiftEvents: new NodeCache({ stdTTL: 5, checkperiod: 1 }),
       userAvatarCache: new NodeCache({ stdTTL: 3600, checkperiod: 300 }),
       userInfoCache: new NodeCache({ stdTTL: 3600, checkperiod: 300 }),
     };
@@ -1507,20 +1501,7 @@ function resetOncePerLiveForUser(userId) {
     }
   }
 
-  // ✅ تنظيف مفاتيح منع التكرار الخاصة بالمستخدم (بأخذ نسخة أولاً)
-  const giftKeys = Array.from(processedGiftEvents.keys());
-  for (const key of giftKeys) {
-    if (key.startsWith(`${userId}:`)) {
-      processedGiftEvents.delete(key);
-    }
-  }
-
-  const interactionKeys = Array.from(processedInteractionEvents.keys());
-  for (const key of interactionKeys) {
-    if (key.startsWith(`${userId}:`)) {
-      processedInteractionEvents.delete(key);
-    }
-  }
+  // ❌ تم إزالة مسح processedGiftEvents و processedInteractionEvents
 }
 function getSenderFromEvent(data) {
   if (!data) return "Unknown";
@@ -1944,20 +1925,6 @@ async function connectUser(userId, username) {
     newRepeat,
     data,
   }) {
-    // ========== ⛔ منع التكرار ==========
-    const repeatId = data.repeatId ?? data.repeat_id ?? data.comboId ?? null;
-    const eventKey = repeatId
-      ? `${userId}:${sender}:${giftIdStr}:${repeatId}`
-      : `${userId}:${sender}:${giftIdStr}`;
-
-    if (processedGiftEvents.has(eventKey)) {
-      logger.info(`⏭️ تجاهل حدث مكرر للهدية: ${giftIdStr} من ${sender}`);
-      return;
-    }
-    processedGiftEvents.set(eventKey, true);
-    setTimeout(() => processedGiftEvents.delete(eventKey), 3000); // يمكن تعديل المدة حسب الحاجة
-    // ===================================
-
     try {
       const userProfile = await getUserSelectedProfile(userId);
       let giftCmd = getGiftCommandForProfile(userId, userProfile, giftIdStr);
@@ -1997,14 +1964,6 @@ async function connectUser(userId, username) {
           await executeAction(cmdObj, sender, userId, data);
         }
       }
-      // (اختياري) معالجة أوامر التفاعل من نوع gift إن وجدت
-      const giftInteractions = getInteractionCommandsForProfile(
-        userId,
-        userProfile,
-      ).filter((i) => i.type === "gift");
-      for (const ic of giftInteractions) {
-        // يمكن إضافة منطق لاحقاً
-      }
     } catch (err) {
       logger.error("❌ processGiftDelta error:", err.message);
     }
@@ -2017,15 +1976,7 @@ async function connectUser(userId, username) {
       const comment = (data.comment || "").toString();
       if (!comment) return;
 
-      // ========== ⛔ منع تكرار CHAT ==========
-      const chatKey = `${userId}:chat:${sender}:${comment}`;
-      if (processedInteractionEvents.has(chatKey)) {
-        logger.info(`⏭️ تجاهل حدث CHAT مكرر من ${sender}: "${comment}"`);
-        return;
-      }
-      processedInteractionEvents.set(chatKey, true);
-      setTimeout(() => processedInteractionEvents.delete(chatKey), 3000);
-      // =======================================
+      // ❌ تم حذف التحقق من processedInteractionEvents
 
       const userProfile = await getUserSelectedProfile(userId);
       const commands = getInteractionCommandsForProfile(
@@ -2079,15 +2030,7 @@ async function connectUser(userId, username) {
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
 
-      // ========== ⛔ منع تكرار FOLLOW ==========
-      const followKey = `${userId}:follow:${sender}`;
-      if (processedInteractionEvents.has(followKey)) {
-        logger.info(`⏭️ تجاهل حدث FOLLOW مكرر من ${sender}`);
-        return;
-      }
-      processedInteractionEvents.set(followKey, true);
-      setTimeout(() => processedInteractionEvents.delete(followKey), 3000);
-      // ===========================================
+      // ❌ تم حذف التحقق من processedInteractionEvents
 
       const userProfile = await getUserSelectedProfile(userId);
       const commands = getInteractionCommandsForProfile(
@@ -2123,15 +2066,7 @@ async function connectUser(userId, username) {
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
 
-      // ========== ⛔ منع تكرار LIKE ==========
-      const likeKey = `${userId}:like:${sender}`;
-      if (processedInteractionEvents.has(likeKey)) {
-        logger.info(`⏭️ تجاهل حدث LIKE مكرر من ${sender}`);
-        return;
-      }
-      processedInteractionEvents.set(likeKey, true);
-      setTimeout(() => processedInteractionEvents.delete(likeKey), 3000);
-      // =======================================
+      // ❌ تم حذف التحقق من processedInteractionEvents
 
       let delta =
         parseInt(
@@ -2202,15 +2137,7 @@ async function connectUser(userId, username) {
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
 
-      // ========== ⛔ منع تكرار SHARE ==========
-      const shareKey = `${userId}:share:${sender}`;
-      if (processedInteractionEvents.has(shareKey)) {
-        logger.info(`⏭️ تجاهل حدث SHARE مكرر من ${sender}`);
-        return;
-      }
-      processedInteractionEvents.set(shareKey, true);
-      setTimeout(() => processedInteractionEvents.delete(shareKey), 2000);
-      // =========================================
+      // ❌ تم حذف التحقق من processedInteractionEvents
 
       const userProfile = await getUserSelectedProfile(userId);
       const commands = getInteractionCommandsForProfile(
@@ -5316,11 +5243,6 @@ setInterval(() => {
       }
     }
   }
-
-  // ✅ تنظيف Maps لمنع التكرار (مرة كل 15 دقيقة مع بقية التنظيف)
-  if (processedGiftEvents.size > 1000) processedGiftEvents.clear();
-  if (processedInteractionEvents.size > 1000)
-    processedInteractionEvents.clear();
 
   // تنظيف الكاش الخاص بالمستخدمين غير النشطين
   const keys = state.cache.keys();
