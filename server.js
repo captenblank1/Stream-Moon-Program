@@ -1397,8 +1397,10 @@ async function executeAction(
       await new Promise((r) => setTimeout(r, interval));
     }
 
-    // الكيستروك
-    if (keystrokeText) {
+    // ========== التعديل الأساسي هنا ==========
+    // الكيستروك: يُرسل فقط إذا لم يكن هناك أمر RCON (command فارغ)
+    // حتى لا تتداخل الأوامر المعقدة (مثل أوامر ماينكرافت) مع SendKeys
+    if (keystrokeText && !command) {
       const finalKeystroke = replacePlaceholders(
         keystrokeText,
         realName,
@@ -1418,7 +1420,7 @@ async function executeAction(
       }
     }
 
-    // أوامر RCON
+    // أوامر RCON (تبقى كما هي، تُرسل مباشرة إلى السيرفر)
     if (command && command.trim()) {
       const lines = command
         .split(/\r?\n/)
@@ -1451,8 +1453,8 @@ async function executeAction(
               nickname: realName,
               username: triggerUser,
             });
-          }, cumulativeDelay);
-          cumulativeDelay += DEFAULT_COMMAND_DELAY_MS;
+          }, cumulativeDelay * 1000); // تحويل الثواني إلى ملي ثانية
+          cumulativeDelay += DEFAULT_COMMAND_DELAY_MS / 1000;
         }
       } else {
         const singleCmd = lines[0];
