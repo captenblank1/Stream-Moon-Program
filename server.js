@@ -1963,15 +1963,16 @@ async function connectUser(userId, username) {
   }) {
     // ========== ⛔ منع التكرار ==========
     const repeatId = data.repeatId ?? data.repeat_id ?? data.comboId ?? null;
-    const eventKey = `${userId}:${sender}:${giftIdStr}:${repeatId || Date.now()}`;
+    const eventKey = repeatId
+      ? `${userId}:${sender}:${giftIdStr}:${repeatId}`
+      : `${userId}:${sender}:${giftIdStr}`;
 
     if (processedGiftEvents.has(eventKey)) {
       logger.info(`⏭️ تجاهل حدث مكرر للهدية: ${giftIdStr} من ${sender}`);
       return;
     }
     processedGiftEvents.set(eventKey, true);
-    // إزالة المفتاح بعد 5 ثوانٍ (لمنع تنفيذ نفس الحدث خلال هذه المدة)
-    setTimeout(() => processedGiftEvents.delete(eventKey), 5000);
+    setTimeout(() => processedGiftEvents.delete(eventKey), 3000); // يمكن تعديل المدة حسب الحاجة
     // ===================================
 
     try {
@@ -5333,7 +5334,6 @@ setInterval(() => {
     }
   }
 
-  
   // ✅ تنظيف Maps لمنع التكرار (مرة كل 15 دقيقة مع بقية التنظيف)
   if (processedGiftEvents.size > 1000) processedGiftEvents.clear();
   if (processedInteractionEvents.size > 1000)
