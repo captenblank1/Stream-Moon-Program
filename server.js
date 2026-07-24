@@ -5201,13 +5201,16 @@ app.get("/api/agent/binding-token", authenticateToken, async (req, res) => {
 
 app.post("/api/agent/exchange-binding", async (req, res) => {
   try {
-    const { bindingToken } = req.body;
+    const { bindingToken, machineId } = req.body;  // استلام machineId
     const data = state.bindingTokens.get(bindingToken);
     if (!data || data.expires < Date.now())
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid or expired binding token" });
+      return res.status(400).json({ success: false, message: "Invalid or expired binding token" });
     state.bindingTokens.delete(bindingToken);
+
+    // تحديث machineId للمستخدم إذا تم إرساله
+    if (machineId && data.userId) {
+      await User.findByIdAndUpdate(data.userId, { machineId: machineId });
+    }
 
     const sessionToken = crypto.randomBytes(32).toString("hex");
     await AgentSession.create({
@@ -5229,58 +5232,33 @@ app.post("/api/agent/auto-bind", async (req, res) => {
   try {
     const { machineId, secret, hostname, platform } = req.body;
 
-    // تحقق من السر
     if (secret !== "SteamMoon_AutoBind_Secret_2026") {
       return res.status(403).json({ success: false, message: "غير مصرح" });
     }
 
     if (!machineId) {
-      return res
-        .status(400)
-        .json({ success: false, message: "معرّف الجهاز مطلوب" });
+      return res.status(400).json({ success: false, message: "معرّف الجهاز مطلوب" });
     }
 
     // 1. ابحث عن مستخدم مرتبط بهذا الجهاز
-    let user = await User.findOne({ machineId });
+    const user = await User.findOne({ machineId });
 
-    // 2. إذا لم يوجد، أنشئ مستخدمًا جديدًا تلقائيًا
     if (!user) {
-      const tempEmail = `agent_${machineId.substring(0, 8)}@steammoon.local`;
-      const tempPassword = crypto.randomBytes(16).toString("hex");
-
-      const hashedPassword = await bcrypt.hash(tempPassword, 10);
-      const screenToken = crypto.randomBytes(32).toString("hex");
-
-      user = new User({
-        email: tempEmail,
-        password: hashedPassword,
-        plan: "free",
-        role: "user",
-        screenToken,
-        machineId,
-        selectedProfile: 1,
-        audioUsedMB: 0,
-        videoUsedMB: 0,
+      // لا يوجد مستخدم ← نطلب من الوكيل فتح المتصفح للربط اليدوي
+      return res.status(404).json({ 
+        success: false, 
+        reason: "no_user", 
+        message: "لم يتم العثور على حساب مرتبط. سيتم فتح المتصفح للربط." 
       });
-
-      await user.save();
-      await ensureUserProfiles(user._id);
-      logger.info(`✅ تم إنشاء مستخدم تلقائي للجهاز ${machineId}`);
-    } else {
-      logger.info(
-        `✅ تم العثور على مستخدم موجود للجهاز ${machineId}: ${user.email}`,
-      );
     }
 
-    // 3. حذف الجلسات القديمة لنفس المستخدم (اختياري للنظافة)
+    // 2. وجدنا مستخدمًا – ننشئ له جلسة
     await AgentSession.deleteMany({ userId: user._id });
-
-    // 4. إنشاء جلسة جديدة
     const sessionToken = crypto.randomBytes(32).toString("hex");
     await AgentSession.create({
       token: sessionToken,
       userId: user._id,
-      expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 يوم
+      expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     });
 
     res.json({ success: true, sessionToken });
