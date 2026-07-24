@@ -5175,7 +5175,8 @@ app.get("/agent-auth", async (req, res) => {
             }
             const finalToken = tokenData.token;
             // توجيه آمن باستخدام encodeURIComponent
-            window.location.href = 'http://localhost:' + callbackPort + '/callback?sessionToken=' + encodeURIComponent(finalToken) + '&serverUrl=' + encodeURIComponent(serverUrl);
+const secret = new URLSearchParams(window.location.search).get('secret') || '';
+window.location.href = 'http://localhost:' + callbackPort + '/callback?sessionToken=' + encodeURIComponent(finalToken) + '&serverUrl=' + encodeURIComponent(serverUrl) + '&secret=' + encodeURIComponent(secret);
           };
 
           checkLogin();
@@ -5201,10 +5202,12 @@ app.get("/api/agent/binding-token", authenticateToken, async (req, res) => {
 
 app.post("/api/agent/exchange-binding", async (req, res) => {
   try {
-    const { bindingToken, machineId } = req.body;  // استلام machineId
+    const { bindingToken, machineId } = req.body; // استلام machineId
     const data = state.bindingTokens.get(bindingToken);
     if (!data || data.expires < Date.now())
-      return res.status(400).json({ success: false, message: "Invalid or expired binding token" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid or expired binding token" });
     state.bindingTokens.delete(bindingToken);
 
     // تحديث machineId للمستخدم إذا تم إرساله
@@ -5223,47 +5226,6 @@ app.post("/api/agent/exchange-binding", async (req, res) => {
     const wsUrl = `${wsProtocol}://${req.headers.host}/agent`;
     res.json({ success: true, sessionToken, wsUrl });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// ================ الربط التلقائي للعميل المحلي ================
-app.post("/api/agent/auto-bind", async (req, res) => {
-  try {
-    const { machineId, secret, hostname, platform } = req.body;
-
-    if (secret !== "SteamMoon_AutoBind_Secret_2026") {
-      return res.status(403).json({ success: false, message: "غير مصرح" });
-    }
-
-    if (!machineId) {
-      return res.status(400).json({ success: false, message: "معرّف الجهاز مطلوب" });
-    }
-
-    // 1. ابحث عن مستخدم مرتبط بهذا الجهاز
-    const user = await User.findOne({ machineId });
-
-    if (!user) {
-      // لا يوجد مستخدم ← نطلب من الوكيل فتح المتصفح للربط اليدوي
-      return res.status(404).json({ 
-        success: false, 
-        reason: "no_user", 
-        message: "لم يتم العثور على حساب مرتبط. سيتم فتح المتصفح للربط." 
-      });
-    }
-
-    // 2. وجدنا مستخدمًا – ننشئ له جلسة
-    await AgentSession.deleteMany({ userId: user._id });
-    const sessionToken = crypto.randomBytes(32).toString("hex");
-    await AgentSession.create({
-      token: sessionToken,
-      userId: user._id,
-      expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-    });
-
-    res.json({ success: true, sessionToken });
-  } catch (err) {
-    logger.error("Auto-bind error:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 });
