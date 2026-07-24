@@ -4993,40 +4993,39 @@ app.post("/api/agent/register", authenticateToken, async (req, res) => {
 });
 
 io.use(async (socket, next) => {
-  const screenToken = socket.handshake.query.token;
-  if (screenToken) {
+  // 1. محاولة الحصول على التوكن من query أو auth
+  let token = socket.handshake.query.token || socket.handshake.auth?.token;
+
+  // 2. إذا كان هناك توكن، نتحقق منه
+  if (token) {
+    // 2.1 التحقق من screenToken أولاً
     try {
-      const user = await User.findOne({ screenToken });
+      const user = await User.findOne({ screenToken: token });
       if (user) {
         socket.userId = String(user._id);
         socket.isScreen = true;
+        console.log(`✅ شاشة متصلة للمستخدم ${user.email} (token: ${token.substring(0, 10)}...)`);
         return next();
       }
-    } catch (err) {}
-  }
+    } catch (err) {
+      console.warn(`⚠️ فشل التحقق من screenToken: ${err.message}`);
+    }
 
-  let token = socket.handshake.auth?.token || socket.handshake.query.token;
-  if (!token) {
-    const cookieHeader = socket.handshake.headers.cookie;
-    if (cookieHeader) {
-      const cookies = cookieHeader.split(";").reduce((acc, c) => {
-        const [key, val] = c.trim().split("=");
-        acc[key] = val;
-        return acc;
-      }, {});
-      token = cookies.token;
+    // 2.2 إذا لم يكن screenToken، نحاول JWT
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      socket.userId = String(decoded.id);
+      socket.isScreen = false;
+      console.log(`✅ مستخدم متصل عبر JWT: ${decoded.email}`);
+      return next();
+    } catch (err) {
+      console.warn(`⚠️ فشل التحقق من JWT: ${err.message}`);
     }
   }
-  if (!token) return next(new Error("No token"));
 
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    socket.userId = String(decoded.id);
-    socket.isScreen = false;
-    next();
-  } catch (err) {
-    next(new Error("Invalid token"));
-  }
+  // 3. إذا لم يتم التعرف على التوكن
+  console.warn(`❌ رفض اتصال بدون توكن صالح: ${socket.id}`);
+  return next(new Error("Invalid token"));
 });
 
 io.on("connection", (socket) => {
