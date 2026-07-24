@@ -5333,6 +5333,7 @@ setInterval(() => {
     }
   }
 
+  
   // ✅ تنظيف Maps لمنع التكرار (مرة كل 15 دقيقة مع بقية التنظيف)
   if (processedGiftEvents.size > 1000) processedGiftEvents.clear();
   if (processedInteractionEvents.size > 1000)
