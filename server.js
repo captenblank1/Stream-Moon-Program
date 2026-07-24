@@ -1821,7 +1821,7 @@ function startLiveHeartbeat(userId) {
       }
       const now = Date.now();
       const lastUpdate = conn.lastRoomUpdate || now;
-      if (now - lastUpdate > 60000) {
+      if (now - lastUpdate > 500000) {
         conn.isLive = false;
         setTikTokConnection(userId, conn);
         resetOncePerLiveForUser(userId);
