@@ -5095,19 +5095,52 @@ cron.schedule("0 * * * *", async () => {
 });
 
 // ================ صفحة ربط العميل المحلي (آمنة تماماً) ================
+// ================ صفحة ربط العميل المحلي (آمنة تماماً) ================
 app.get("/agent-auth", async (req, res) => {
   const callbackPort = req.query.callbackPort || 3456;
   const port = Number(callbackPort);
   const protocol =
     process.env.NODE_ENV === "production" ? "https" : req.protocol;
   const serverUrl = `${protocol}://${req.get("host")}`;
-  const bindingToken = crypto.randomBytes(32).toString("hex");
+  const secretFromQuery = req.query.secret; // secret المرسل في الرابط
 
+  // إذا لم يكن هناك secret، امنع فتح الصفحة وأظهر رسالة
+  if (!secretFromQuery) {
+    return res.send(`
+      <!DOCTYPE html>
+      <html lang="ar">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>خطأ في الربط</title>
+        <style>
+          body{background:#0a0a0a;color:white;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;}
+          .container{background:#1e1e1e;padding:30px;border-radius:12px;text-align:center;max-width:500px;}
+          .error{color:#f44336;}
+          .btn{padding:10px 20px;margin:10px;border-radius:6px;border:none;background:#4caf50;color:white;cursor:pointer;font-size:16px;}
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h2 style="color:#f44336;">❌ رابط غير صحيح</h2>
+          <p>تم فتح صفحة الربط بدون رمز الأمان (Secret).</p>
+          <p style="color:#ff9800;">السبب الأكثر شيوعاً: فتحت الصفحة يدوياً بدلاً من استخدام زر "ربط العميل" في التطبيق.</p>
+          <p><strong>الحل:</strong> أغلق هذه الصفحة، واذهب إلى التطبيق واضغط على زر <strong>"ربط العميل"</strong>.</p>
+          <button onclick="window.close()" class="btn">إغلاق الصفحة</button>
+        </div>
+      </body>
+      </html>
+    `);
+  }
+
+  // إنشاء رمز ربط جديد (bindingToken) وربطه بالـ secret المقدم
+  const bindingToken = crypto.randomBytes(32).toString("hex");
   state.bindingTokens.set(bindingToken, {
     userId: null,
     expires: Date.now() + 5 * 60 * 1000,
     callbackPort: port,
     serverUrl,
+    secret: secretFromQuery, // نخزن الـ secret لاستخدامه لاحقاً
   });
 
   const safeToken = encodeURIComponent(JSON.stringify(bindingToken));
@@ -5140,6 +5173,7 @@ app.get("/agent-auth", async (req, res) => {
           const bindingToken = JSON.parse(decodeURIComponent('${safeToken}'));
           const callbackPort = ${safePort};
           const serverUrl = decodeURIComponent('${safeServerUrl}');
+          const secret = '${secretFromQuery}'; // الـ secret المستلم من الرابط
 
           const bindBtn = document.getElementById('bindBtn');
           const statusDiv = document.getElementById('status');
@@ -5226,9 +5260,8 @@ app.get("/agent-auth", async (req, res) => {
                 return;
               }
               const finalToken = tokenData.token;
-              const secret = new URLSearchParams(window.location.search).get('secret') || '';
 
-              // 4. التوجيه إلى الخادم المحلي
+              // 4. التوجيه إلى الخادم المحلي مع إرسال الـ secret المستلم من الرابط
               statusDiv.innerHTML = '<span style="color:#4caf50;">✅ جاري التوجيه إلى العميل المحلي...</span>';
               window.location.href = 'http://localhost:' + callbackPort + '/callback?sessionToken=' + encodeURIComponent(finalToken) + '&serverUrl=' + encodeURIComponent(serverUrl) + '&secret=' + encodeURIComponent(secret);
             } catch (err) {
