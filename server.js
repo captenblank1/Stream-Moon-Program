@@ -1810,6 +1810,7 @@ function startLiveHeartbeat(userId) {
     }
 
     try {
+      // ✅ التعديل الأساسي: نعتمد فقط على roomId لتحديد انتهاء البث
       if (!conn.roomId) {
         conn.isLive = false;
         setTikTokConnection(userId, conn);
@@ -1819,27 +1820,9 @@ function startLiveHeartbeat(userId) {
         logger.info(`🔄 انتهاء البث للمستخدم ${userId} (roomId فارغ)`);
         return;
       }
-      const now = Date.now();
-      const lastUpdate = conn.lastRoomUpdate || now;
-      if (now - lastUpdate > 500000) {
-        conn.isLive = false;
-        setTikTokConnection(userId, conn);
-        resetOncePerLiveForUser(userId);
-        clearInterval(interval);
-        // محاولة إعادة الاتصال فوراً
-        const user = await User.findById(userId);
-        if (user && user.tiktokUsername) {
-          logger.info(
-            `🔄 محاولة إعادة الاتصال التلقائي للمستخدم ${userId} بسبب انتهاء المهلة`,
-          );
-          await connectUser(userId, user.tiktokUsername);
-        }
-        state.heartbeats.delete(userId);
-        logger.info(
-          `🔄 انتهاء البث للمستخدم ${userId} (لا توجد تحديثات لأكثر من 30 ثانية)`,
-        );
-        return;
-      }
+
+      // ❌ نزيل التحقق الزمني بالكامل (كان سابقاً: if (now - lastUpdate > 60000))
+      // لا نقوم بأي إجراء إضافي
     } catch (err) {
       conn.isLive = false;
       setTikTokConnection(userId, conn);
