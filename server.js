@@ -342,12 +342,9 @@ app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
 app.use("/audios", express.static(path.join(__dirname, "audios")));
 app.use(cookieParser());
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST");
-  res.header("Access-Control-Allow-Headers", "Content-Type");
+  req.setTimeout(30 * 1000);
   next();
 });
-app.get("/ping", (req, res) => res.json({ status: "ok" }));
 
 const authenticateToken = async (req, res, next) => {
   let token = req.cookies?.token;
@@ -5140,103 +5137,46 @@ app.get("/agent-auth", async (req, res) => {
           const bindingToken = JSON.parse(decodeURIComponent('${safeToken}'));
           const callbackPort = ${safePort};
           const serverUrl = decodeURIComponent('${safeServerUrl}');
-
+          
           const bindBtn = document.getElementById('bindBtn');
           const statusDiv = document.getElementById('status');
 
-          // ✅ دالة للتحقق من أن الخادم المحلي يعمل
-          async function checkLocalServer() {
-            try {
-              const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 3000);
-              const res = await fetch('http://localhost:' + callbackPort + '/ping', {
-                mode: 'cors',
-                signal: controller.signal
-              });
-              clearTimeout(timeoutId);
-              if (res.ok) {
-                const data = await res.json();
-                return { ok: true, secret: data.secret };
-              }
-              return { ok: false, error: 'الخادم أجاب بحالة غير صالحة' };
-            } catch (e) {
-              if (e.name === 'AbortError') {
-                return { ok: false, error: 'المهلة انتهت (الخادم لا يستجيب)' };
-              }
-              return { ok: false, error: e.message || 'تعذر الاتصال بالخادم المحلي' };
-            }
-          }
-
-          // ✅ دالة التحقق من حالة الدخول
           async function checkLogin() {
             try {
               const res = await fetch('/api/auth/me', { credentials: 'include' });
               const data = await res.json();
               if (data.success) {
-                statusDiv.innerHTML = '<span style="color:#4caf50;">✅ تم تسجيل الدخول كـ ' + data.user.email + '</span>';
+                statusDiv.innerHTML = '<span style="color:#4caf50">✅ تم تسجيل الدخول كـ ' + data.user.email + '</span>';
                 return true;
               } else {
-                statusDiv.innerHTML = '<span style="color:#ff9800;">⚠️ لم تسجل الدخول. سيتم فتح نافذة تسجيل الدخول.</span>';
+                statusDiv.innerHTML = '<span style="color:#ff9800">⚠️ لم تسجل الدخول. سيتم فتح نافذة تسجيل الدخول.</span>';
                 return false;
               }
             } catch(e) {
-              statusDiv.innerHTML = '<span style="color:#f44336;">❌ خطأ في الاتصال بالخادم الأساسي</span>';
+              statusDiv.innerHTML = '<span class="error">❌ خطأ في الاتصال</span>';
               return false;
             }
           }
 
           bindBtn.onclick = async function() {
-            // 1. التحقق من تسجيل الدخول
             const loggedIn = await checkLogin();
             if (!loggedIn) {
               window.open('/login', '_blank');
               alert('سجل الدخول ثم اضغط على الربط مرة أخرى');
               return;
             }
-
-            // 2. ✅ التحقق من الخادم المحلي (الجزء الجديد)
-            statusDiv.innerHTML = '<span style="color:#ff9800;">⏳ جاري التحقق من تشغيل العميل المحلي...</span>';
-            const serverCheck = await checkLocalServer();
-
-            if (!serverCheck.ok) {
-              statusDiv.innerHTML = \`
-                <span style="color:#f44336;">
-                  ❌ فشل الاتصال بالعميل المحلي (المنفذ \${callbackPort})<br>
-                  <span style="font-size:13px;display:block;margin-top:5px;">
-                    السبب: \${serverCheck.error || 'غير معروف'}<br>
-                    🔹 <strong>الحل:</strong> تأكد من أن برنامج <strong>SteamMoonAgent</strong> يعمل في الخلفية.
-                  </span>
-                </span>
-              \`;
+            const tokenRes = await fetch('/api/agent/binding-token', { credentials: 'include' });
+            const tokenData = await tokenRes.json();
+            if (!tokenData.success) {
+              statusDiv.innerHTML = '<span class="error">فشل الحصول على رمز الربط</span>';
               return;
             }
-
-            if (serverCheck.secret === 'inactive') {
-              statusDiv.innerHTML = '<span style="color:#f44336;">❌ العميل المحلي يعمل لكن الرمز السري منتهي، أعد تشغيل التطبيق.</span>';
-              return;
-            }
-
-            // 3. الحصول على رمز الربط من السيرفر الأساسي
-            statusDiv.innerHTML = '<span style="color:#ff9800;">⏳ جاري الحصول على رمز الربط...</span>';
-            try {
-              const tokenRes = await fetch('/api/agent/binding-token', { credentials: 'include' });
-              const tokenData = await tokenRes.json();
-              if (!tokenData.success) {
-                statusDiv.innerHTML = \`<span style="color:#f44336;">❌ فشل الحصول على رمز الربط: \${tokenData.message || 'غير معروف'}</span>\`;
-                return;
-              }
-              const finalToken = tokenData.token;
-              const secret = new URLSearchParams(window.location.search).get('secret') || '';
-
-              // 4. التوجيه إلى الخادم المحلي
-              statusDiv.innerHTML = '<span style="color:#4caf50;">✅ جاري التوجيه إلى العميل المحلي...</span>';
-              window.location.href = 'http://localhost:' + callbackPort + '/callback?sessionToken=' + encodeURIComponent(finalToken) + '&serverUrl=' + encodeURIComponent(serverUrl) + '&secret=' + encodeURIComponent(secret);
-            } catch (err) {
-              statusDiv.innerHTML = \`<span style="color:#f44336;">❌ خطأ غير متوقع: \${err.message}</span>\`;
-            }
+            const finalToken = tokenData.token;
+            // استخراج secret من الرابط وإرساله مع callback
+            const secret = new URLSearchParams(window.location.search).get('secret') || '';
+            window.location.href = 'http://localhost:' + callbackPort + '/callback?sessionToken=' + encodeURIComponent(finalToken) + '&serverUrl=' + encodeURIComponent(serverUrl) + '&secret=' + encodeURIComponent(secret);
           };
 
-          // التحقق الأولي عند تحميل الصفحة
           checkLogin();
         })();
       </script>
