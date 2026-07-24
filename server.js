@@ -77,6 +77,11 @@ const DEFAULT_RCON_PLAYER = process.env.RCON_PLAYER || "Player";
 const CACHE_TTL = 3600; // 1 ساعة
 const CLEANUP_INTERVAL = 15 * 60 * 1000; // 15 دقيقة
 
+// ... بعد المتغيرات العامة الأخرى
+let processedGiftEvents = new Map(); // لمنع تكرار معالجة أحداث الهدايا
+
+let processedInteractionEvents = new Map(); // لمنع تكرار أحداث التفاعل (FOLLOW, SHARE, CHAT)
+
 // ================ السجلات ================
 const logger = winston.createLogger({
   level: NODE_ENV === "production" ? "error" : "info",
@@ -1493,6 +1498,7 @@ function resetOncePerLiveForUser(userId) {
       state.delTemp("executedOncePerLive", key);
     }
   }
+
   // حذف عدادات اللايك
   const likeKeys = state.tempStores.likeCounters.keys();
   for (const key of likeKeys) {
@@ -1500,8 +1506,22 @@ function resetOncePerLiveForUser(userId) {
       state.delTemp("likeCounters", key);
     }
   }
-}
 
+  // ✅ تنظيف مفاتيح منع التكرار الخاصة بالمستخدم (بأخذ نسخة أولاً)
+  const giftKeys = Array.from(processedGiftEvents.keys());
+  for (const key of giftKeys) {
+    if (key.startsWith(`${userId}:`)) {
+      processedGiftEvents.delete(key);
+    }
+  }
+
+  const interactionKeys = Array.from(processedInteractionEvents.keys());
+  for (const key of interactionKeys) {
+    if (key.startsWith(`${userId}:`)) {
+      processedInteractionEvents.delete(key);
+    }
+  }
+}
 function getSenderFromEvent(data) {
   if (!data) return "Unknown";
   const user = data.user || {};
@@ -1801,7 +1821,7 @@ function startLiveHeartbeat(userId) {
       }
       const now = Date.now();
       const lastUpdate = conn.lastRoomUpdate || now;
-      if (now - lastUpdate > 30000) {
+      if (now - lastUpdate > 60000) {
         conn.isLive = false;
         setTikTokConnection(userId, conn);
         resetOncePerLiveForUser(userId);
@@ -1941,6 +1961,19 @@ async function connectUser(userId, username) {
     newRepeat,
     data,
   }) {
+    // ========== ⛔ منع التكرار ==========
+    const repeatId = data.repeatId ?? data.repeat_id ?? data.comboId ?? null;
+    const eventKey = `${userId}:${sender}:${giftIdStr}:${repeatId || Date.now()}`;
+
+    if (processedGiftEvents.has(eventKey)) {
+      logger.info(`⏭️ تجاهل حدث مكرر للهدية: ${giftIdStr} من ${sender}`);
+      return;
+    }
+    processedGiftEvents.set(eventKey, true);
+    // إزالة المفتاح بعد 5 ثوانٍ (لمنع تنفيذ نفس الحدث خلال هذه المدة)
+    setTimeout(() => processedGiftEvents.delete(eventKey), 5000);
+    // ===================================
+
     try {
       const userProfile = await getUserSelectedProfile(userId);
       let giftCmd = getGiftCommandForProfile(userId, userProfile, giftIdStr);
@@ -1980,6 +2013,7 @@ async function connectUser(userId, username) {
           await executeAction(cmdObj, sender, userId, data);
         }
       }
+      // (اختياري) معالجة أوامر التفاعل من نوع gift إن وجدت
       const giftInteractions = getInteractionCommandsForProfile(
         userId,
         userProfile,
@@ -1998,6 +2032,17 @@ async function connectUser(userId, username) {
       const sender = normalizeUser(getSenderFromEvent(data));
       const comment = (data.comment || "").toString();
       if (!comment) return;
+
+      // ========== ⛔ منع تكرار CHAT ==========
+      const chatKey = `${userId}:chat:${sender}:${comment}`;
+      if (processedInteractionEvents.has(chatKey)) {
+        logger.info(`⏭️ تجاهل حدث CHAT مكرر من ${sender}: "${comment}"`);
+        return;
+      }
+      processedInteractionEvents.set(chatKey, true);
+      setTimeout(() => processedInteractionEvents.delete(chatKey), 3000);
+      // =======================================
+
       const userProfile = await getUserSelectedProfile(userId);
       const commands = getInteractionCommandsForProfile(
         userId,
@@ -2049,6 +2094,17 @@ async function connectUser(userId, username) {
     updateLastActivity(userId);
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
+
+      // ========== ⛔ منع تكرار FOLLOW ==========
+      const followKey = `${userId}:follow:${sender}`;
+      if (processedInteractionEvents.has(followKey)) {
+        logger.info(`⏭️ تجاهل حدث FOLLOW مكرر من ${sender}`);
+        return;
+      }
+      processedInteractionEvents.set(followKey, true);
+      setTimeout(() => processedInteractionEvents.delete(followKey), 3000);
+      // ===========================================
+
       const userProfile = await getUserSelectedProfile(userId);
       const commands = getInteractionCommandsForProfile(
         userId,
@@ -2062,14 +2118,12 @@ async function connectUser(userId, username) {
         )
           continue;
 
-        // المفتاح يشمل sender ليكون لكل مستخدم مرة واحدة
         const key = `${userId}:${String(cmd._id)}:${sender}`;
         if (cmd.oncePerLive) {
           if (state.getTemp("executedOncePerLive", key)) continue;
           await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
           state.setTemp("executedOncePerLive", key, true, 3600);
         } else {
-          // السلوك الافتراضي: مرة لكل مستخدم
           if (state.getTemp("executedOncePerLive", key)) continue;
           await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
           state.setTemp("executedOncePerLive", key, true, 3600);
@@ -2084,6 +2138,17 @@ async function connectUser(userId, username) {
     updateLastActivity(userId);
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
+
+      // ========== ⛔ منع تكرار LIKE ==========
+      const likeKey = `${userId}:like:${sender}`;
+      if (processedInteractionEvents.has(likeKey)) {
+        logger.info(`⏭️ تجاهل حدث LIKE مكرر من ${sender}`);
+        return;
+      }
+      processedInteractionEvents.set(likeKey, true);
+      setTimeout(() => processedInteractionEvents.delete(likeKey), 3000);
+      // =======================================
+
       let delta =
         parseInt(
           String(data.likeCount ?? data.like_count ?? data.count ?? 1).replace(
@@ -2094,11 +2159,13 @@ async function connectUser(userId, username) {
         ) || 1;
       if (delta > LIKE_MAX_DELTA) delta = LIKE_MAX_DELTA;
       if (delta <= 0) return;
+
       const userProfile = await getUserSelectedProfile(userId);
       const commands = getInteractionCommandsForProfile(
         userId,
         userProfile,
       ).filter((c) => c.type === "like" && c.active);
+
       for (let cmd of commands) {
         if (
           cmd.targetUser &&
@@ -2120,15 +2187,19 @@ async function connectUser(userId, username) {
         let current = state.getTemp("likeCounters", keyUser) || 0;
         current += delta;
         state.setTemp("likeCounters", keyUser, current, 3600);
+
         if (threshold <= 0) {
           await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
           continue;
         }
+
         const times = Math.floor(current / threshold);
         if (times <= 0) continue;
+
         for (let i = 0; i < times; i++) {
           await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
         }
+
         state.setTemp(
           "likeCounters",
           keyUser,
@@ -2142,11 +2213,21 @@ async function connectUser(userId, username) {
       logger.error("❌ LIKE handler error:", err.message);
     }
   });
-
   connection.on(WebcastEvent.SHARE, async (data) => {
     updateLastActivity(userId);
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
+
+      // ========== ⛔ منع تكرار SHARE ==========
+      const shareKey = `${userId}:share:${sender}`;
+      if (processedInteractionEvents.has(shareKey)) {
+        logger.info(`⏭️ تجاهل حدث SHARE مكرر من ${sender}`);
+        return;
+      }
+      processedInteractionEvents.set(shareKey, true);
+      setTimeout(() => processedInteractionEvents.delete(shareKey), 2000);
+      // =========================================
+
       const userProfile = await getUserSelectedProfile(userId);
       const commands = getInteractionCommandsForProfile(
         userId,
@@ -5239,9 +5320,9 @@ server.listen(PORT, "0.0.0.0", () => {
   logger.info(`🖥️ دعم العميل المحلي لتنفيذ الكيبورد الحقيقي عبر /agent`);
 });
 
-// تنظيف دوري للذاكرة
 setInterval(() => {
   state.cleanup();
+
   // تنظيف إضافي
   if (state.userTikTokConnections.size > 200) {
     const now = Date.now();
@@ -5251,6 +5332,12 @@ setInterval(() => {
       }
     }
   }
+
+  // ✅ تنظيف Maps لمنع التكرار (مرة كل 15 دقيقة مع بقية التنظيف)
+  if (processedGiftEvents.size > 1000) processedGiftEvents.clear();
+  if (processedInteractionEvents.size > 1000)
+    processedInteractionEvents.clear();
+
   // تنظيف الكاش الخاص بالمستخدمين غير النشطين
   const keys = state.cache.keys();
   let count = 0;
