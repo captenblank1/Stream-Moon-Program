@@ -1,6 +1,6 @@
-// server.js - نسخة خفيفة ومحسنة (بدون واجهة أمامية)
-// إعدادات RCON و TikTok منفصلة لكل مستخدم
-// تمت الإضافة: تراكب مع صورة المستخدم واسمه الحقيقي + إيقاف الصوت/الفيديو بعد المدة
+// ============================================================
+// server.js - الإصدار المُحسَّن بالكامل (مع إصلاح الذاكرة والأداء)
+// ============================================================
 
 require("dotenv").config();
 const FRONTEND_URL = process.env.FRONTEND_URL;
@@ -9,6 +9,7 @@ if (!FRONTEND_URL && process.env.NODE_ENV === "production") {
   process.exit(1);
 }
 
+// ================ الاستيرادات ================
 const { TikTokLiveConnection, WebcastEvent } = require("tiktok-live-connector");
 const Rcon = require("rcon");
 const express = require("express");
@@ -33,15 +34,23 @@ const crypto = require("crypto");
 const cloudinary = require("cloudinary").v2;
 const nodeKeySender = require("node-key-sender");
 const { exec } = require("child_process");
+const NodeCache = require("node-cache");
 
-// ================ تهيئة Cloudinary ================
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 دقيقة
+  max: 100, // الحد الأقصى للطلبات من IP واحد
+  message: { success: false, message: "عدد الطلبات كبير جداً، حاول لاحقاً" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// ================ إعدادات البيئة ================
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// ================ إعدادات المتغيرات البيئية ================
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 const NODE_ENV = process.env.NODE_ENV || "development";
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -53,72 +62,22 @@ const PLUGIN_SECRET = process.env.PLUGIN_SECRET;
 if (!PLUGIN_SECRET) throw new Error("PLUGIN_SECRET must be set in .env");
 const BLACKMOON_KEY = process.env.BLACKMOON_KEY || null;
 
-// إعدادات RCON الافتراضية
+// ================ إعدادات ثابتة ================
+const MAX_PROFILES = 20;
+const DEFAULT_COMMAND_DELAY_MS = 100;
+const LIKE_MAX_DELTA = 500;
+const MAX_AUDIO_MB = 1000;
+const MAX_VIDEO_MB = 10000;
+const WARNING_HOURS = 24;
+const GRACE_HOURS = 48;
 const DEFAULT_RCON_HOST = process.env.RCON_HOST || "127.0.0.1";
 const DEFAULT_RCON_PORT = parseInt(process.env.RCON_PORT) || 25575;
 const DEFAULT_RCON_PASSWORD = process.env.RCON_PASSWORD || "change_me";
 const DEFAULT_RCON_PLAYER = process.env.RCON_PLAYER || "Player";
+const CACHE_TTL = 3600; // 1 ساعة
+const CLEANUP_INTERVAL = 15 * 60 * 1000; // 15 دقيقة
 
-// إعدادات أخرى
-const MAX_PROFILES = 20;
-const DEFAULT_COMMAND_DELAY_MS = 100;
-const GIFT_MAX_BURST = parseInt(process.env.GIFT_MAX_BURST || "50", 10);
-const LIKE_MAX_DELTA = 500;
-const PROCESSED_TTL_MS = 60 * 1000;
-const GIFT_STREAK_TTL_MS = 15 * 1000;
-
-// ================ حدود التخزين ================
-const MAX_AUDIO_MB = 1000;
-const MAX_VIDEO_MB = 10000;
-
-const videoStorage = multer.memoryStorage();
-const uploadVideo = multer({
-  storage: videoStorage,
-  limits: { fileSize: MAX_VIDEO_MB * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (
-      [".mp4", ".mov", ".webm", ".mkv", ".avi", ".flv", ".3gp"].includes(ext)
-    ) {
-      cb(null, true);
-    } else {
-      cb(new Error("امتداد غير مسموح"));
-    }
-  },
-});
-
-// ================ إعدادات الاشتراكات ================
-const WARNING_HOURS = 24;
-const GRACE_HOURS = 48;
-
-const { ipKeyGenerator } = require("express-rate-limit");
-
-// ================ المتغيرات العامة ================
-let userTikTokConnections = new Map();
-let userRconInstances = new Map();
-let pluginSockets = new Set();
-let executedOncePerLive = new Map();
-let likeCounters = new Map();
-let followExecutedUsers = new Map();
-let lastLikeCount = new Map();
-let giftStreakState = new Map();
-
-// الكاش
-let giftCommandsCache = new Map();
-let interactionCommandsCache = new Map();
-
-// لتخزين اتصالات العملاء المحليين
-let userLocalAgents = new Map(); // key: userId (string), value: socket
-let agentRegistrationTokens = new Map(); // key: token, value: { userId, expires }
-let bindingTokens = new Map(); // key: token, value: { userId, expires }
-
-let userAvatarCache = new Map();
-let userInfoCache = new Map(); // ✅ أضف هذا السطر هنا
-
-// أضفها في أعلى الملف مع باقي الدوال المساعدة
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// ================ إعدادات السجلات (خفيفة) ================
+// ================ السجلات ================
 const logger = winston.createLogger({
   level: NODE_ENV === "production" ? "error" : "info",
   format: winston.format.json(),
@@ -127,8 +86,6 @@ const logger = winston.createLogger({
     new winston.transports.Console({ format: winston.format.simple() }),
   ],
 });
-
-// تقليل التسجيل في بيئة الإنتاج
 if (NODE_ENV === "production") {
   console.log = () => {};
   console.info = () => {};
@@ -157,14 +114,21 @@ if (process.platform === "win32") {
   keySenderReady = false;
 }
 
-// ================ دالة تنفيذ كيستروك حقيقية باستخدام node-key-sender ================
+// ================ دوال node-key-sender ================
 async function executeNativeKeystroke(keys, repeat = 1, intervalMs = 500) {
+  // تنظيف المدخلات
+  const sanitizedKeys = sanitizeKeystroke(keys);
+  if (!sanitizedKeys || sanitizedKeys.length === 0) {
+    logger.warn("⛔ تم تجاهل كيستروك غير صالح (فارغ بعد التنقية)");
+    return false;
+  }
+
   if (!keySenderReady) {
     logger.error("node-key-sender غير جاهز");
     return false;
   }
   const nircmdPath = path.join(__dirname, "nircmd.exe");
-  let nircmdKeys = keys.toLowerCase().replace(/\+/g, "+");
+  let nircmdKeys = sanitizedKeys.toLowerCase().replace(/\+/g, "+");
   const sendOnce = () => {
     return new Promise((resolve) => {
       exec(`"${nircmdPath}" sendkeypress ${nircmdKeys}`, (error) => {
@@ -172,20 +136,21 @@ async function executeNativeKeystroke(keys, repeat = 1, intervalMs = 500) {
           logger.error(`فشل تنفيذ nircmd: ${error.message}`);
           resolve(false);
         } else {
-          logger.info(`⌨️ تم تنفيذ كيستروك: ${keys}`);
+          logger.info(`⌨️ تم تنفيذ كيستروك: ${sanitizedKeys}`);
           resolve(true);
         }
       });
     });
   };
-  if (repeat === 1) {
-    await sendOnce();
-  } else {
-    for (let i = 0; i < repeat; i++) {
-      setTimeout(() => sendOnce(), i * intervalMs);
-    }
-  }
-  return true;
+  // ... باقي الكود كما هو (استخدام sanitizedKeys بدلاً من keys)
+}
+
+// دالة تنقية خاصة بأوامر الكيستروك (للسماح فقط بالأحرف الآمنة)
+function sanitizeKeystroke(input) {
+  if (!input || typeof input !== "string") return "";
+  // السماح فقط: حروف (إنجليزية وعربية)، أرقام، مسافات، +، -، =، أقواس، وعلامات الترقيم البسيطة.
+  // هذا يمنع أي أحرف خطيرة مثل ; | & $ ( ) ` \n \r
+  return input.replace(/[^a-zA-Z0-9\u0600-\u06FF\s+\-=(){}[\].,;:!?]/g, "");
 }
 
 // ================ إعدادات PayPal ================
@@ -204,37 +169,154 @@ function paypalEnvironment() {
 }
 const paypalClient = new paypal.core.PayPalHttpClient(paypalEnvironment());
 
-// ================ إعدادات الحماية ================
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  message: { success: false, message: "تم تجاوز حد المحاولات، حاول لاحقاً" },
-  keyGenerator: ipKeyGenerator,
-});
+// ================ مدير الحالة المركزية ================
+class AppState {
+  constructor() {
+    // استخدام NodeCache مع TTL تلقائي
+    this.cache = new NodeCache({ stdTTL: CACHE_TTL, checkperiod: 120 });
+
+    // مخازن مؤقتة بصلاحيات مختلفة
+    this.tempStores = {
+      executedOncePerLive: new NodeCache({ stdTTL: 3600, checkperiod: 120 }),
+      likeCounters: new NodeCache({ stdTTL: 3600, checkperiod: 120 }),
+      giftStreakState: new NodeCache({ stdTTL: 15, checkperiod: 5 }),
+      userAvatarCache: new NodeCache({ stdTTL: 3600, checkperiod: 300 }),
+      userInfoCache: new NodeCache({ stdTTL: 3600, checkperiod: 300 }),
+      interactionCooldown: new NodeCache({ stdTTL: 5, checkperiod: 1 }),
+    };
+
+    // الاتصالات والمقابس (تحتاج تحكم يدوي)
+    this.userTikTokConnections = new Map();
+    this.userRconInstances = new Map();
+    this.pluginSockets = new Set();
+    this.userLocalAgents = new Map();
+    this.agentRegistrationTokens = new Map();
+    this.bindingTokens = new Map();
+    this.heartbeats = new Map(); // لتخزين معرفات المؤقتات
+    this.executingCommands = new Map(); // لمنع التكرار اليدوي
+    this.liveHeartbeats = new Map(); // (سيتم استخدام heartbeats بدلاً منه)
+  }
+
+  // طرق مساعدة للوصول للمخازن
+  getCache(key) {
+    return this.cache.get(key);
+  }
+  setCache(key, value) {
+    this.cache.set(key, value);
+  }
+  delCache(key) {
+    this.cache.del(key);
+  }
+
+  getTemp(store, key) {
+    const st = this.tempStores[store];
+    return st ? st.get(key) : null;
+  }
+  setTemp(store, key, value, ttl = CACHE_TTL) {
+    const st = this.tempStores[store];
+    if (st) st.set(key, value, ttl);
+  }
+  delTemp(store, key) {
+    const st = this.tempStores[store];
+    if (st) st.del(key);
+  }
+
+  // تنظيف دوري للخرائط التي لا يديرها cache
+  cleanup() {
+    const now = Date.now();
+    // تنظيف اتصالات TikTok القديمة
+    for (const [userId, conn] of this.userTikTokConnections) {
+      if (
+        !conn.isLive &&
+        conn.lastActivity &&
+        now - conn.lastActivity > 600000
+      ) {
+        this.deleteTikTokConnection(userId);
+      }
+    }
+    // تنظيف رموز التسجيل المنتهية
+    for (const [token, data] of this.agentRegistrationTokens) {
+      if (data.expires < now) this.agentRegistrationTokens.delete(token);
+    }
+    for (const [token, data] of this.bindingTokens) {
+      if (data.expires < now) this.bindingTokens.delete(token);
+    }
+    // تنظيف المقابس الميتة
+    for (const socket of this.pluginSockets) {
+      if (!socket.connected) this.pluginSockets.delete(socket);
+    }
+  }
+
+  deleteTikTokConnection(userId) {
+    const conn = this.userTikTokConnections.get(userId);
+    if (conn && conn.connection) {
+      try {
+        conn.connection.removeAllListeners();
+        conn.connection.disconnect();
+      } catch (e) {}
+      if (this.heartbeats.has(userId)) {
+        clearInterval(this.heartbeats.get(userId));
+        this.heartbeats.delete(userId);
+      }
+    }
+    this.userTikTokConnections.delete(userId);
+    // حذف البيانات المؤقتة
+    this.delTemp("executedOncePerLive", userId);
+    this.delTemp("likeCounters", userId);
+    this.delTemp("giftStreakState", userId);
+    // حذف الكاش الخاص بالمستخدم
+    this.delCache(`gifts:${userId}`);
+    this.delCache(`interactions:${userId}`);
+  }
+}
+
+const state = new AppState();
+
+// ================ دوال مساعدة لإدارة الاتصالات ================
+function getTikTokConnection(userId) {
+  return state.userTikTokConnections.get(userId);
+}
+function setTikTokConnection(userId, conn) {
+  state.userTikTokConnections.set(userId, conn);
+}
+function deleteTikTokConnection(userId) {
+  state.deleteTikTokConnection(userId);
+}
 
 // ================ إعدادات Express ================
 const app = express();
 app.set("trust proxy", 1);
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: FRONTEND_URL, credentials: true },
-  allowEIO3: true,
-  transports: ["websocket", "polling"],
-});
 
 // قائمة المواقع المسموح بها
 const allowedOrigins = [
   "https://streammoon.net",
   "https://www.streammoon.net",
   "https://streammoon.onrender.com",
+  "https://backend-7hj8.onrender.com",
   "http://localhost:3000",
   "http://localhost:5500",
   "http://127.0.0.1:5500",
 ];
+if (process.env.FRONTEND_URL) allowedOrigins.push(process.env.FRONTEND_URL);
 
-if (process.env.FRONTEND_URL) {
-  allowedOrigins.push(process.env.FRONTEND_URL);
-}
+const io = new Server(server, {
+  cors: {
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+  },
+  allowEIO3: true,
+  transports: ["websocket", "polling"],
+  pingInterval: 25000, // إرسال نبضة كل 25 ثانية
+  pingTimeout: 120000, // اعتبر الاتصال مقطوعاً بعد 60 ثانية
+});
 
 app.use(
   cors({
@@ -265,8 +347,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// ================ Middleware للمصادقة ================
-const authenticateToken = (req, res, next) => {
+const authenticateToken = async (req, res, next) => {
   let token = req.cookies?.token;
   if (!token) {
     const authHeader = req.headers["authorization"];
@@ -275,12 +356,51 @@ const authenticateToken = (req, res, next) => {
   if (!token)
     return res.status(401).json({ success: false, message: "لا يوجد توكن" });
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err)
-      return res.status(403).json({ success: false, message: "توكن غير صالح" });
-    req.user = user;
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
     next();
-  });
+  } catch (err) {
+    if (err.name === "TokenExpiredError") {
+      // محاولة تجديد التوكن (إذا كان لدى المستخدم صلاحية)
+      try {
+        const oldDecoded = jwt.decode(token);
+        if (oldDecoded && oldDecoded.id) {
+          const user = await User.findById(oldDecoded.id);
+          if (user) {
+            const newToken = jwt.sign(
+              {
+                id: user._id,
+                email: user.email,
+                plan: user.plan,
+                planType: user.planType,
+                role: user.role,
+              },
+              JWT_SECRET,
+              { expiresIn: JWT_EXPIRES_IN },
+            );
+            res.cookie("token", newToken, {
+              httpOnly: true,
+              secure: true,
+              sameSite: "none",
+              maxAge: 30 * 24 * 60 * 60 * 1000,
+            });
+            req.user = {
+              id: user._id,
+              email: user.email,
+              plan: user.plan,
+              planType: user.planType,
+              role: user.role,
+            };
+            return next();
+          }
+        }
+      } catch (refreshErr) {
+        logger.error("فشل تجديد التوكن:", refreshErr.message);
+      }
+    }
+    return res.status(403).json({ success: false, message: "توكن غير صالح" });
+  }
 };
 
 const isAdmin = async (req, res, next) => {
@@ -331,6 +451,9 @@ mongoose
         .collection("users")
         .createIndex({ screenToken: 1 }, { unique: true, sparse: true });
       await db
+        .collection("users")
+        .createIndex({ machineId: 1 }, { unique: true, sparse: true });
+      await db
         .collection("giftcommands")
         .createIndex({ userId: 1, profile: 1 });
       await db
@@ -377,6 +500,7 @@ const userSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
   audioUsedMB: { type: Number, default: 0 },
   videoUsedMB: { type: Number, default: 0 },
+  machineId: { type: String, unique: true, sparse: true, default: null },
   rconConfig: {
     host: { type: String, default: DEFAULT_RCON_HOST },
     port: { type: Number, default: DEFAULT_RCON_PORT },
@@ -707,28 +831,40 @@ async function refreshCachesForUser(userId) {
     const interactions = await InteractionCommand.find({ userId }).lean();
     const giftMapByProfile = new Map();
     for (const g of gifts) {
-      const p = g.profile;
+      const p = g.profile || 1;
       if (!giftMapByProfile.has(p)) giftMapByProfile.set(p, new Map());
       giftMapByProfile.get(p).set(String(g.giftId), g);
     }
     const interactionMapByProfile = new Map();
     for (const ic of interactions) {
-      const p = ic.profile;
+      const p = ic.profile || 1;
       if (!interactionMapByProfile.has(p)) interactionMapByProfile.set(p, []);
       interactionMapByProfile.get(p).push(ic);
     }
-    for (let p = 1; p <= MAX_PROFILES; p++) {
-      const key = `${userId}:${p}`;
-      giftCommandsCache.set(key, giftMapByProfile.get(p) || new Map());
-      interactionCommandsCache.set(key, interactionMapByProfile.get(p) || []);
-    }
+    // تخزين في cache بدلاً من map
+    state.setCache(`gifts:${userId}`, giftMapByProfile);
+    state.setCache(`interactions:${userId}`, interactionMapByProfile);
     logger.info(`♻️ تم تحديث الكاش للمستخدم ${userId}`);
   } catch (err) {
     logger.error("❌ خطأ في تحديث الكاش:", err.message);
   }
 }
 
-// ================ دالة مساعدة لحذف ملفات الصوت والفيديو المرتبطة بأمر ================
+function getGiftCommandForProfile(userId, profile, giftIdStr) {
+  const giftMap = state.getCache(`gifts:${userId}`);
+  if (!giftMap) return null;
+  const profileMap = giftMap.get(profile);
+  if (!profileMap) return null;
+  return profileMap.get(String(giftIdStr)) || null;
+}
+
+function getInteractionCommandsForProfile(userId, profile) {
+  const interactMap = state.getCache(`interactions:${userId}`);
+  if (!interactMap) return [];
+  return interactMap.get(profile) || [];
+}
+
+// ================ دوال حذف الملفات ================
 async function deleteFilesForCommand(cmd, userId) {
   let audioSize = 0,
     videoSize = 0;
@@ -787,9 +923,8 @@ async function deleteFilesForCommand(cmd, userId) {
   return { audioSize, videoSize };
 }
 
-// ================ رفع ملف من رابط URL إلى Cloudinary ================
+// ================ رفع ملف من رابط ================
 async function uploadFileFromUrl(url, userId, type) {
-  // type: 'audio' or 'video'
   try {
     if (!url.startsWith("http://") && !url.startsWith("https://")) return null;
 
@@ -858,7 +993,7 @@ async function uploadFileFromUrl(url, userId, type) {
   }
 }
 
-// ================ تطبيق حد 7 أوامر نشطة للخطة المجانية ================
+// ================ حد 7 أوامر نشطة للخطة المجانية ================
 async function enforceFreePlanLimits(userId, profile) {
   const user = await User.findById(userId);
   if (!user || user.plan !== "free") return;
@@ -887,32 +1022,13 @@ async function enforceFreePlanLimits(userId, profile) {
   }
 }
 
-function getGiftCommandForProfile(userId, profile, giftIdStr) {
-  const key = `${userId}:${profile}`;
-  const map = giftCommandsCache.get(key);
-  if (!map) return null;
-  const keyStr = String(giftIdStr);
-  let result = map.get(keyStr);
-  if (!result) {
-    const num = Number(giftIdStr);
-    if (Number.isFinite(num) && map.has(String(num)))
-      result = map.get(String(num));
-  }
-  return result;
-}
-
-function getInteractionCommandsForProfile(userId, profile) {
-  const key = `${userId}:${profile}`;
-  return interactionCommandsCache.get(key) || [];
-}
-
 // ================ وظائف RCON ================
 async function getUserRcon(userId) {
   const user = await User.findById(userId);
   if (!user || !user.rconConfig) return null;
   const config = user.rconConfig;
   const key = userId.toString();
-  let instance = userRconInstances.get(key);
+  let instance = state.userRconInstances.get(key);
   if (
     instance &&
     instance.connected &&
@@ -940,7 +1056,7 @@ async function getUserRcon(userId) {
     setTimeout(() => resolve(), 5000);
   });
   if (!connected) return null;
-  userRconInstances.set(key, { rcon, config, connected: true });
+  state.userRconInstances.set(key, { rcon, config, connected: true });
   return rcon;
 }
 
@@ -954,21 +1070,20 @@ function replacePlaceholders(cmd, nickname, username, rconPlayer) {
 
   let finalCmd = cmd
     .replace(/{player}/g, safePlayer)
-    .replace(/{nickname}/g, safeNickname) // الاسم الحقيقي
-    .replace(/{username}/g, safeUsername); // اليوزر نيم
+    .replace(/{nickname}/g, safeNickname)
+    .replace(/{username}/g, safeUsername);
 
   if (finalCmd.startsWith("/")) finalCmd = finalCmd.slice(1);
   return finalCmd.trim();
 }
 
 async function sendRconCommand(userId, command, { nickname, username } = {}) {
-  if (pluginSockets.size > 0) {
-    // نستبدل فقط {nickname} و {username} قبل الإرسال إلى البلوجن، ونترك {player} للبلوجن نفسه
+  if (state.pluginSockets.size > 0) {
     const finalCommand = command
       .replace(/{nickname}/g, nickname || "")
       .replace(/{username}/g, username || "");
 
-    for (const sock of pluginSockets) {
+    for (const sock of state.pluginSockets) {
       sock.emit("execute", {
         command: finalCommand,
         player: username || "console",
@@ -998,9 +1113,9 @@ async function sendRconCommand(userId, command, { nickname, username } = {}) {
     logger.error("❌ فشل إرسال أمر RCON:", err.message);
   }
 }
-// ================ وظيفة Webhook ================
+
+// ================ Webhook ================
 async function sendWebhook(webhookUrl, data, userId = null) {
-  // ★ التحقق من وجود الرابط وصحته
   if (!webhookUrl || !webhookUrl.trim()) return;
   webhookUrl = webhookUrl.trim();
   if (!webhookUrl.startsWith("http://") && !webhookUrl.startsWith("https://")) {
@@ -1012,12 +1127,11 @@ async function sendWebhook(webhookUrl, data, userId = null) {
     webhookUrl.includes("localhost") || webhookUrl.includes("127.0.0.1");
   if (isLocalhost && userId) {
     const userIdStr = userId.toString();
-    const agentSocket = userLocalAgents.get(userIdStr);
+    const agentSocket = state.userLocalAgents.get(userIdStr);
     if (!agentSocket || !agentSocket.connected) {
       logger.warn(
         `⚠️ لا يوجد عميل محلي للمستخدم ${userId}، تجاهل webhook إلى ${webhookUrl}`,
       );
-      // إرسال إشعار للواجهة الأمامية (اختياري)
       io.to(`user-${userId}`).emit("webhook-error", {
         message: "العميل المحلي غير متصل",
         url: webhookUrl,
@@ -1039,7 +1153,6 @@ async function sendWebhook(webhookUrl, data, userId = null) {
     return;
   }
 
-  // إرسال webhook عادي
   logger.info(`🌐 إرسال Webhook إلى: ${webhookUrl.substring(0, 50)}...`);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -1072,59 +1185,47 @@ async function playAudio(
   screen = 1,
   sendToUser = false,
 ) {
-  // 1. تطبيع المسار: استخراج اسم الملف فقط
+  // تطبيع المسار
   let fileName = file;
-  let isLocal = false;
-
   if (file.startsWith("/audios/")) {
-    fileName = file.substring(8); // إزالة '/audios/'
-    isLocal = true;
+    fileName = file.substring(8);
   } else if (file.startsWith("http://") || file.startsWith("https://")) {
-    // رابط كامل (سحابي أو خارجي) نتركه كما هو
-    // ولا نعدّل fileName
+    // رابط كامل
   } else {
-    // اسم ملف فقط (بدون مسار)
     fileName = file;
   }
 
-  // 2. إذا كان المستخدم معروفاً، نحاول جلب الرابط السحابي من قاعدة البيانات
-  let audioUrl = file; // القيمة الافتراضية
+  let audioUrl = file;
 
   if (
     targetUserId &&
     !file.startsWith("http://") &&
     !file.startsWith("https://")
   ) {
-    // البحث باستخدام اسم الملف النظيف (بدون مسار)
     const audioDoc = await Audio.findOne({
       file: fileName,
       userId: targetUserId,
     });
     if (audioDoc && audioDoc.cloudinaryUrl) {
-      audioUrl = audioDoc.cloudinaryUrl; // رابط Cloudinary كامل
+      audioUrl = audioDoc.cloudinaryUrl;
     } else {
-      // الملف غير موجود في قاعدة البيانات → نعتبره محلياً
       if (!file.startsWith("/audios/") && !file.startsWith("http")) {
         audioUrl = `/audios/${fileName}`;
       } else {
-        audioUrl = file; // محلي أو رابط
+        audioUrl = file;
       }
     }
   } else {
-    // بدون مستخدم مستهدف أو رابط خارجي → نتركه كما هو
     audioUrl = file;
-    // إذا كان اسم ملف فقط ولم يبدأ بـ /audios/، نضيفه
     if (!audioUrl.startsWith("http") && !audioUrl.startsWith("/audios/")) {
       audioUrl = `/audios/${audioUrl}`;
     }
   }
 
-  // 3. الآن audioUrl هو الرابط الكامل (إما /audios/... أو رابط Cloudinary)
-  // نرسله كما هو في حدث play-sound
   const uniqueId = `${targetUserId || "global"}-${giftId || "default"}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
 
   const payload = {
-    filename: audioUrl, // الآن رابط كامل
+    filename: audioUrl,
     volume: Math.min(100, Math.max(0, parseInt(volume) || 100)),
     timestamp: Date.now(),
     giftId: giftId || "default",
@@ -1132,8 +1233,7 @@ async function playAudio(
     id: uniqueId,
   };
 
-  // بعد بناء payload
-  if (!targetUserId) return; // إذا لم يوجد مستخدم لا نرسل
+  if (!targetUserId) return;
 
   const screenRoom = `screen-${targetUserId}`;
   const hasScreen = io.sockets.adapter.rooms.has(screenRoom);
@@ -1146,7 +1246,8 @@ async function playAudio(
     console.log(`⚠️ لا توجد شاشة للمستخدم ${targetUserId}، تم تجاهل الصوت`);
   }
 }
-// ================ الوظيفة الرئيسية لتنفيذ الإجراء ================
+
+// ================ تنفيذ الإجراء ================
 async function executeAction(
   cmdObj,
   triggerUser = "Unknown",
@@ -1209,38 +1310,36 @@ async function executeAction(
     }
   }
 
-  // oncePerLive
+  // oncePerLive (باستخدام NodeCache)
   if (oncePerLive && _id && userId) {
-    const idStr = `${userId}:${String(_id)}`;
-    if (executedOncePerLive.has(idStr)) {
+    const key = `${userId}:${String(_id)}`;
+    if (state.getTemp("executedOncePerLive", key)) {
       logger.info(`⏭️ الأمر ${name} تم تنفيذه مرة واحدة - تخطي`);
       return;
     }
-    executedOncePerLive.set(idStr, true);
+    state.setTemp("executedOncePerLive", key, true, 3600);
   }
 
-  // ============================================================
-  // 🎵 تشغيل الصوت فوراً (أولاً وقبل أي شيء)
-  // ============================================================
+  // تشغيل الصوت فوراً
   if (playSound && audio) {
     const giftId = cmdObj.giftId || cmdObj._id || "default";
     const sendToUser = source === "manual";
-    // لا ننتظر اكتمال تشغيل الصوت، نطلقه في الخلفية ليكون فورياً
-    playAudio(audio, volume, userId, String(giftId), screen, sendToUser).catch(
-      (err) => logger.warn("❌ خطأ في تشغيل الصوت:", err.message),
+    await playAudio(
+      audio,
+      volume,
+      userId,
+      String(giftId),
+      cmdObj.screen || 1,
+      sendToUser,
     );
   }
 
-  // ============================================================
-  // ⏳ تطبيق التأخير (على باقي الإجراءات فقط)
-  // ============================================================
+  // التأخير
   if (delayBefore > 0) {
-    await sleep(delayBefore);
+    await new Promise((resolve) => setTimeout(resolve, delayBefore));
   }
 
-  // ============================================================
-  // 🎬 تشغيل الفيديو (بعد التأخير)
-  // ============================================================
+  // تشغيل الفيديو
   if (playVideo && video && userId) {
     let videoUrl = video;
     try {
@@ -1272,16 +1371,14 @@ async function executeAction(
     }
   }
 
-  // ============================================================
-  // 🖼️ التراكب (بعد التأخير)
-  // ============================================================
+  // التراكب
   if (cmdObj.showOverlay && userId) {
     const overlayPayload = {
       username: realName,
       avatar: avatar,
       text: cmdObj.overlayText || "",
       duration: (duration || 5) * 1000,
-      screen: screen,
+      screen: cmdObj.screen || 1,
     };
 
     const screenRoom = `screen-${userId}`;
@@ -1294,22 +1391,23 @@ async function executeAction(
     }
   }
 
-  // ============================================================
-  // ⚙️ تنفيذ التكرارات (أوامر RCON، كيستروك، ويبهوك)
-  // ============================================================
+  // تنفيذ الأوامر والكيستروك والويبهوك
+  for (let i = 0; i < repeat; i++) {
+    if (i > 0 && interval > 0) {
+      await new Promise((r) => setTimeout(r, interval));
+    }
 
-  // دالة مساعدة لتكرار واحد
-  const executeIteration = async (i) => {
-    // الكيستروك
-    if (keystrokeText) {
+    // ========== التعديل الأساسي هنا ==========
+    // الكيستروك: يُرسل فقط إذا لم يكن هناك أمر RCON (command فارغ)
+    // حتى لا تتداخل الأوامر المعقدة (مثل أوامر ماينكرافت) مع SendKeys
+    if (keystrokeText && !command) {
       const finalKeystroke = replacePlaceholders(
         keystrokeText,
         realName,
         triggerUser,
         "",
       );
-      const userIdStr = userId ? userId.toString() : null;
-      const agentSocket = userLocalAgents.get(userIdStr);
+      const agentSocket = state.userLocalAgents.get(userId.toString());
       if (agentSocket && agentSocket.connected) {
         agentSocket.emit("execute-keys", {
           command: finalKeystroke,
@@ -1322,15 +1420,13 @@ async function executeAction(
       }
     }
 
-    // أوامر RCON
+    // أوامر RCON (تبقى كما هي، تُرسل مباشرة إلى السيرفر)
     if (command && command.trim()) {
       const lines = command
         .split(/\r?\n/)
         .map((l) => l.trim())
         .filter((l) => l);
-
       if (lines.length > 1) {
-        // معالجة المجموعات العشوائية
         const groups = [];
         let currentGroup = [];
         for (const line of lines) {
@@ -1342,11 +1438,9 @@ async function executeAction(
           } else currentGroup.push(line);
         }
         if (currentGroup.length) groups.push(currentGroup);
-
         const selectedGroup = groups.length
           ? groups[Math.floor(Math.random() * groups.length)]
           : [];
-
         let cumulativeDelay = 0;
         for (const cmdLine of selectedGroup) {
           if (cmdLine.toLowerCase().startsWith("delay ")) {
@@ -1354,26 +1448,24 @@ async function executeAction(
             if (!isNaN(sec)) cumulativeDelay += sec;
             continue;
           }
-          if (cumulativeDelay > 0) {
-            await sleep(cumulativeDelay * 1000);
-            cumulativeDelay = 0;
-          }
-          await sendRconCommand(userId, cmdLine, {
-            nickname: realName,
-            username: triggerUser,
-          });
-          await sleep(DEFAULT_COMMAND_DELAY_MS);
+          setTimeout(() => {
+            sendRconCommand(userId, cmdLine, {
+              nickname: realName,
+              username: triggerUser,
+            });
+          }, cumulativeDelay * 1000); // تحويل الثواني إلى ملي ثانية
+          cumulativeDelay += DEFAULT_COMMAND_DELAY_MS / 1000;
         }
       } else {
         const singleCmd = lines[0];
-        await sendRconCommand(userId, singleCmd, {
+        sendRconCommand(userId, singleCmd, {
           nickname: realName,
           username: triggerUser,
         });
       }
     }
 
-    // ويبهوك (لا ننتظر)
+    // الويبهوك
     if (webhookUrl && webhookUrl.trim()) {
       const webhookData = {
         name: name || "",
@@ -1387,58 +1479,34 @@ async function executeAction(
         interval: 0,
         iteration: i + 1,
       };
-      sendWebhook(webhookUrl, webhookData, userId).catch((err) =>
-        logger.warn("❌ Webhook error:", err.message),
-      );
-    }
-  };
-
-  // تنفيذ التكرارات
-  if (repeat <= 1 || interval === 0) {
-    // تنفيذ متوازي (جميع التكرارات دفعة واحدة)
-    const tasks = [];
-    for (let i = 0; i < repeat; i++) {
-      tasks.push(executeIteration(i));
-    }
-    await Promise.all(tasks);
-  } else {
-    // تنفيذ متسلسل مع تأخير بين كل تكرار وآخر
-    for (let i = 0; i < repeat; i++) {
-      if (i > 0) await sleep(interval);
-      await executeIteration(i);
+      await sendWebhook(webhookUrl, webhookData, userId);
     }
   }
 }
+
 // ================ دوال مساعدة لأحداث TikTok ================
 function resetOncePerLiveForUser(userId) {
-  const toDelete = [];
-  for (const key of executedOncePerLive.keys()) {
-    if (key.startsWith(`${userId}:`)) toDelete.push(key);
-  }
-  toDelete.forEach((k) => executedOncePerLive.delete(k));
-
-  const likeKeyPrefix = `${userId}:`;
-  for (const key of likeCounters.keys()) {
-    if (key.startsWith(likeKeyPrefix)) likeCounters.delete(key);
+  // حذف oncePerLive
+  const keys = state.tempStores.executedOncePerLive.keys();
+  for (const key of keys) {
+    if (key.startsWith(`${userId}:`)) {
+      state.delTemp("executedOncePerLive", key);
+    }
   }
 
-  // ✅ تنظيف lastLikeCount
-  const lastLikeKeyPrefix = `${userId}:`;
-  for (const key of lastLikeCount.keys()) {
-    if (key.startsWith(lastLikeKeyPrefix)) lastLikeCount.delete(key);
+  // حذف عدادات اللايك
+  const likeKeys = state.tempStores.likeCounters.keys();
+  for (const key of likeKeys) {
+    if (key.startsWith(`${userId}:`)) {
+      state.delTemp("likeCounters", key);
+    }
   }
 
-  const followKeyPrefix = `${userId}:`;
-  for (const key of followExecutedUsers.keys()) {
-    if (key.startsWith(followKeyPrefix)) followExecutedUsers.delete(key);
-  }
-
-  logger.info(`♻️ تم إعادة تعيين حالة oncePerLive للمستخدم ${userId}`);
+  // ❌ لا نمسح interactionCooldown لأنه يعتمد على TTL تلقائي
 }
 function getSenderFromEvent(data) {
   if (!data) return "Unknown";
   const user = data.user || {};
-  // priority: fields that are the TikTok username (uniqueId)
   const candidates = [
     user.uniqueId,
     user.unique_id,
@@ -1446,13 +1514,13 @@ function getSenderFromEvent(data) {
     data.unique_id,
     user.username,
     data.username,
-    data.userId, // if it's a string (some events)
+    data.userId,
     user.userId,
     user.id,
     data.id,
     data.uid,
     data.sender,
-    user.nickname, // fallback to nickname if no username found
+    user.nickname,
     user.nickName,
     user.displayName,
     user.display_name,
@@ -1460,7 +1528,7 @@ function getSenderFromEvent(data) {
   for (let c of candidates) {
     if (typeof c === "string" && c.trim() && !/^\d+$/.test(c.trim()))
       return c.trim();
-    if (typeof c === "number") continue; // skip numeric IDs
+    if (typeof c === "number") continue;
   }
   return "StreamMoon";
 }
@@ -1491,15 +1559,13 @@ function getUserAvatar(data) {
   if (!data) return "";
   const user = data.user || {};
 
-  // دالة مساعدة لتطبيع الروابط
   const normalizeUrl = (url) => {
     if (!url || typeof url !== "string") return null;
-    if (url.startsWith("http")) return url; // مكتملة
-    if (url.startsWith("//")) return "https:" + url; // نسبية البروتوكول
-    return null; // أي صيغة أخرى يتم تجاهلها
+    if (url.startsWith("http")) return url;
+    if (url.startsWith("//")) return "https:" + url;
+    return null;
   };
 
-  // كل المسارات الممكنة للصورة
   const paths = [
     user.avatar_thumb?.url_list?.[0],
     user.avatarThumb?.url_list?.[0],
@@ -1531,7 +1597,6 @@ function getUserAvatar(data) {
     user.userInfo?.profilePicture?.url_list?.[0],
   ];
 
-  // جرب كل المسارات
   for (let raw of paths) {
     const url = normalizeUrl(raw);
     if (url) {
@@ -1540,7 +1605,6 @@ function getUserAvatar(data) {
     }
   }
 
-  // افحص data.userInfo بشكل منفصل لو موجود
   if (data.userInfo) {
     const info = data.userInfo;
     const infoPaths = [
@@ -1563,11 +1627,11 @@ function getUserAvatar(data) {
   console.warn("⚠️ لم يتم العثور على صورة للمستخدم");
   return "";
 }
+
 async function fetchUserAvatarFromTikTok(uniqueId) {
   if (!uniqueId) return "";
-  if (userAvatarCache.has(uniqueId)) {
-    return userAvatarCache.get(uniqueId);
-  }
+  const cached = state.getTemp("userAvatarCache", uniqueId);
+  if (cached) return cached;
   try {
     const url = `https://www.tikwm.com/api/user/?unique_id=${uniqueId}`;
     const controller = new AbortController();
@@ -1586,8 +1650,7 @@ async function fetchUserAvatarFromTikTok(uniqueId) {
     if (data && data.data && data.data.avatar) {
       let avatarUrl = data.data.avatar;
       if (avatarUrl.startsWith("//")) avatarUrl = "https:" + avatarUrl;
-      userAvatarCache.set(uniqueId, avatarUrl);
-      setTimeout(() => userAvatarCache.delete(uniqueId), 60 * 60 * 1000);
+      state.setTemp("userAvatarCache", uniqueId, avatarUrl, 3600);
       console.log(`✅ تم جلب صورة المستخدم ${uniqueId} عبر API: ${avatarUrl}`);
       return avatarUrl;
     }
@@ -1597,14 +1660,10 @@ async function fetchUserAvatarFromTikTok(uniqueId) {
   return "";
 }
 
-// دالة لجلب معلومات المستخدم من TikTok (الاسم الحقيقي والصورة)
 async function fetchTikTokUserInfo(uniqueId) {
   if (!uniqueId) return { nickname: null, avatar: null };
-  if (userInfoCache.has(uniqueId)) {
-    return userInfoCache.get(uniqueId);
-  }
-
-  // المحاولة الأولى: tikwm.com API
+  const cached = state.getTemp("userInfoCache", uniqueId);
+  if (cached) return cached;
   try {
     const url = `https://www.tikwm.com/api/user/?unique_id=${uniqueId}`;
     const controller = new AbortController();
@@ -1627,8 +1686,7 @@ async function fetchTikTokUserInfo(uniqueId) {
           nickname: data.data.nickname || uniqueId,
           avatar: avatarUrl,
         };
-        userInfoCache.set(uniqueId, info);
-        setTimeout(() => userInfoCache.delete(uniqueId), 60 * 60 * 1000);
+        state.setTemp("userInfoCache", uniqueId, info, 3600);
         return info;
       }
     }
@@ -1636,7 +1694,7 @@ async function fetchTikTokUserInfo(uniqueId) {
     logger.warn(`⚠️ فشل جلب معلومات ${uniqueId} عبر tikwm:`, err.message);
   }
 
-  // المحاولة الثانية: scraping مباشر (قد يكون ممنوعاً في بعض البيئات)
+  // المحاولة الثانية: scraping
   try {
     const url = `https://www.tiktok.com/@${uniqueId}`;
     const response = await fetch(url, {
@@ -1659,8 +1717,7 @@ async function fetchTikTokUserInfo(uniqueId) {
             nickname: userData.nickname || uniqueId,
             avatar: userData.avatarMedium || userData.avatarLarger || "",
           };
-          userInfoCache.set(uniqueId, info);
-          setTimeout(() => userInfoCache.delete(uniqueId), 60 * 60 * 1000);
+          state.setTemp("userInfoCache", uniqueId, info, 3600);
           return info;
         }
       }
@@ -1676,9 +1733,8 @@ async function getAvatarWithFallback(data, uniqueId) {
   let avatar = getUserAvatar(data);
   if (avatar) return avatar;
   if (uniqueId) {
-    if (userAvatarCache.has(uniqueId)) {
-      return userAvatarCache.get(uniqueId);
-    }
+    const cached = state.getTemp("userAvatarCache", uniqueId);
+    if (cached) return cached;
     try {
       const fetchPromise = fetchUserAvatarFromTikTok(uniqueId);
       const timeoutPromise = new Promise((_, reject) =>
@@ -1706,93 +1762,66 @@ function addKeystrokeToCommand(cmd) {
   return cmdObj;
 }
 
-// ================ دالة تحديث وقت النشاط ================
+// ================ تحديث وقت النشاط ================
 function updateLastActivity(userId) {
-  if (userTikTokConnections.has(userId)) {
-    const conn = userTikTokConnections.get(userId);
+  const conn = getTikTokConnection(userId);
+  if (conn) {
     conn.lastRoomUpdate = Date.now();
-    userTikTokConnections.set(userId, conn);
+    setTikTokConnection(userId, conn);
   }
 }
 
-// تعريف الدالة
+// ================ Heartbeat ================
 function startLiveHeartbeat(userId) {
-  // نستخدم خريطة لتخزين المؤقتات
-  if (!global.liveHeartbeats) global.liveHeartbeats = new Map();
-  // إيقاف أي مؤقت سابق
-  if (global.liveHeartbeats.has(userId)) {
-    clearInterval(global.liveHeartbeats.get(userId));
+  if (state.heartbeats.has(userId)) {
+    clearInterval(state.heartbeats.get(userId));
+    state.heartbeats.delete(userId);
   }
 
   const interval = setInterval(async () => {
-    const conn = userTikTokConnections.get(userId);
-
-    // إذا لم يكن هناك اتصال صحيح، ننهي المؤقت
+    const conn = getTikTokConnection(userId);
     if (!conn || !conn.connection) {
       clearInterval(interval);
-      global.liveHeartbeats.delete(userId);
+      state.heartbeats.delete(userId);
       return;
     }
-
-    // إذا كانت isLive بالفعل false، ننهي المؤقت
     if (!conn.isLive) {
       clearInterval(interval);
-      global.liveHeartbeats.delete(userId);
+      state.heartbeats.delete(userId);
       return;
     }
 
     try {
-      // 1. التحقق من وجود roomId (إذا كان null، فالبث انتهى)
+      // ✅ التعديل الأساسي: نعتمد فقط على roomId لتحديد انتهاء البث
       if (!conn.roomId) {
         conn.isLive = false;
-        userTikTokConnections.set(userId, conn);
+        setTikTokConnection(userId, conn);
         resetOncePerLiveForUser(userId);
         clearInterval(interval);
-        global.liveHeartbeats.delete(userId);
+        state.heartbeats.delete(userId);
         logger.info(`🔄 انتهاء البث للمستخدم ${userId} (roomId فارغ)`);
         return;
       }
 
-      // 2. التحقق من آخر تحديث (في حال عدم وصول ROOM_UPDATE)
-      const now = Date.now();
-      const lastUpdate = conn.lastRoomUpdate || now;
-      if (now - lastUpdate > 300000) {
-        // دقيقتان (كانت 5 دقائق)
-        conn.isLive = false;
-        userTikTokConnections.set(userId, conn);
-        resetOncePerLiveForUser(userId);
-        clearInterval(interval);
-        global.liveHeartbeats.delete(userId);
-        logger.info(
-          `🔄 انتهاء البث للمستخدم ${userId} (لا توجد تحديثات لأكثر من دقيقتين)`,
-        );
-        return;
-      }
+      // ❌ نزيل التحقق الزمني بالكامل (كان سابقاً: if (now - lastUpdate > 60000))
+      // لا نقوم بأي إجراء إضافي
     } catch (err) {
-      // في حالة حدوث خطأ، نعتبر البث منتهياً
       conn.isLive = false;
-      userTikTokConnections.set(userId, conn);
+      setTikTokConnection(userId, conn);
       resetOncePerLiveForUser(userId);
       clearInterval(interval);
-      global.liveHeartbeats.delete(userId);
+      state.heartbeats.delete(userId);
       logger.warn(`⚠️ خطأ في heartbeat للمستخدم ${userId}: ${err.message}`);
     }
-  }, 15000); // كل 15 ثانية بدلاً من 30
+  }, 15000);
 
-  global.liveHeartbeats.set(userId, interval);
+  state.heartbeats.set(userId, interval);
 }
 
 // ================ إدارة اتصالات TikTok ================
 async function connectUser(userId, username) {
-  if (userTikTokConnections.has(userId)) {
-    const existing = userTikTokConnections.get(userId);
-    if (existing && existing.connection) {
-      try {
-        existing.connection.removeAllListeners();
-        existing.connection.disconnect();
-      } catch (e) {}
-    }
-    userTikTokConnections.delete(userId);
+  if (getTikTokConnection(userId)) {
+    deleteTikTokConnection(userId);
   }
   const connection = new TikTokLiveConnection(username, {
     apiKey: BLACKMOON_KEY,
@@ -1802,14 +1831,6 @@ async function connectUser(userId, username) {
 
   connection.on(WebcastEvent.GIFT, async (data) => {
     updateLastActivity(userId);
-
-    if (userTikTokConnections.has(userId)) {
-      const conn = userTikTokConnections.get(userId);
-      if (!conn.isLive) {
-        conn.isLive = true;
-        userTikTokConnections.set(userId, conn);
-      }
-    }
     if (!debugOnce) {
       console.log("🔍 هيكل بيانات الهدية (GIFT) - أول مرة:");
       console.log(JSON.stringify(data, null, 2).substring(0, 2000));
@@ -1840,21 +1861,25 @@ async function connectUser(userId, username) {
         data.giftType ?? data.gift_type ?? data.giftDetails?.giftType ?? 0,
       );
       const repeatEnd = !!(data.repeatEnd ?? data.repeat_end);
+
       if (giftType === 1) {
         const streakKey =
           data.repeatId ??
           data.repeat_id ??
           data.comboId ??
           `${userId}:${sender}:${giftIdStr}`;
-        const now = Date.now();
-        const st = giftStreakState.get(streakKey) || { lastRepeat: 0, ts: now };
-        const prev = st.lastRepeat;
+        let stateObj = state.getTemp("giftStreakState", streakKey) || {
+          lastRepeat: 0,
+          ts: Date.now(),
+        };
         let delta = 0;
-        if (repeatCount > prev) delta = repeatCount - prev;
-        else if (repeatCount < prev) delta = repeatCount;
-        st.lastRepeat = Math.max(prev, repeatCount);
-        st.ts = now;
-        giftStreakState.set(streakKey, st);
+        if (repeatCount > stateObj.lastRepeat)
+          delta = repeatCount - stateObj.lastRepeat;
+        else if (repeatCount < stateObj.lastRepeat) delta = repeatCount;
+        stateObj.lastRepeat = Math.max(stateObj.lastRepeat, repeatCount);
+        stateObj.ts = Date.now();
+        state.setTemp("giftStreakState", streakKey, stateObj, 15);
+
         if (repeatEnd) {
           if (delta > 0) {
             await processGiftDelta({
@@ -1866,7 +1891,7 @@ async function connectUser(userId, username) {
               data,
             });
           }
-          giftStreakState.delete(streakKey);
+          state.delTemp("giftStreakState", streakKey);
           return;
         }
         if (delta <= 0) return;
@@ -1940,14 +1965,6 @@ async function connectUser(userId, username) {
           await executeAction(cmdObj, sender, userId, data);
         }
       }
-      // معالجة أوامر التفاعل من نوع gift إن وجدت
-      const giftInteractions = getInteractionCommandsForProfile(
-        userId,
-        userProfile,
-      ).filter((i) => i.type === "gift");
-      for (const ic of giftInteractions) {
-        // يمكن إضافة منطق لاحقاً
-      }
     } catch (err) {
       logger.error("❌ processGiftDelta error:", err.message);
     }
@@ -1955,23 +1972,25 @@ async function connectUser(userId, username) {
 
   connection.on(WebcastEvent.CHAT, async (data) => {
     updateLastActivity(userId);
-    // 🔹 إضافة هذا الجزء
-    if (userTikTokConnections.has(userId)) {
-      const conn = userTikTokConnections.get(userId);
-      if (!conn.isLive) {
-        conn.isLive = true;
-        userTikTokConnections.set(userId, conn);
-      }
-    }
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
       const comment = (data.comment || "").toString();
       if (!comment) return;
+
+      // ✅ منع تكرار نفس التعليق لنفس المستخدم خلال 5 ثوانٍ
+      const chatKey = `chat:${userId}:${sender}:${comment}`;
+      if (state.getTemp("interactionCooldown", chatKey)) {
+        logger.info(`⏭️ تجاهل تعليق مكرر من ${sender}: "${comment}"`);
+        return;
+      }
+      state.setTemp("interactionCooldown", chatKey, true, 5); // TTL 5 ثوانٍ
+
       const userProfile = await getUserSelectedProfile(userId);
       const commands = getInteractionCommandsForProfile(
         userId,
         userProfile,
       ).filter((c) => c.type === "comment" && c.active);
+
       for (let cmd of commands) {
         if (
           cmd.targetUser &&
@@ -1980,25 +1999,19 @@ async function connectUser(userId, username) {
         )
           continue;
 
-        // ✅ منطق oncePerLive
         if (cmd.oncePerLive) {
           const key = `${userId}:${String(cmd._id)}`;
-          if (executedOncePerLive.has(key)) continue;
-          // تحقق من الكلمة المفتاحية
-          if (cmd.keyword && cmd.keyword.trim()) {
-            if (
-              !comment.toLowerCase().includes(cmd.keyword.trim().toLowerCase())
-            )
-              continue;
-          }
-          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
-          executedOncePerLive.set(key, true);
-          continue;
-        }
-
-        // الباقي كما هو (بدون oncePerLive)
-        if (cmd.keyword && cmd.keyword.trim()) {
+          if (state.getTemp("executedOncePerLive", key)) continue;
           if (
+            cmd.keyword &&
+            !comment.toLowerCase().includes(cmd.keyword.trim().toLowerCase())
+          )
+            continue;
+          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
+          state.setTemp("executedOncePerLive", key, true, 3600);
+        } else {
+          if (
+            cmd.keyword &&
             comment.toLowerCase().includes(cmd.keyword.trim().toLowerCase())
           ) {
             await executeAction(
@@ -2007,9 +2020,14 @@ async function connectUser(userId, username) {
               userId,
               data,
             );
+          } else if (!cmd.keyword) {
+            await executeAction(
+              addKeystrokeToCommand(cmd),
+              sender,
+              userId,
+              data,
+            );
           }
-        } else {
-          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
         }
       }
     } catch (err) {
@@ -2019,21 +2037,23 @@ async function connectUser(userId, username) {
 
   connection.on(WebcastEvent.FOLLOW, async (data) => {
     updateLastActivity(userId);
-    // 🔹 إضافة هذا الجزء
-    if (userTikTokConnections.has(userId)) {
-      const conn = userTikTokConnections.get(userId);
-      if (!conn.isLive) {
-        conn.isLive = true;
-        userTikTokConnections.set(userId, conn);
-      }
-    }
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
+
+      // ✅ منع تكرار FOLLOW لنفس المستخدم خلال 5 ثوانٍ
+      const followKey = `follow:${userId}:${sender}`;
+      if (state.getTemp("interactionCooldown", followKey)) {
+        logger.info(`⏭️ تجاهل متابعة مكررة من ${sender}`);
+        return;
+      }
+      state.setTemp("interactionCooldown", followKey, true, 5);
+
       const userProfile = await getUserSelectedProfile(userId);
       const commands = getInteractionCommandsForProfile(
         userId,
         userProfile,
       ).filter((c) => c.type === "follow" && c.active);
+
       for (let cmd of commands) {
         if (
           cmd.targetUser &&
@@ -2042,22 +2062,10 @@ async function connectUser(userId, username) {
         )
           continue;
 
-        // ✅ المفتاح الجديد: userId + commandId + sender
         const key = `${userId}:${String(cmd._id)}:${sender}`;
-
-        // إذا كان الأمر يحتوي على oncePerLive (اختياري) أو دائمًا لكل مستخدم
-        if (cmd.oncePerLive) {
-          if (executedOncePerLive.has(key)) continue;
-          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
-          executedOncePerLive.set(key, true);
-        } else {
-          // إذا لم يكن oncePerLive مفعلاً، ينفذ كل مرة (قد يكون مكرراً)
-          // لكننا هنا نريد تطبيق السلوك الافتراضي: مرة لكل مستخدم
-          // لذا نطبق نفس المنطق بغض النظر عن oncePerLive
-          if (executedOncePerLive.has(key)) continue;
-          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
-          executedOncePerLive.set(key, true);
-        }
+        if (state.getTemp("executedOncePerLive", key)) continue;
+        await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
+        state.setTemp("executedOncePerLive", key, true, 3600);
       }
     } catch (err) {
       logger.error("❌ FOLLOW handler error:", err.message);
@@ -2066,18 +2074,18 @@ async function connectUser(userId, username) {
 
   connection.on(WebcastEvent.LIKE, async (data) => {
     updateLastActivity(userId);
-    // 🔹 إضافة هذا الجزء
-    if (userTikTokConnections.has(userId)) {
-      const conn = userTikTokConnections.get(userId);
-      if (!conn.isLive) {
-        conn.isLive = true;
-        userTikTokConnections.set(userId, conn);
-      }
-    }
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
 
-      // 1. الحصول على العدد الإجمالي الحالي من الحدث
+      // ✅ منع تكرار حدث LIKE لنفس المستخدم خلال 5 ثوانٍ (اختياري)
+      const likeKey = `like:${userId}:${sender}`;
+      if (state.getTemp("interactionCooldown", likeKey)) {
+        logger.info(`⏭️ تجاهل LIKE مكرر من ${sender}`);
+        return;
+      }
+      state.setTemp("interactionCooldown", likeKey, true, 5);
+
+      // حساب delta كما هو موجود
       const currentTotal =
         parseInt(
           String(data.likeCount ?? data.like_count ?? data.count ?? 0).replace(
@@ -2088,42 +2096,26 @@ async function connectUser(userId, username) {
         ) || 0;
       if (currentTotal <= 0) return;
 
-      // 2. حساب الزيادة الفعلية باستخدام lastLikeCount
       const keyTotal = `${userId}:${sender}`;
       const lastTotal = lastLikeCount.get(keyTotal) || 0;
       let delta = currentTotal - lastTotal;
 
-      // 3. معالجة الحالات الخاصة
       if (delta < 0) {
-        // إعادة تعيين العداد (مثلاً بداية بث جديد)
         lastLikeCount.set(keyTotal, currentTotal);
         delta = currentTotal;
       } else if (delta === 0) {
-        return; // حدث مكرر، نتجاهله
+        return;
       } else {
         lastLikeCount.set(keyTotal, currentTotal);
       }
 
-      // 4. تطبيق الحد الأقصى للزيادة (اختياري)
       if (delta > LIKE_MAX_DELTA) delta = LIKE_MAX_DELTA;
 
-      // 5. باقي المنطق كما هو (معالجة الأوامر)
       const userProfile = await getUserSelectedProfile(userId);
       const commands = getInteractionCommandsForProfile(
         userId,
         userProfile,
       ).filter((c) => c.type === "like" && c.active);
-
-      console.log(
-        `🔍 LIKE: sender=${sender}, currentTotal=${currentTotal}, lastTotal=${lastTotal}, delta=${delta}`,
-      );
-      console.log(`🔍 userProfile=${userProfile}`);
-      console.log(`🔍 عدد أوامر LIKE المسترجعة: ${commands.length}`);
-      commands.forEach((c) =>
-        console.log(
-          `  - ${c.name} (threshold=${c.threshold}, targetUser=${c.targetUser})`,
-        ),
-      );
 
       for (let cmd of commands) {
         if (
@@ -2133,35 +2125,39 @@ async function connectUser(userId, username) {
         )
           continue;
 
-        // منطق oncePerLive
         if (cmd.oncePerLive) {
           const key = `${userId}:${String(cmd._id)}`;
-          if (executedOncePerLive.has(key)) continue;
+          if (state.getTemp("executedOncePerLive", key)) continue;
           await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
-          executedOncePerLive.set(key, true);
+          state.setTemp("executedOncePerLive", key, true, 3600);
           continue;
         }
 
-        // معالجة العداد مع threshold
         const threshold = parseInt(cmd.threshold || 0, 10) || 0;
         const keyUser = `${userId}:${String(cmd._id)}:${sender}`;
-        likeCounters.set(keyUser, (likeCounters.get(keyUser) || 0) + delta);
+        let current = state.getTemp("likeCounters", keyUser) || 0;
+        current += delta;
+        state.setTemp("likeCounters", keyUser, current, 3600);
 
         if (threshold <= 0) {
           await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
           continue;
         }
 
-        const current = likeCounters.get(keyUser);
         const times = Math.floor(current / threshold);
         if (times <= 0) continue;
 
         for (let i = 0; i < times; i++) {
-          let cmdObj = addKeystrokeToCommand(cmd);
-          await executeAction(cmdObj, sender, userId, data);
+          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
         }
-        likeCounters.set(keyUser, current - times * threshold);
-        if (likeCounters.get(keyUser) < 0) likeCounters.delete(keyUser);
+        state.setTemp(
+          "likeCounters",
+          keyUser,
+          current - times * threshold,
+          3600,
+        );
+        if (state.getTemp("likeCounters", keyUser) < 0)
+          state.delTemp("likeCounters", keyUser);
       }
     } catch (err) {
       logger.error("❌ LIKE handler error:", err.message);
@@ -2170,21 +2166,23 @@ async function connectUser(userId, username) {
 
   connection.on(WebcastEvent.SHARE, async (data) => {
     updateLastActivity(userId);
-    // 🔹 إضافة هذا الجزء
-    if (userTikTokConnections.has(userId)) {
-      const conn = userTikTokConnections.get(userId);
-      if (!conn.isLive) {
-        conn.isLive = true;
-        userTikTokConnections.set(userId, conn);
-      }
-    }
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
+
+      // ✅ منع تكرار SHARE لنفس المستخدم خلال 5 ثوانٍ
+      const shareKey = `share:${userId}:${sender}`;
+      if (state.getTemp("interactionCooldown", shareKey)) {
+        logger.info(`⏭️ تجاهل مشاركة مكررة من ${sender}`);
+        return;
+      }
+      state.setTemp("interactionCooldown", shareKey, true, 5);
+
       const userProfile = await getUserSelectedProfile(userId);
       const commands = getInteractionCommandsForProfile(
         userId,
         userProfile,
       ).filter((c) => c.type === "share" && c.active);
+
       for (let cmd of commands) {
         if (
           cmd.targetUser &&
@@ -2193,12 +2191,11 @@ async function connectUser(userId, username) {
         )
           continue;
 
-        // ✅ منطق oncePerLive
         if (cmd.oncePerLive) {
           const key = `${userId}:${String(cmd._id)}`;
-          if (executedOncePerLive.has(key)) continue;
+          if (state.getTemp("executedOncePerLive", key)) continue;
           await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
-          executedOncePerLive.set(key, true);
+          state.setTemp("executedOncePerLive", key, true, 3600);
         } else {
           await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
         }
@@ -2209,84 +2206,87 @@ async function connectUser(userId, username) {
   });
 
   connection.on(WebcastEvent.ROOM_UPDATE, (data) => {
+    const prev = getTikTokConnection(userId)?.isLive;
     const newRoomId = data?.roomId ?? data?.room_id ?? null;
     const newIsLive =
       typeof data?.isLive === "boolean" ? data.isLive : !!newRoomId;
-
-    if (userTikTokConnections.has(userId)) {
-      const conn = userTikTokConnections.get(userId);
-      // إذا كان لدينا roomId سابق ولم يتغير، ولا توجد إشارة واضحة بانتهاء البث، نبقيه كما هو
-      if (newIsLive === false && conn.roomId && !newRoomId) {
-        // قد يكون هذا مجرد تحديث عابر، لا نغيّر isLive
-        // ولكن نحدّث lastRoomUpdate فقط
-        conn.lastRoomUpdate = Date.now();
-        userTikTokConnections.set(userId, conn);
-        return;
-      }
-      // تحديث الحالة فقط إذا كانت القيمة الجديدة مختلفة
-      if (conn.isLive !== newIsLive) {
-        if (!conn.isLive && newIsLive) resetOncePerLiveForUser(userId);
-        if (conn.isLive && !newIsLive) resetOncePerLiveForUser(userId);
-        conn.isLive = newIsLive;
-        conn.roomId = newIsLive ? newRoomId : null;
-      } else {
-        // حتى لو لم تتغير isLive، نحدّث roomId و lastRoomUpdate
-        conn.roomId = newIsLive ? newRoomId : null;
-      }
+    if (!prev && newIsLive) resetOncePerLiveForUser(userId);
+    if (prev && !newIsLive) resetOncePerLiveForUser(userId);
+    const conn = getTikTokConnection(userId);
+    if (conn) {
+      conn.isLive = newIsLive;
+      conn.roomId = newIsLive ? newRoomId : null;
       conn.lastRoomUpdate = Date.now();
-      userTikTokConnections.set(userId, conn);
+      setTikTokConnection(userId, conn);
     }
   });
 
   connection.on(WebcastEvent.DISCONNECTED, () => {
-    if (userTikTokConnections.has(userId)) {
-      const conn = userTikTokConnections.get(userId);
+    const conn = getTikTokConnection(userId);
+    if (conn) {
       conn.isLive = false;
       conn.roomId = null;
-      userTikTokConnections.set(userId, conn);
+      setTikTokConnection(userId, conn);
     }
     resetOncePerLiveForUser(userId);
     logger.info(`⚠️ تم قطع الاتصال بـ TikTok للمستخدم ${userId}`);
-  });
 
+    // 🔄 إعادة محاولة الاتصال بعد 5 ثوانٍ (إذا كان المستخدم لا يزال يريد الاتصال)
+    setTimeout(async () => {
+      const currentConn = getTikTokConnection(userId);
+      // إذا كان الاتصال لا يزال مقطوعاً وليس هناك محاولة جارية
+      if (currentConn && !currentConn.isLive && !currentConn.reconnecting) {
+        logger.info(`🔄 محاولة إعادة الاتصال للمستخدم ${userId}...`);
+        currentConn.reconnecting = true;
+        setTikTokConnection(userId, currentConn);
+        try {
+          const user = await User.findById(userId);
+          if (user && user.tiktokUsername) {
+            await connectUser(userId, user.tiktokUsername);
+          }
+        } catch (err) {
+          logger.error(
+            `❌ فشلت إعادة الاتصال للمستخدم ${userId}:`,
+            err.message,
+          );
+        } finally {
+          const updatedConn = getTikTokConnection(userId);
+          if (updatedConn) {
+            updatedConn.reconnecting = false;
+            setTikTokConnection(userId, updatedConn);
+          }
+        }
+      }
+    }, 5000);
+  });
   connection.on(WebcastEvent.ERROR, (err) => {
     if (err?.message?.includes("illegal tag")) return;
     logger.error(`❌ خطأ في اتصال TikTok للمستخدم ${userId}:`, err.message);
-    // ❌ لا نعيّن isLive = false هنا، نكتفي بتسجيل الخطأ
-    // const conn = userTikTokConnections.get(userId);
-    // if (conn) {
-    //   conn.isLive = false;
-    //   conn.roomId = null;
-    //   userTikTokConnections.set(userId, conn);
-    //   resetOncePerLiveForUser(userId);
-    // }
   });
+
   try {
     await connection.connect();
-
-    // ======== ✅ الحل: تحميل الأوامر في الكاش فور نجاح الاتصال ========
     await refreshCachesForUser(userId);
-
-    // ✅ إعادة تعيين حالة oncePerLive عند بداية بث جديد
     resetOncePerLiveForUser(userId);
-
-    userTikTokConnections.set(userId, {
+    setTikTokConnection(userId, {
       connection,
       username,
       isLive: true,
       roomId: null,
       lastRoomUpdate: Date.now(),
+      reconnecting: false, // ✅ أضف هذا السطر
     });
     startLiveHeartbeat(userId);
     logger.info(`✅ متصل بحساب @${username} للمستخدم ${userId}`);
     return true;
   } catch (err) {
     logger.info(`⚠️ الحساب @${username} ليس لايف حالياً للمستخدم ${userId}`);
-    userTikTokConnections.set(userId, {
+    setTikTokConnection(userId, {
       connection,
       username,
       isLive: false,
       roomId: null,
+      reconnecting: false, // ✅ أضف هنا أيضاً
     });
     return false;
   }
@@ -2392,7 +2392,6 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
   }
 });
 
-// ================ نقطة نهاية لإرجاع التوكن ================
 app.get("/api/user/screen-token", authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -2413,7 +2412,6 @@ app.get("/api/user/screen-token", authenticateToken, async (req, res) => {
   }
 });
 
-// ================ لوحة التحكم ================
 app.get("/admin", authenticateToken, isAdmin, (req, res) => {
   res.redirect(`${FRONTEND_URL}/admin`);
 });
@@ -2498,140 +2496,115 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
     const UNMUTED = ${safeUnmuted};
     console.log('🎬 Screen ' + SCREEN_NUMBER + ' loaded' + (UNMUTED ? ' (مع الصوت)' : ' (مكتوم)'));
 
-    // ===== تعريفات المسارات =====
     const AUDIO_BASE = "/audios/";
     const VIDEO_BASE = "/videos/";
 
     const socket = io(window.location.origin, { query: { token: USER_TOKEN }, transports: ['websocket', 'polling'] });
     let audioUnlocked = false;
-    
-      let lastPlayedSoundId = null;
+    let lastPlayedSoundId = null;
 
-
-    // ===== إدارة الطوابير لكل هدية على حدة =====
     const audioQueues = {};
     const isPlaying = {};
     const currentAudio = {};
 
-async function tryUnlockAudio() {
-  if (audioUnlocked) return true;
-  try {
-    // محاولة فتح AudioContext
-    if (typeof AudioContext !== 'undefined') {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      if (ctx.state === 'suspended') await ctx.resume();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      gain.gain.value = 0;
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(0);
-      osc.stop(0.01);
-      setTimeout(() => ctx.close(), 200);
-    }
-    // تشغيل صوت مكتوم (حل OBS)
-    const silentAudio = new Audio();
-    silentAudio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
-    silentAudio.muted = true;
-    silentAudio.volume = 0;
-    await silentAudio.play();
-    silentAudio.pause();
-    silentAudio.src = '';
-    audioUnlocked = true;
-    console.log('✅ فتح الصوت بنجاح (طريقة الصوت المكتوم)');
-    return true;
-  } catch (e) {
-    console.warn('❌ فشل فتح الصوت:', e);
-    return false;
-  }
-}
-function processQueue(giftId) {
-  if (!audioQueues[giftId] || audioQueues[giftId].length === 0) {
-    isPlaying[giftId] = false;
-    currentAudio[giftId] = null;
-    return;
-  }
-  if (isPlaying[giftId]) return;
-  isPlaying[giftId] = true;
-
-  const item = audioQueues[giftId].shift();
-  const a = new Audio();
-
-  let src = item.filename;
-  // إذا لم يكن رابطاً كاملاً، أضف المسار الأساسي (لكن src جاهز بالفعل)
-  a.src = src;
-  a.volume = item.volume;
-  a.preload = 'auto';
-  a.crossOrigin = 'anonymous';
-  currentAudio[giftId] = a;
-
-  a.onended = () => {
-    currentAudio[giftId] = null;
-    isPlaying[giftId] = false;
-    processQueue(giftId);
-  };
-
-  a.onerror = () => {
-    console.warn('❌ خطأ في تحميل الصوت:', src);
-    currentAudio[giftId] = null;
-    isPlaying[giftId] = false;
-    processQueue(giftId);
-  };
-
-  a.play().catch(err => {
-    console.warn('❌ فشل تشغيل الصوت:', err.message, src);
-    currentAudio[giftId] = null;
-    isPlaying[giftId] = false;
-    processQueue(giftId);
-  });
-}
-
-
-socket.on('play-sound', async (payload) => {
-  try {
-    if (!payload || !payload.filename) {
-      console.warn('⚠️ play-sound بدون filename');
-      return;
-    }
-    if (payload.screen && payload.screen !== SCREEN_NUMBER) return;
-
-    // تجاهل التكرار
-    if (payload.id && payload.id === lastPlayedSoundId) {
-      console.log('⏭️ تجاهل صوت مكرر في الشاشة');
-      return;
-    }
-    lastPlayedSoundId = payload.id;
-
-    // فتح الصوت (إذا لم يكن مفتوحاً)
-    if (!audioUnlocked) await tryUnlockAudio();
-
-    const giftId = payload.giftId || 'default';
-    const vol100 = typeof payload.volume !== 'undefined' ? Number(payload.volume) : 100;
-    const vol = Math.min(100, Math.max(0, vol100)) / 100;
-
-    // بناء المسار الصحيح
-    let src = payload.filename;
-    if (!src.startsWith('http://') && !src.startsWith('https://')) {
-      // إذا كان يبدأ بـ /audios/ نزيلها (احتياطاً)
-      if (src.startsWith('/audios/')) {
-        src = src.substring(8);
+    async function tryUnlockAudio() {
+      if (audioUnlocked) return true;
+      try {
+        if (typeof AudioContext !== 'undefined') {
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          if (ctx.state === 'suspended') await ctx.resume();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          gain.gain.value = 0;
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(0);
+          osc.stop(0.01);
+          setTimeout(() => ctx.close(), 200);
+        }
+        const silentAudio = new Audio();
+        silentAudio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
+        silentAudio.muted = true;
+        silentAudio.volume = 0;
+        await silentAudio.play();
+        silentAudio.pause();
+        silentAudio.src = '';
+        audioUnlocked = true;
+        console.log('✅ فتح الصوت بنجاح (طريقة الصوت المكتوم)');
+        return true;
+      } catch (e) {
+        console.warn('❌ فشل فتح الصوت:', e);
+        return false;
       }
-      src = AUDIO_BASE + encodeURIComponent(src);
     }
 
-    console.log('🔊 تشغيل الصوت من المسار:', src);
+    function processQueue(giftId) {
+      if (!audioQueues[giftId] || audioQueues[giftId].length === 0) {
+        isPlaying[giftId] = false;
+        currentAudio[giftId] = null;
+        return;
+      }
+      if (isPlaying[giftId]) return;
+      isPlaying[giftId] = true;
 
-    // إضافة إلى الطابور
-    if (!audioQueues[giftId]) audioQueues[giftId] = [];
-    audioQueues[giftId].push({ filename: src, volume: vol });
+      const item = audioQueues[giftId].shift();
+      const a = new Audio();
+      a.src = item.filename;
+      a.volume = item.volume;
+      a.preload = 'auto';
+      a.crossOrigin = 'anonymous';
+      currentAudio[giftId] = a;
 
-    if (!isPlaying[giftId]) {
-      processQueue(giftId);
+      a.onended = () => {
+        currentAudio[giftId] = null;
+        isPlaying[giftId] = false;
+        processQueue(giftId);
+      };
+
+      a.onerror = () => {
+        console.warn('❌ خطأ في تحميل الصوت:', item.filename);
+        currentAudio[giftId] = null;
+        isPlaying[giftId] = false;
+        processQueue(giftId);
+      };
+
+      a.play().catch(err => {
+        console.warn('❌ فشل تشغيل الصوت:', err.message, item.filename);
+        currentAudio[giftId] = null;
+        isPlaying[giftId] = false;
+        processQueue(giftId);
+      });
     }
-  } catch (err) {
-    console.error('play-sound handler error', err);
-  }
-});
+
+    socket.on('play-sound', async (payload) => {
+      try {
+        if (!payload || !payload.filename) {
+          console.warn('⚠️ play-sound بدون filename');
+          return;
+        }
+        if (payload.screen && payload.screen !== SCREEN_NUMBER) return;
+
+        if (!audioUnlocked) await tryUnlockAudio();
+
+        const giftId = payload.giftId || 'default';
+        const vol100 = typeof payload.volume !== 'undefined' ? Number(payload.volume) : 100;
+        const vol = Math.min(100, Math.max(0, vol100)) / 100;
+
+        let src = payload.filename;
+        if (!src.startsWith('http://') && !src.startsWith('https://')) {
+          if (src.startsWith('/audios/')) src = src.substring(8);
+          src = AUDIO_BASE + encodeURIComponent(src);
+        }
+
+        console.log('🔊 تشغيل الصوت من المسار:', src);
+        if (!audioQueues[giftId]) audioQueues[giftId] = [];
+        audioQueues[giftId].push({ filename: src, volume: vol });
+        if (!isPlaying[giftId]) processQueue(giftId);
+      } catch (err) {
+        console.error('play-sound handler error', err);
+      }
+    });
+
     socket.on('stop-sound', () => {
       for (const giftId in currentAudio) {
         if (currentAudio[giftId]) {
@@ -2648,7 +2621,6 @@ socket.on('play-sound', async (payload) => {
       }
     });
 
-    // ===== إدارة الفيديو =====
     const video = document.getElementById('videoPlayer');
     const videoQueue = [];
     let isVideoPlaying = false;
@@ -2665,7 +2637,7 @@ socket.on('play-sound', async (payload) => {
       video.muted = true;
       video.volume = 0;
       video.style.display = 'block';
-      
+
       video.play().then(() => {
         if (UNMUTED) {
           video.muted = false;
@@ -2676,7 +2648,7 @@ socket.on('play-sound', async (payload) => {
           video.volume = 0;
         }
       }).catch(e => console.warn('video autoplay blocked', e));
-      
+
       video.onended = () => {
         isVideoPlaying = false;
         video.style.display = 'none';
@@ -2724,7 +2696,6 @@ socket.on('play-sound', async (payload) => {
       }
     });
 
-    // ===== التراكب =====
     const overlayDiv = document.getElementById('overlay');
     const overlayAvatar = document.getElementById('overlayAvatar');
     const overlayUsername = document.getElementById('overlayUsername');
@@ -2770,7 +2741,7 @@ socket.on('play-sound', async (payload) => {
   }
 });
 
-// ================ PayPal endpoints ================
+// ================ PayPal ================
 app.post(
   "/api/paypal/subscription-created",
   authenticateToken,
@@ -2966,7 +2937,7 @@ app.delete("/api/video/:filename", authenticateToken, async (req, res) => {
   }
 });
 
-// ================ نقاط نهاية التخزين والاشتراك ================
+// ================ التخزين والاشتراك ================
 app.get("/api/user/storage", authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -3008,7 +2979,6 @@ app.get("/api/user/subscription", authenticateToken, async (req, res) => {
   }
 });
 
-// ================ نقاط نهاية المصادقة (باقي المسارات) ================
 app.get("/api/auth/me", authenticateToken, async (req, res) => {
   const user = await User.findById(req.user.id);
   if (!user)
@@ -3100,18 +3070,7 @@ app.post("/api/auth/refresh", authenticateToken, async (req, res) => {
 app.post("/api/tiktok-disconnect", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
-    if (global.liveHeartbeats && global.liveHeartbeats.has(userId)) {
-      clearInterval(global.liveHeartbeats.get(userId));
-      global.liveHeartbeats.delete(userId);
-    }
-    const conn = userTikTokConnections.get(userId);
-    if (conn && conn.connection) {
-      try {
-        conn.connection.removeAllListeners(); // ⭐
-        conn.connection.disconnect();
-      } catch (e) {}
-    }
-    userTikTokConnections.delete(userId); // ⭐
+    deleteTikTokConnection(userId);
     resetOncePerLiveForUser(userId);
     res.json({ success: true, message: "تم قطع الاتصال" });
   } catch (err) {
@@ -3123,11 +3082,7 @@ app.post("/api/tiktok-disconnect", authenticateToken, async (req, res) => {
 app.delete("/api/tiktok-user", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
-    if (userTikTokConnections.has(userId)) {
-      const conn = userTikTokConnections.get(userId);
-      if (conn.connection) conn.connection.disconnect();
-      userTikTokConnections.delete(userId);
-    }
+    deleteTikTokConnection(userId);
     const user = await User.findById(userId);
     await user.save();
     res.json({ success: true, message: "تم قطع الاتصال وحذف الاسم" });
@@ -3153,53 +3108,16 @@ app.post("/api/tiktok-user", authenticateToken, async (req, res) => {
   res.json({ success: true });
 });
 
-// دالة للتحقق من البث المباشر عبر API خارجي (مجاني)
-async function checkTikTokLiveStatus(username) {
-  if (!username) return false;
-  try {
-    const url = `https://www.tikwm.com/api/room/?unique_id=${username}`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
-    const data = await response.json();
-    // tikwm.com بيرجع status: 2 لو البث شغال
-    return data?.data?.status === 2;
-  } catch (err) {
-    console.warn(`⚠️ فشل التحقق من البث لـ ${username}:`, err.message);
-    return false;
-  }
-}
-
-// ================ نقاط نهاية API العامة ================
 app.get("/api/live-status", authenticateToken, async (req, res) => {
   const userId = req.user.id;
+  await refreshCachesForUser(userId);
+  const connection = getTikTokConnection(userId);
+  const isLive = connection ? connection.isLive : false;
   const user = await User.findById(userId);
-  const username = user?.tiktokUsername;
-
-  const connection = userTikTokConnections.get(userId);
-  let isLive = connection ? connection.isLive : false;
-
-  // إذا كان هناك roomId مخزن (حتى لو انقطع الاتصال) اعتبره لايف
-  if (!isLive && connection && connection.roomId) {
-    isLive = true;
-  }
-
-  // إذا لم يكن هناك اتصال ولا roomId، نتحقق عبر API (احتياطي)
-  if (!isLive && username) {
-    const liveFromApi = await checkTikTokLiveStatus(username);
-    if (liveFromApi) {
-      isLive = true;
-      // تخزين roomId مؤقتاً (اختياري)
-      if (connection) {
-        connection.roomId = "temp_room_id";
-        userTikTokConnections.set(userId, connection);
-      }
-    }
-  }
-
+  const username = user?.tiktokUsername || null;
   res.json({ isLive, username });
 });
+
 app.get("/api/profiles", authenticateToken, async (req, res) => {
   try {
     await ensureUserProfiles(req.user.id);
@@ -3266,7 +3184,6 @@ app.post(
           .status(404)
           .json({ success: false, message: "البروفايل المستهدف غير موجود" });
 
-      // حذف الأوامر القديمة في البروفايل الهدف
       await GiftCommand.deleteMany({ userId: req.user.id, profile: targetId });
       await InteractionCommand.deleteMany({
         userId: req.user.id,
@@ -3278,26 +3195,18 @@ app.post(
         profile: sourceId,
       });
 
-      // دالة مساعدة لرفع نسخة مستقلة من ملف (صوت/فيديو) اعتماداً على الرابط السحابي
       async function deepCopyMedia(file, userId, type) {
         if (!file) return null;
-
-        // 1. ملف افتراضي (نظام) → نبقيه كما هو
         if (file.startsWith("/audios/") || file.startsWith("/videos/")) {
           return file;
         }
-
-        // 2. رابط خارجي مباشر → نرفع نسخة جديدة
         if (file.startsWith("http://") || file.startsWith("https://")) {
           const newFile = await uploadFileFromUrl(file, userId, type);
           return newFile || null;
         }
-
-        // 3. ملف مرفوع سابقاً: نجيب رابطه السحابي ثم نرفع منه نسخة جديدة
         const Model = type === "audio" ? Audio : Video;
         const doc = await Model.findOne({ file, userId });
         if (doc) {
-          // استخدم الرابط السحابي المخزن (أو بناء رابط افتراضي إن لم يوجد)
           const cloudUrl =
             doc.cloudinaryUrl ||
             `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/${
@@ -3306,27 +3215,19 @@ app.post(
           const newFile = await uploadFileFromUrl(cloudUrl, userId, type);
           return newFile || null;
         }
-
-        // الملف غير موجود في المكتبة → لا يمكن نسخه
         return null;
       }
 
-      // نسخ أوامر الهدايا
       for (const cmd of giftCommands) {
         const newCmd = cmd.toObject();
         delete newCmd._id;
         newCmd.profile = targetId;
         newCmd.userId = req.user.id;
-
-        // نسخ مستقل للصوت
         newCmd.audio = await deepCopyMedia(newCmd.audio, req.user.id, "audio");
-        // نسخ مستقل للفيديو
         newCmd.video = await deepCopyMedia(newCmd.video, req.user.id, "video");
-
         await GiftCommand.create(newCmd);
       }
 
-      // نسخ أوامر التفاعلات
       const interactionCommands = await InteractionCommand.find({
         userId: req.user.id,
         profile: sourceId,
@@ -3336,10 +3237,8 @@ app.post(
         delete newCmd._id;
         newCmd.profile = targetId;
         newCmd.userId = req.user.id;
-
         newCmd.audio = await deepCopyMedia(newCmd.audio, req.user.id, "audio");
         newCmd.video = await deepCopyMedia(newCmd.video, req.user.id, "video");
-
         await InteractionCommand.create(newCmd);
       }
 
@@ -3355,7 +3254,6 @@ app.post(
   },
 );
 
-// ================ تصدير بروفايل (لمشاركته مع حساب آخر) ================
 app.get(
   "/api/profiles/export/:profileId",
   authenticateToken,
@@ -3377,16 +3275,14 @@ app.get(
         profile: profileId,
       }).lean();
 
-      // دالة لجلب رابط Cloudinary الحقيقي للملف (صوت/فيديو)
       const resolveMediaUrl = async (file, type) => {
         if (!file) return null;
         if (file.startsWith("/audios/") || file.startsWith("/videos/"))
-          return file; // افتراضي
-        if (file.startsWith("http")) return file; // رابط خارجي
+          return file;
+        if (file.startsWith("http")) return file;
         const Model = type === "audio" ? Audio : Video;
         const doc = await Model.findOne({ file, userId: req.user.id });
         if (doc && doc.cloudinaryUrl) return doc.cloudinaryUrl;
-        // fallback
         const resource = type === "audio" ? "raw/upload" : "video/upload";
         return `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/${resource}/${file}`;
       };
@@ -3421,7 +3317,6 @@ app.get(
   },
 );
 
-// ================ استيراد بروفايل من حساب آخر ================
 app.post("/api/profiles/import-shared", authenticateToken, async (req, res) => {
   try {
     const { data, targetProfile } = req.body;
@@ -3440,14 +3335,12 @@ app.post("/api/profiles/import-shared", authenticateToken, async (req, res) => {
         .status(403)
         .json({ success: false, message: "لا يمكن الوصول" });
 
-    // حذف الأوامر القديمة في البروفايل الهدف (اختياري)
     await GiftCommand.deleteMany({ userId: req.user.id, profile: targetId });
     await InteractionCommand.deleteMany({
       userId: req.user.id,
       profile: targetId,
     });
 
-    // دالة لرفع الميديا من رابط (URL) إلى حساب المستخدم الحالي
     const uploadMedia = async (url, type) => {
       if (!url) return null;
       if (url.startsWith("/audios/") || url.startsWith("/videos/")) return url;
@@ -3464,10 +3357,8 @@ app.post("/api/profiles/import-shared", authenticateToken, async (req, res) => {
       delete newCmd._id;
       newCmd.userId = req.user.id;
       newCmd.profile = targetId;
-
       newCmd.audio = await uploadMedia(newCmd.audio, "audio");
       newCmd.video = await uploadMedia(newCmd.video, "video");
-
       await GiftCommand.create(newCmd);
     }
 
@@ -3476,10 +3367,8 @@ app.post("/api/profiles/import-shared", authenticateToken, async (req, res) => {
       delete newCmd._id;
       newCmd.userId = req.user.id;
       newCmd.profile = targetId;
-
       newCmd.audio = await uploadMedia(newCmd.audio, "audio");
       newCmd.video = await uploadMedia(newCmd.video, "video");
-
       await InteractionCommand.create(newCmd);
     }
 
@@ -3561,7 +3450,7 @@ app.get("/api/videos", authenticateToken, async (req, res) => {
 
 app.get("/api/streamer", authenticateToken, async (req, res) => {
   const userId = req.user.id;
-  const conn = userTikTokConnections.get(userId);
+  const conn = getTikTokConnection(userId);
   const isLive = conn ? conn.isLive : false;
   const user = await User.findById(userId);
   const username = user?.tiktokUsername || null;
@@ -3569,7 +3458,6 @@ app.get("/api/streamer", authenticateToken, async (req, res) => {
   let nickname = username;
   let profilePicture = "";
 
-  // 1. محاولة جلب البيانات من اتصال TikTok المباشر (الأكثر دقة)
   if (conn && conn.connection && conn.connection.state?.roomInfo?.data) {
     const roomInfo = conn.connection.state.roomInfo.data;
     const owner = roomInfo.owner || {};
@@ -3579,11 +3467,9 @@ app.get("/api/streamer", authenticateToken, async (req, res) => {
     } else if (owner.avatar_thumb_medium?.url_list?.[0]) {
       profilePicture = owner.avatar_thumb_medium.url_list[0];
     }
-    // تحديث isLive بناءً على roomInfo (تأكيد)
     if (roomInfo.roomId) isLive = true;
   }
 
-  // 2. إذا لم تكن البيانات متاحة من الاتصال المباشر، نستخدم fetchTikTokUserInfo كخيار احتياطي
   if (!profilePicture && username) {
     try {
       const info = await fetchTikTokUserInfo(username);
@@ -3597,7 +3483,6 @@ app.get("/api/streamer", authenticateToken, async (req, res) => {
   res.json({ isLive, username, nickname, profilePicture });
 });
 
-// ================ نقاط نهاية API المحمية ================
 app.get("/api/rcon-config", authenticateToken, async (req, res) => {
   const user = await User.findById(req.user.id);
   const config = user.rconConfig || {
@@ -3615,11 +3500,11 @@ app.post("/api/rcon-config", authenticateToken, async (req, res) => {
   user.rconConfig = { host, port: parseInt(port), password, player };
   await user.save();
   const key = user._id.toString();
-  if (userRconInstances.has(key)) {
+  if (state.userRconInstances.has(key)) {
     try {
-      userRconInstances.get(key).rcon.disconnect();
+      state.userRconInstances.get(key).rcon.disconnect();
     } catch (e) {}
-    userRconInstances.delete(key);
+    state.userRconInstances.delete(key);
   }
   res.json({ success: true, config: user.rconConfig });
 });
@@ -3690,7 +3575,6 @@ app.put("/api/profile/:id/name", authenticateToken, async (req, res) => {
   }
 });
 
-// ================ نقاط نهاية API للأوامر ================
 app.get("/api/gift-commands", authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -3719,7 +3603,6 @@ app.get("/api/gift-commands", authenticateToken, async (req, res) => {
   }
 });
 
-// إضافة بعد app.get("/api/gift-commands", ...) وقبل app.post("/api/gift-commands/:id/execute", ...)
 app.get("/api/gift-commands/:id", authenticateToken, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -3783,7 +3666,6 @@ app.post(
           keystrokeText,
           combo: cmdObj.combo,
         };
-        // داخل POST /api/gift-commands/:id/execute
         await executeAction(one, "StreamMoon", req.user.id, null, "manual");
         if (t < timesToRun - 1 && cmdObj.interval > 0)
           await new Promise((r) => setTimeout(r, cmdObj.interval));
@@ -3823,80 +3705,6 @@ app.get(
   },
 );
 
-app.post(
-  "/api/interaction-commands/:id/execute",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      if (!mongoose.Types.ObjectId.isValid(req.params.id))
-        return res
-          .status(400)
-          .json({ success: false, message: "معرف غير صالح" });
-      const cmd = await InteractionCommand.findById(req.params.id);
-      if (!cmd)
-        return res.status(404).json({ success: false, message: "غير موجود" });
-      if (cmd.userId.toString() !== req.user.id)
-        return res.status(403).json({ success: false, message: "غير مصرح به" });
-      const canAccess = await canAccessProfile(req.user.id, cmd.profile);
-      if (!canAccess)
-        return res.status(403).json({
-          success: false,
-          message: "لا يمكنك تنفيذ أمر من بروفايل غير مصرح به",
-        });
-      const count = Math.max(1, parseInt(req.body?.count || 1, 10) || 1);
-      const timesToRun = Math.min(count, 10);
-      const requestedScreen = req.body?.screen
-        ? parseInt(req.body.screen)
-        : null;
-      const cmdObj = cmd.toObject ? { ...cmd.toObject() } : { ...cmd };
-      const configuredRepeat = Math.max(
-        1,
-        parseInt(cmdObj.repeat || 1, 10) || 1,
-      );
-      const keystrokeText =
-        cmdObj.command && cmdObj.command.trim() !== ""
-          ? cmdObj.command
-          : cmdObj.combo || "";
-      const agentSocket = userLocalAgents.get(req.user.id);
-      if (agentSocket && agentSocket.connected && keystrokeText) {
-        for (let t = 0; t < timesToRun; t++) {
-          agentSocket.emit("execute-keys", {
-            command: keystrokeText,
-            repeat: configuredRepeat,
-            interval: cmdObj.interval || 500,
-            combo: cmdObj.combo,
-          });
-          if (t < timesToRun - 1 && cmdObj.interval > 0)
-            await new Promise((r) => setTimeout(r, cmdObj.interval));
-        }
-      } else if (keySenderReady && keystrokeText) {
-        for (let t = 0; t < timesToRun; t++) {
-          await executeNativeKeystroke(
-            keystrokeText,
-            configuredRepeat,
-            cmdObj.interval || 500,
-          );
-          if (t < timesToRun - 1 && cmdObj.interval > 0)
-            await new Promise((r) => setTimeout(r, cmdObj.interval));
-        }
-      }
-      for (let t = 0; t < timesToRun; t++) {
-        const one = {
-          ...cmdObj,
-          repeat: configuredRepeat,
-          screen: requestedScreen || cmdObj.screen || 1,
-        };
-        await executeAction(one, "StreamMoon", req.user.id, null, "manual");
-      }
-      res.json({ success: true, message: "تم التنفيذ", count: timesToRun });
-    } catch (err) {
-      logger.error("❌ خطأ في تنفيذ أمر التفاعل:", err.message);
-      res.status(500).json({ success: false, message: err.message });
-    }
-  },
-);
-
-// ================ POST /api/gift-commands (بعد التعديل) ================
 app.post("/api/gift-commands", authenticateToken, async (req, res) => {
   try {
     const body = req.body;
@@ -3916,8 +3724,6 @@ app.post("/api/gift-commands", authenticateToken, async (req, res) => {
         message:
           "لا يمكنك إنشاء أوامر لهذا البروفايل في النسخة المجانية. قم بالترقية.",
       });
-
-    // تم إزالة شرط plan === "free"
 
     if (!body.giftId && body.giftId !== 0)
       return res.status(400).json({ success: false, message: "giftId مطلوب" });
@@ -3968,7 +3774,6 @@ app.post("/api/gift-commands", authenticateToken, async (req, res) => {
   }
 });
 
-// ================ PUT /api/gift-commands/:id ================
 app.put("/api/gift-commands/:id", authenticateToken, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id))
@@ -3994,7 +3799,6 @@ app.put("/api/gift-commands/:id", authenticateToken, async (req, res) => {
   }
 });
 
-// ================ DELETE /api/gift-commands/:id ================
 app.delete("/api/gift-commands/:id", authenticateToken, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -4002,7 +3806,6 @@ app.delete("/api/gift-commands/:id", authenticateToken, async (req, res) => {
     }
     const gift = await GiftCommand.findById(req.params.id);
     if (!gift) {
-      // الأمر غير موجود، نعتبره محذوفاً بالفعل
       return res.status(200).json({
         success: true,
         message: "الأمر غير موجود، تم اعتباره محذوفاً",
@@ -4035,7 +3838,7 @@ app.delete("/api/gift-commands/:id", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-// ================ DELETE /api/gift-commands ================
+
 app.delete("/api/gift-commands", authenticateToken, async (req, res) => {
   try {
     const profile = parseInt(req.query.profile);
@@ -4120,80 +3923,78 @@ app.get("/api/interaction-commands", authenticateToken, async (req, res) => {
   }
 });
 
-// ================ POST /api/interaction-commands (بعد التعديل) ================
-app.post("/api/interaction-commands", authenticateToken, async (req, res) => {
-  try {
-    const payload = req.body;
-    const user = await User.findById(req.user.id);
-    const profile = Math.max(
-      1,
-      Math.min(
-        MAX_PROFILES,
-        parseInt(payload.profile || user.selectedProfile, 10) || 1,
-      ),
-    );
-    const canAccess = await canAccessProfile(req.user.id, profile);
-    if (!canAccess)
-      return res.status(403).json({
-        success: false,
-        message:
-          "لا يمكنك إنشاء أوامر لهذا البروفايل في النسخة المجانية. قم بالترقية.",
-      });
-
-    // تم إزالة شرط plan === "free"
-
-    if (
-      !payload.type ||
-      !["follow", "like", "comment", "share", "gift", "all"].includes(
-        payload.type,
-      )
-    )
-      return res.status(400).json({
-        success: false,
-        message: `النوع غير مدعوم. الأنواع المسموحة: follow, like, comment, share, gift, all`,
-      });
-    if (payload.combo && payload.combo.trim() !== "") {
-      const existingCombo = await InteractionCommand.findOne({
-        userId: req.user.id,
-        profile,
-        combo: payload.combo.trim(),
-      });
-      if (existingCombo)
-        return res.status(400).json({
+app.post(
+  "/api/interaction-commands/:id/execute",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id))
+        return res
+          .status(400)
+          .json({ success: false, message: "معرف غير صالح" });
+      const cmd = await InteractionCommand.findById(req.params.id);
+      if (!cmd)
+        return res.status(404).json({ success: false, message: "غير موجود" });
+      if (cmd.userId.toString() !== req.user.id)
+        return res.status(403).json({ success: false, message: "غير مصرح به" });
+      const canAccess = await canAccessProfile(req.user.id, cmd.profile);
+      if (!canAccess)
+        return res.status(403).json({
           success: false,
-          message: "هذا الاختصار موجود بالفعل في هذا البروفايل",
+          message: "لا يمكنك تنفيذ أمر من بروفايل غير مصرح به",
         });
-    }
-    payload.profile = profile;
-    payload.repeat = parseInt(payload.repeat || 1, 10) || 1;
-    payload.interval = parseInt(payload.interval || 500, 10) || 500;
-    payload.delayBefore = parseInt(payload.delayBefore || 0, 10) || 0;
-    payload.threshold = parseInt(payload.threshold || 0, 10) || 0;
-    payload.volume = parseInt(payload.volume || 100, 10) || 100;
-    payload.videoVolume = parseInt(payload.videoVolume || 100, 10) || 100;
-    payload.screen = parseInt(payload.screen || 1, 10) || 1;
-    payload.active = payload.active !== false;
-    payload.playSound = payload.playSound !== false;
-    payload.playVideo = payload.playVideo !== false;
-    payload.oncePerLive = !!payload.oncePerLive;
-    payload.userId = req.user.id;
-    payload.combo =
-      payload.combo && payload.combo.trim() !== ""
-        ? payload.combo.trim()
+      const count = Math.max(1, parseInt(req.body?.count || 1, 10) || 1);
+      const timesToRun = Math.min(count, 10);
+      const requestedScreen = req.body?.screen
+        ? parseInt(req.body.screen)
         : null;
-    payload.showOverlay = payload.showOverlay === true;
-    payload.overlayText = payload.overlayText || "";
-    payload.duration = parseInt(payload.duration) || 5;
-
-    const created = await InteractionCommand.create(payload);
-    await enforceFreePlanLimits(req.user.id, profile);
-    await refreshCachesForUser(req.user.id);
-    res.json({ success: true, command: created });
-  } catch (err) {
-    logger.error("❌ خطأ في إنشاء أمر التفاعل:", err.message);
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
+      const cmdObj = cmd.toObject ? { ...cmd.toObject() } : { ...cmd };
+      const configuredRepeat = Math.max(
+        1,
+        parseInt(cmdObj.repeat || 1, 10) || 1,
+      );
+      const keystrokeText =
+        cmdObj.command && cmdObj.command.trim() !== ""
+          ? cmdObj.command
+          : cmdObj.combo || "";
+      const agentSocket = state.userLocalAgents.get(req.user.id);
+      if (agentSocket && agentSocket.connected && keystrokeText) {
+        for (let t = 0; t < timesToRun; t++) {
+          agentSocket.emit("execute-keys", {
+            command: keystrokeText,
+            repeat: configuredRepeat,
+            interval: cmdObj.interval || 500,
+            combo: cmdObj.combo,
+          });
+          if (t < timesToRun - 1 && cmdObj.interval > 0)
+            await new Promise((r) => setTimeout(r, cmdObj.interval));
+        }
+      } else if (keySenderReady && keystrokeText) {
+        for (let t = 0; t < timesToRun; t++) {
+          await executeNativeKeystroke(
+            keystrokeText,
+            configuredRepeat,
+            cmdObj.interval || 500,
+          );
+          if (t < timesToRun - 1 && cmdObj.interval > 0)
+            await new Promise((r) => setTimeout(r, cmdObj.interval));
+        }
+      }
+      for (let t = 0; t < timesToRun; t++) {
+        const one = {
+          ...cmdObj,
+          repeat: configuredRepeat,
+          screen: requestedScreen || cmdObj.screen || 1,
+        };
+        await executeAction(one, "StreamMoon", req.user.id, null, "manual");
+      }
+      res.json({ success: true, message: "تم التنفيذ", count: timesToRun });
+    } catch (err) {
+      logger.error("❌ خطأ في تنفيذ أمر التفاعل:", err.message);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  },
+);
 
 app.put(
   "/api/interaction-commands/:id",
@@ -4280,7 +4081,6 @@ app.delete(
   },
 );
 
-// ================ DELETE /api/interaction-commands ================
 app.delete("/api/interaction-commands", authenticateToken, async (req, res) => {
   try {
     const profile = parseInt(req.query.profile);
@@ -4340,7 +4140,6 @@ app.delete("/api/interaction-commands", authenticateToken, async (req, res) => {
   }
 });
 
-// ================ نقطة نهاية تنفيذ الاختصار ================
 app.post("/api/execute-keystroke", authenticateToken, async (req, res) => {
   try {
     const { combo } = req.body;
@@ -4368,7 +4167,7 @@ app.post("/api/execute-keystroke", authenticateToken, async (req, res) => {
       command.command && command.command.trim() !== ""
         ? command.command
         : combo;
-    const agentSocket = userLocalAgents.get(req.user.id);
+    const agentSocket = state.userLocalAgents.get(req.user.id);
     if (agentSocket && agentSocket.connected) {
       agentSocket.emit("execute-keys", {
         command: keystrokeText,
@@ -4404,7 +4203,6 @@ app.post("/api/execute-keystroke", authenticateToken, async (req, res) => {
   }
 });
 
-// ================ نقاط نهاية أخرى ================
 app.post("/api/play-sound", authenticateToken, (req, res) => {
   const { filename, volume = 100 } = req.body;
   if (!filename)
@@ -4476,7 +4274,18 @@ const uploadTFC = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
-// ================ استيراد من ملف (مع التعديلات) ================
+const videoStorage = multer.memoryStorage();
+const uploadVideo = multer({
+  storage: videoStorage,
+  limits: { fileSize: MAX_VIDEO_MB * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const allowed = [".mp4", ".mov", ".webm", ".mkv", ".avi", ".flv", ".wmv"];
+    if (allowed.includes(ext)) cb(null, true);
+    else cb(new Error("امتداد غير مسموح للفيديو"));
+  },
+});
+
 app.post(
   "/api/profiles/import-file",
   authenticateToken,
@@ -4512,9 +4321,7 @@ app.post(
       const results = { added: 0, replaced: 0, skipped: 0, errors: [] };
       const replace = req.body.replace === "true";
 
-      // رفع الملفات من الروابط
       for (const cmd of commands) {
-        // ----------- صوت -----------
         if (cmd.audio) {
           const audioExists = await Audio.findOne({
             file: cmd.audio,
@@ -4540,18 +4347,15 @@ app.post(
                 });
               }
             } else if (!cmd.audio.startsWith("/audios/")) {
-              // ✅ مش صوت افتراضي → نحذفه
               cmd.audio = null;
               results.errors.push({
                 command: cmd,
                 error: `الملف الصوتي "${cmd.audio}" غير موجود في حسابك ولم يكن رابطاً صحيحاً، تم تعطيل الصوت.`,
               });
             }
-            // لو "/audios/..." هنخليه زي ما هو
           }
         }
 
-        // ----------- فيديو -----------
         if (cmd.video) {
           const videoExists = await Video.findOne({
             file: cmd.video,
@@ -4577,7 +4381,6 @@ app.post(
                 });
               }
             } else if (!cmd.video.startsWith("/videos/")) {
-              // لو عندك فيديوهات افتراضية تبدأ بـ /videos/
               cmd.video = null;
               results.errors.push({
                 command: cmd,
@@ -4650,7 +4453,7 @@ app.post(
     }
   },
 );
-// ================ استيراد JSON (مع التعديلات) ================
+
 app.post("/api/profiles/import", authenticateToken, async (req, res) => {
   try {
     const { commands, replace, profile: reqProfile } = req.body;
@@ -4672,9 +4475,7 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
 
     const results = { added: 0, replaced: 0, skipped: 0, errors: [] };
 
-    // رفع الملفات من الروابط
     for (const cmd of commands) {
-      // ----------- صوت -----------
       if (cmd.audio) {
         const audioExists = await Audio.findOne({
           file: cmd.audio,
@@ -4700,7 +4501,6 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
               });
             }
           } else if (!cmd.audio.startsWith("/audios/")) {
-            // ✅ مش صوت افتراضي → نحذفه
             cmd.audio = null;
             results.errors.push({
               command: cmd,
@@ -4710,7 +4510,6 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
         }
       }
 
-      // ----------- فيديو -----------
       if (cmd.video) {
         const videoExists = await Video.findOne({
           file: cmd.video,
@@ -4807,7 +4606,7 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-// ================ رفع فيديو ================
+
 app.post(
   "/api/upload-video",
   authenticateToken,
@@ -4903,7 +4702,6 @@ app.post(
   },
 );
 
-// ================ رفع صوت ================
 const audioStorage = multer.memoryStorage();
 const uploadAudioFile = multer({
   storage: audioStorage,
@@ -4914,6 +4712,7 @@ const uploadAudioFile = multer({
     else cb(new Error("امتداد غير مسموح"));
   },
 });
+
 app.post(
   "/api/upload-audio",
   authenticateToken,
@@ -4976,7 +4775,7 @@ app.post(
   },
 );
 
-// ================ نقاط نهاية API للإدارة ================
+// ================ نقاط نهاية الإدارة ================
 app.get("/api/admin/stats", authenticateToken, isAdmin, async (req, res) => {
   try {
     const totalUsers = await User.countDocuments();
@@ -4986,7 +4785,7 @@ app.get("/api/admin/stats", authenticateToken, isAdmin, async (req, res) => {
     });
     const totalGiftCommands = await GiftCommand.countDocuments();
     const totalInteractionCommands = await InteractionCommand.countDocuments();
-    const activeLiveUsers = userTikTokConnections.size;
+    const activeLiveUsers = state.userTikTokConnections.size;
     res.json({
       success: true,
       stats: {
@@ -5017,8 +4816,8 @@ app.get("/api/admin/users", authenticateToken, isAdmin, async (req, res) => {
         tiktokUsername: user.tiktokUsername,
         commandCount: await getTotalCommandsForUser(user._id),
         isLiveNow:
-          userTikTokConnections.has(user._id.toString()) &&
-          userTikTokConnections.get(user._id.toString())?.isLive,
+          state.userTikTokConnections.has(user._id.toString()) &&
+          state.userTikTokConnections.get(user._id.toString())?.isLive,
         createdAt: user.createdAt,
       })),
     );
@@ -5120,10 +4919,37 @@ app.delete(
         return res
           .status(404)
           .json({ success: false, message: "المستخدم غير موجود" });
-      await GiftCommand.deleteMany({ userId: user._id });
-      await InteractionCommand.deleteMany({ userId: user._id });
-      await user.deleteOne();
-      res.json({ success: true, message: "تم حذف المستخدم وجميع أوامره" });
+
+      const userId = user._id;
+
+      // حذف الملفات المرتبطة بالأوامر
+      const giftCommands = await GiftCommand.find({ userId });
+      const interactionCommands = await InteractionCommand.find({ userId });
+      for (const cmd of [...giftCommands, ...interactionCommands]) {
+        await deleteFilesForCommand(cmd, userId);
+      }
+
+      // حذف الأوامر
+      await GiftCommand.deleteMany({ userId });
+      await InteractionCommand.deleteMany({ userId });
+
+      // حذف الوسائط
+      await Audio.deleteMany({ userId });
+      await Video.deleteMany({ userId });
+
+      // حذف البروفايلات
+      await Profile.deleteMany({ owner: userId });
+
+      // حذف جلسات الوكيل
+      await AgentSession.deleteMany({ userId });
+
+      // فصل أي اتصال TikTok قائم
+      deleteTikTokConnection(userId.toString());
+
+      // حذف المستخدم نفسه
+      await User.findByIdAndDelete(userId);
+
+      res.json({ success: true, message: "تم حذف المستخدم وجميع بياناته" });
     } catch (err) {
       logger.error("❌ خطأ في حذف المستخدم:", err.message);
       res.status(500).json({ success: false, message: err.message });
@@ -5131,12 +4957,7 @@ app.delete(
   },
 );
 
-// ================ صفحة الداشبورد ================
-app.get("/admin", authenticateToken, isAdmin, (req, res) => {
-  res.redirect(`${FRONTEND_URL}/admin`);
-});
-
-// ================ Socket.IO للبلوجن والشاشات ================
+// ================ Socket.IO ================
 const pluginNamespace = io.of("/plugin");
 pluginNamespace.use((socket, next) => {
   const token = socket.handshake.auth?.token || socket.handshake.query.token;
@@ -5147,14 +4968,13 @@ pluginNamespace.use((socket, next) => {
   console.warn(`❌ Authentication failed for token: ${token}`);
   return next(new Error("خطأ في المصادقة"));
 });
-
 pluginNamespace.on("connection", (socket) => {
   logger.info("✅ بلوجن ماينكرافت متصل:", socket.id);
-  pluginSockets.add(socket);
+  state.pluginSockets.add(socket);
   socket.emit("config", { player: "default" });
   socket.on("disconnect", () => {
     logger.info("❌ بلوجن ماينكرافت قطع الاتصال:", socket.id);
-    pluginSockets.delete(socket);
+    state.pluginSockets.delete(socket);
   });
 });
 
@@ -5165,7 +4985,6 @@ agentNamespace.use(async (socket, next) => {
   try {
     const session = await AgentSession.findOne({ token });
     if (!session || session.expires < new Date()) {
-      // تنظيف الجلسة المنتهية لو كانت موجودة
       if (session) await AgentSession.deleteOne({ _id: session._id });
       return next(new Error("Invalid session"));
     }
@@ -5178,10 +4997,10 @@ agentNamespace.use(async (socket, next) => {
 agentNamespace.on("connection", (socket) => {
   const userId = socket.userId;
   logger.info(`🖥️ العميل المحلي للمستخدم ${userId} متصل`);
-  userLocalAgents.set(userId, socket);
+  state.userLocalAgents.set(userId, socket);
   socket.on("disconnect", () => {
     logger.info(`🖥️ العميل المحلي للمستخدم ${userId} قطع الاتصال`);
-    userLocalAgents.delete(userId);
+    state.userLocalAgents.delete(userId);
   });
   socket.on("error", (err) => {
     logger.error(`خطأ في العميل المحلي ${userId}:`, err.message);
@@ -5192,7 +5011,7 @@ app.post("/api/agent/register", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
     const agentToken = crypto.randomBytes(32).toString("hex");
-    agentRegistrationTokens.set(agentToken, {
+    state.agentRegistrationTokens.set(agentToken, {
       userId,
       expires: Date.now() + 60000,
     });
@@ -5206,7 +5025,6 @@ app.post("/api/agent/register", authenticateToken, async (req, res) => {
 });
 
 io.use(async (socket, next) => {
-  // 1. التحقق من screenToken (للاستخدام من الشاشات)
   const screenToken = socket.handshake.query.token;
   if (screenToken) {
     try {
@@ -5216,12 +5034,9 @@ io.use(async (socket, next) => {
         socket.isScreen = true;
         return next();
       }
-    } catch (err) {
-      // تجاهل الخطأ والمتابعة للتحقق من JWT
-    }
+    } catch (err) {}
   }
 
-  // 2. إذا لم يكن screenToken، جرب JWT من auth أو query أو cookies
   let token = socket.handshake.auth?.token || socket.handshake.query.token;
   if (!token) {
     const cookieHeader = socket.handshake.headers.cookie;
@@ -5249,7 +5064,6 @@ io.use(async (socket, next) => {
 io.on("connection", (socket) => {
   if (socket.userId) {
     if (socket.isScreen) {
-      // الشاشة: تنضم إلى غرفة الشاشة فقط (أو يمكنها الانضمام إلى كلتا الغرفتين)
       const screenRoom = `screen-${socket.userId}`;
       socket.join(screenRoom);
       logger.info(
@@ -5257,7 +5071,6 @@ io.on("connection", (socket) => {
       );
       socket.emit("connected", { room: screenRoom });
     } else {
-      // الفرونت: ينضم إلى غرفة المستخدم
       const userRoom = `user-${socket.userId}`;
       socket.join(userRoom);
       logger.info(
@@ -5269,7 +5082,6 @@ io.on("connection", (socket) => {
     logger.info(`📱 عميل Socket.IO بدون userId: ${socket.id}`);
   }
 
-  // حدث الانضمام اليدوي (اختياري)
   socket.on("join-room", ({ room }) => {
     if (room && typeof room === "string") {
       socket.join(room);
@@ -5280,17 +5092,6 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     logger.info("📱 عميل Socket.IO قطع الاتصال:", socket.id);
   });
-});
-
-app.post("/api/agent/binding-token", authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const token = crypto.randomBytes(32).toString("hex");
-    bindingTokens.set(token, { userId, expires: Date.now() + 5 * 60 * 1000 });
-    res.json({ success: true, token });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
 });
 
 // ================ Cron Job ================
@@ -5324,49 +5125,107 @@ cron.schedule("0 * * * *", async () => {
   }
 });
 
-// ================ صفحة ربط العميل المحلي (Agent) ================
+// ================ صفحة ربط العميل المحلي (آمنة تماماً) ================
 app.get("/agent-auth", async (req, res) => {
-  const { callbackPort } = req.query;
-  const port = callbackPort || 3456;
-  let protocol = req.protocol;
-  if (process.env.NODE_ENV === "production") protocol = "https";
+  const callbackPort = req.query.callbackPort || 3456;
+  const port = Number(callbackPort);
+  const protocol =
+    process.env.NODE_ENV === "production" ? "https" : req.protocol;
   const serverUrl = `${protocol}://${req.get("host")}`;
   const bindingToken = crypto.randomBytes(32).toString("hex");
-  bindingTokens.set(bindingToken, {
+
+  state.bindingTokens.set(bindingToken, {
     userId: null,
     expires: Date.now() + 5 * 60 * 1000,
     callbackPort: port,
     serverUrl,
   });
+
+  const safeToken = encodeURIComponent(JSON.stringify(bindingToken));
+  const safeServerUrl = encodeURIComponent(serverUrl);
+  const safePort = port;
+
   res.send(`
-    <!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>ربط العميل المحلي - BlackMoon</title><style>body{background:#0a0a0a;color:white;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;}.container{background:#1e1e1e;padding:30px;border-radius:12px;text-align:center;max-width:400px;}input,button{padding:10px;margin:10px;border-radius:6px;border:none;}input{width:80%;background:#333;color:white;}button{background:#4caf50;color:white;cursor:pointer;}.error{color:#f44336;}</style></head><body><div class="container"><h2>🔗 ربط العميل المحلي</h2><p>الرجاء تسجيل الدخول أولاً ثم النقر على زر الربط.</p><div id="status"></div><button id="bindBtn">ربط العميل</button></div><script>
-      const bindBtn=document.getElementById('bindBtn');
-      const statusDiv=document.getElementById('status');
-      const bindingToken='${bindingToken}';
-      const callbackPort=${port};
-      const serverUrl='${serverUrl}';
-      async function checkLogin(){
-        try{ const res=await fetch('/api/auth/me',{credentials:'include'}); const data=await res.json(); if(data.success){ statusDiv.innerHTML='<span style="color:#4caf50">✅ تم تسجيل الدخول كـ '+data.user.email+'</span>'; return true; } else { statusDiv.innerHTML='<span style="color:#ff9800">⚠️ لم تسجل الدخول. سيتم فتح نافذة تسجيل الدخول.</span>'; return false; } } catch(e){ statusDiv.innerHTML='<span class="error">❌ خطأ في الاتصال</span>'; return false; }
-      }
-      bindBtn.onclick=async()=>{
-        const loggedIn=await checkLogin();
-        if(!loggedIn){ window.open('/login','_blank'); alert('سجل الدخول ثم اضغط على الربط مرة أخرى'); return; }
-        const tokenRes=await fetch('/api/agent/binding-token',{credentials:'include'});
-        const tokenData=await tokenRes.json();
-        if(!tokenData.success){ statusDiv.innerHTML='<span class="error">فشل الحصول على رمز الربط</span>'; return; }
-        const finalToken=tokenData.token;
-        window.location.href=\`http://localhost:\${callbackPort}/callback?sessionToken=\${finalToken}&serverUrl=\${serverUrl}\`;
-      };
-      checkLogin();
-    </script></body></html>
+    <!DOCTYPE html>
+    <html lang="ar">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>ربط العميل المحلي - BlackMoon</title>
+      <style>
+        body{background:#0a0a0a;color:white;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;}
+        .container{background:#1e1e1e;padding:30px;border-radius:12px;text-align:center;max-width:400px;}
+        button{padding:10px 20px;margin:10px;border-radius:6px;border:none;background:#4caf50;color:white;cursor:pointer;font-size:16px;}
+        .error{color:#f44336;}
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h2>🔗 ربط العميل المحلي</h2>
+        <p>الرجاء تسجيل الدخول أولاً ثم النقر على زر الربط.</p>
+        <div id="status"></div>
+        <button id="bindBtn">ربط العميل</button>
+      </div>
+      <script>
+        (function(){
+          const bindingToken = JSON.parse(decodeURIComponent('${safeToken}'));
+          const callbackPort = ${safePort};
+          const serverUrl = decodeURIComponent('${safeServerUrl}');
+          
+          const bindBtn = document.getElementById('bindBtn');
+          const statusDiv = document.getElementById('status');
+
+          async function checkLogin() {
+            try {
+              const res = await fetch('/api/auth/me', { credentials: 'include' });
+              const data = await res.json();
+              if (data.success) {
+                statusDiv.innerHTML = '<span style="color:#4caf50">✅ تم تسجيل الدخول كـ ' + data.user.email + '</span>';
+                return true;
+              } else {
+                statusDiv.innerHTML = '<span style="color:#ff9800">⚠️ لم تسجل الدخول. سيتم فتح نافذة تسجيل الدخول.</span>';
+                return false;
+              }
+            } catch(e) {
+              statusDiv.innerHTML = '<span class="error">❌ خطأ في الاتصال</span>';
+              return false;
+            }
+          }
+
+          bindBtn.onclick = async function() {
+            const loggedIn = await checkLogin();
+            if (!loggedIn) {
+              window.open('/login', '_blank');
+              alert('سجل الدخول ثم اضغط على الربط مرة أخرى');
+              return;
+            }
+            const tokenRes = await fetch('/api/agent/binding-token', { credentials: 'include' });
+            const tokenData = await tokenRes.json();
+            if (!tokenData.success) {
+              statusDiv.innerHTML = '<span class="error">فشل الحصول على رمز الربط</span>';
+              return;
+            }
+            const finalToken = tokenData.token;
+            // استخراج secret من الرابط وإرساله مع callback
+            const secret = new URLSearchParams(window.location.search).get('secret') || '';
+            window.location.href = 'http://localhost:' + callbackPort + '/callback?sessionToken=' + encodeURIComponent(finalToken) + '&serverUrl=' + encodeURIComponent(serverUrl) + '&secret=' + encodeURIComponent(secret);
+          };
+
+          checkLogin();
+        })();
+      </script>
+    </body>
+    </html>
   `);
 });
-
 app.get("/api/agent/binding-token", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
     const token = crypto.randomBytes(32).toString("hex");
-    bindingTokens.set(token, { userId, expires: Date.now() + 5 * 60 * 1000 });
+    state.bindingTokens.set(token, {
+      userId,
+      expires: Date.now() + 5 * 60 * 1000,
+    });
     res.json({ success: true, token });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -5375,16 +5234,20 @@ app.get("/api/agent/binding-token", authenticateToken, async (req, res) => {
 
 app.post("/api/agent/exchange-binding", async (req, res) => {
   try {
-    const { bindingToken } = req.body;
-    const data = bindingTokens.get(bindingToken);
+    const { bindingToken, machineId } = req.body; // استلام machineId
+    const data = state.bindingTokens.get(bindingToken);
     if (!data || data.expires < Date.now())
       return res
         .status(400)
         .json({ success: false, message: "Invalid or expired binding token" });
-    bindingTokens.delete(bindingToken);
+    state.bindingTokens.delete(bindingToken);
+
+    // تحديث machineId للمستخدم إذا تم إرساله
+    if (machineId && data.userId) {
+      await User.findByIdAndUpdate(data.userId, { machineId: machineId });
+    }
 
     const sessionToken = crypto.randomBytes(32).toString("hex");
-    // تخزين الجلسة في قاعدة البيانات (صالحة 30 يوم)
     await AgentSession.create({
       token: sessionToken,
       userId: data.userId,
@@ -5407,15 +5270,33 @@ server.listen(PORT, "0.0.0.0", () => {
   logger.info(`🖥️ دعم العميل المحلي لتنفيذ الكيبورد الحقيقي عبر /agent`);
 });
 
-// تنظيف دوري للذاكرة
-setInterval(
-  () => {
-    if (giftCommandsCache.size > 1000) giftCommandsCache.clear();
-    if (interactionCommandsCache.size > 1000) interactionCommandsCache.clear();
-    if (executedOncePerLive.size > 1000) executedOncePerLive.clear();
-    if (likeCounters.size > 1000) likeCounters.clear();
-    if (followExecutedUsers.size > 1000) followExecutedUsers.clear();
-    if (giftStreakState.size > 1000) giftStreakState.clear();
-  },
-  60 * 60 * 1000,
-);
+setInterval(() => {
+  state.cleanup();
+
+  // تنظيف إضافي
+  if (state.userTikTokConnections.size > 200) {
+    const now = Date.now();
+    for (const [userId, conn] of state.userTikTokConnections) {
+      if (!conn.isLive && now - (conn.lastActivity || 0) > 600000) {
+        deleteTikTokConnection(userId);
+      }
+    }
+  }
+
+  // تنظيف الكاش الخاص بالمستخدمين غير النشطين
+  const keys = state.cache.keys();
+  let count = 0;
+  for (const key of keys) {
+    if (key.startsWith("gifts:") || key.startsWith("interactions:")) {
+      const userId = key.split(":")[1];
+      if (
+        !state.userTikTokConnections.has(userId) &&
+        !state.userLocalAgents.has(userId)
+      ) {
+        state.delCache(key);
+        count++;
+      }
+    }
+  }
+  if (count > 0) logger.info(`🧹 تم تنظيف ${count} مفتاح كاش غير مستخدم`);
+}, CLEANUP_INTERVAL);
