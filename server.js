@@ -4998,8 +4998,8 @@ io.use(async (socket, next) => {
   if (!token) {
     const cookieHeader = socket.handshake.headers.cookie;
     if (cookieHeader) {
-      const cookies = cookieHeader.split(";").reduce((acc, c) => {
-        const [key, val] = c.trim().split("=");
+      const cookies = cookieHeader.split(';').reduce((acc, c) => {
+        const [key, val] = c.trim().split('=');
         acc[key] = val;
         return acc;
       }, {});
@@ -5007,12 +5007,10 @@ io.use(async (socket, next) => {
     }
   }
 
-  console.log(
-    `🔍 محاولة اتصال بالتوكن: ${token ? token.substring(0, 10) + "..." : "لا يوجد"}`,
-  );
+  console.log(`🔍 محاولة اتصال بالتوكن: ${token ? token.substring(0, 20) + "..." : "لا يوجد"}`);
+  console.log(`🔍 التوكن الكامل: ${token}`);
 
   if (token) {
-    // التحقق من screenToken
     try {
       const user = await User.findOne({ screenToken: token });
       if (user) {
@@ -5020,12 +5018,13 @@ io.use(async (socket, next) => {
         socket.isScreen = true;
         console.log(`✅ شاشة متصلة للمستخدم ${user.email}`);
         return next();
+      } else {
+        console.warn(`⚠️ لم يتم العثور على مستخدم بهذا screenToken`);
       }
     } catch (err) {
       console.warn(`⚠️ فشل التحقق من screenToken: ${err.message}`);
     }
 
-    // التحقق من JWT
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
       socket.userId = String(decoded.id);
