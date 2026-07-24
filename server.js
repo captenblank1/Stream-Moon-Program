@@ -293,6 +293,7 @@ const allowedOrigins = [
   "https://streammoon.net",
   "https://www.streammoon.net",
   "https://streammoon.onrender.com",
+  "https://backend-7hj8.onrender.com",
   "http://localhost:3000",
   "http://localhost:5500",
   "http://127.0.0.1:5500",
@@ -1396,10 +1397,8 @@ async function executeAction(
       await new Promise((r) => setTimeout(r, interval));
     }
 
-    // ========== التعديل الأساسي هنا ==========
-    // الكيستروك: يُرسل فقط إذا لم يكن هناك أمر RCON (command فارغ)
-    // حتى لا تتداخل الأوامر المعقدة (مثل أوامر ماينكرافت) مع SendKeys
-    if (keystrokeText && !command) {
+    // الكيستروك
+    if (keystrokeText) {
       const finalKeystroke = replacePlaceholders(
         keystrokeText,
         realName,
@@ -1419,7 +1418,7 @@ async function executeAction(
       }
     }
 
-    // أوامر RCON (تبقى كما هي، تُرسل مباشرة إلى السيرفر)
+    // أوامر RCON
     if (command && command.trim()) {
       const lines = command
         .split(/\r?\n/)
@@ -1452,8 +1451,8 @@ async function executeAction(
               nickname: realName,
               username: triggerUser,
             });
-          }, cumulativeDelay * 1000); // تحويل الثواني إلى ملي ثانية
-          cumulativeDelay += DEFAULT_COMMAND_DELAY_MS / 1000;
+          }, cumulativeDelay);
+          cumulativeDelay += DEFAULT_COMMAND_DELAY_MS;
         }
       } else {
         const singleCmd = lines[0];
@@ -2467,7 +2466,7 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
     const AUDIO_BASE = "/audios/";
     const VIDEO_BASE = "/videos/";
 
-const socket = io(window.location.origin, { query: { token: USER_TOKEN }, transports: ['polling'] });
+    const socket = io(window.location.origin, { query: { token: USER_TOKEN }, transports: ['websocket', 'polling'] });
     let audioUnlocked = false;
     let lastPlayedSoundId = null;
 
@@ -4993,51 +4992,40 @@ app.post("/api/agent/register", authenticateToken, async (req, res) => {
 });
 
 io.use(async (socket, next) => {
-  let token = socket.handshake.auth?.token || socket.handshake.query.token;
+  const screenToken = socket.handshake.query.token;
+  if (screenToken) {
+    try {
+      const user = await User.findOne({ screenToken });
+      if (user) {
+        socket.userId = String(user._id);
+        socket.isScreen = true;
+        return next();
+      }
+    } catch (err) {}
+  }
 
+  let token = socket.handshake.auth?.token || socket.handshake.query.token;
   if (!token) {
     const cookieHeader = socket.handshake.headers.cookie;
     if (cookieHeader) {
-      const cookies = cookieHeader.split(';').reduce((acc, c) => {
-        const [key, val] = c.trim().split('=');
+      const cookies = cookieHeader.split(";").reduce((acc, c) => {
+        const [key, val] = c.trim().split("=");
         acc[key] = val;
         return acc;
       }, {});
       token = cookies.token;
     }
   }
+  if (!token) return next(new Error("No token"));
 
-  console.log(`🔍 محاولة اتصال بالتوكن: ${token ? token.substring(0, 20) + "..." : "لا يوجد"}`);
-  console.log(`🔍 التوكن الكامل: ${token}`);
-
-  if (token) {
-    try {
-      const user = await User.findOne({ screenToken: token });
-      if (user) {
-        socket.userId = String(user._id);
-        socket.isScreen = true;
-        console.log(`✅ شاشة متصلة للمستخدم ${user.email}`);
-        return next();
-      } else {
-        console.warn(`⚠️ لم يتم العثور على مستخدم بهذا screenToken`);
-      }
-    } catch (err) {
-      console.warn(`⚠️ فشل التحقق من screenToken: ${err.message}`);
-    }
-
-    try {
-      const decoded = jwt.verify(token, JWT_SECRET);
-      socket.userId = String(decoded.id);
-      socket.isScreen = false;
-      console.log(`✅ مستخدم متصل عبر JWT: ${decoded.email}`);
-      return next();
-    } catch (err) {
-      console.warn(`⚠️ فشل التحقق من JWT: ${err.message}`);
-    }
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    socket.userId = String(decoded.id);
+    socket.isScreen = false;
+    next();
+  } catch (err) {
+    next(new Error("Invalid token"));
   }
-
-  console.warn(`❌ رفض اتصال بدون توكن صالح: ${socket.id}`);
-  return next(new Error("Invalid token"));
 });
 
 io.on("connection", (socket) => {
