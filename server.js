@@ -2467,7 +2467,7 @@ app.get("/screens/:token/:screenNumber", async (req, res) => {
     const AUDIO_BASE = "/audios/";
     const VIDEO_BASE = "/videos/";
 
-    const socket = io(window.location.origin, { query: { token: USER_TOKEN }, transports: ['websocket', 'polling'] });
+const socket = io(window.location.origin, { query: { token: USER_TOKEN }, transports: ['polling'] });
     let audioUnlocked = false;
     let lastPlayedSoundId = null;
 
