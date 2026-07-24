@@ -450,6 +450,9 @@ mongoose
         .collection("users")
         .createIndex({ screenToken: 1 }, { unique: true, sparse: true });
       await db
+        .collection("users")
+        .createIndex({ machineId: 1 }, { unique: true, sparse: true });
+      await db
         .collection("giftcommands")
         .createIndex({ userId: 1, profile: 1 });
       await db
@@ -496,6 +499,7 @@ const userSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
   audioUsedMB: { type: Number, default: 0 },
   videoUsedMB: { type: Number, default: 0 },
+  machineId: { type: String, unique: true, sparse: true, default: null },
   rconConfig: {
     host: { type: String, default: DEFAULT_RCON_HOST },
     port: { type: Number, default: DEFAULT_RCON_PORT },
@@ -4881,20 +4885,43 @@ app.delete(
         return res
           .status(404)
           .json({ success: false, message: "المستخدم غير موجود" });
-      await GiftCommand.deleteMany({ userId: user._id });
-      await InteractionCommand.deleteMany({ userId: user._id });
-      await user.deleteOne();
-      res.json({ success: true, message: "تم حذف المستخدم وجميع أوامره" });
+
+      const userId = user._id;
+
+      // حذف الملفات المرتبطة بالأوامر
+      const giftCommands = await GiftCommand.find({ userId });
+      const interactionCommands = await InteractionCommand.find({ userId });
+      for (const cmd of [...giftCommands, ...interactionCommands]) {
+        await deleteFilesForCommand(cmd, userId);
+      }
+
+      // حذف الأوامر
+      await GiftCommand.deleteMany({ userId });
+      await InteractionCommand.deleteMany({ userId });
+
+      // حذف الوسائط
+      await Audio.deleteMany({ userId });
+      await Video.deleteMany({ userId });
+
+      // حذف البروفايلات
+      await Profile.deleteMany({ owner: userId });
+
+      // حذف جلسات الوكيل
+      await AgentSession.deleteMany({ userId });
+
+      // فصل أي اتصال TikTok قائم
+      deleteTikTokConnection(userId.toString());
+
+      // حذف المستخدم نفسه
+      await User.findByIdAndDelete(userId);
+
+      res.json({ success: true, message: "تم حذف المستخدم وجميع بياناته" });
     } catch (err) {
       logger.error("❌ خطأ في حذف المستخدم:", err.message);
       res.status(500).json({ success: false, message: err.message });
     }
   },
 );
-
-app.get("/admin", authenticateToken, isAdmin, (req, res) => {
-  res.redirect(`${FRONTEND_URL}/admin`);
-});
 
 // ================ Socket.IO ================
 const pluginNamespace = io.of("/plugin");
@@ -5079,43 +5106,100 @@ cron.schedule("0 * * * *", async () => {
 });
 
 // ================ صفحة ربط العميل المحلي ================
+// ================ صفحة ربط العميل المحلي (آمنة تماماً) ================
 app.get("/agent-auth", async (req, res) => {
-  const { callbackPort } = req.query;
-  const port = callbackPort || 3456;
-  let protocol = req.protocol;
-  if (process.env.NODE_ENV === "production") protocol = "https";
+  const callbackPort = req.query.callbackPort || 3456;
+  const port = Number(callbackPort); // تأكد أنه رقم
+  const protocol =
+    process.env.NODE_ENV === "production" ? "https" : req.protocol;
   const serverUrl = `${protocol}://${req.get("host")}`;
   const bindingToken = crypto.randomBytes(32).toString("hex");
+
   state.bindingTokens.set(bindingToken, {
     userId: null,
     expires: Date.now() + 5 * 60 * 1000,
     callbackPort: port,
     serverUrl,
   });
+
+  // ترميز القيم بأمان قبل إدراجها في JavaScript
+  const safeToken = encodeURIComponent(JSON.stringify(bindingToken));
+  const safeServerUrl = encodeURIComponent(serverUrl);
+  const safePort = port; // رقم آمن
+
   res.send(`
-    <!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>ربط العميل المحلي - BlackMoon</title><style>body{background:#0a0a0a;color:white;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;}.container{background:#1e1e1e;padding:30px;border-radius:12px;text-align:center;max-width:400px;}input,button{padding:10px;margin:10px;border-radius:6px;border:none;}input{width:80%;background:#333;color:white;}button{background:#4caf50;color:white;cursor:pointer;}.error{color:#f44336;}</style></head><body><div class="container"><h2>🔗 ربط العميل المحلي</h2><p>الرجاء تسجيل الدخول أولاً ثم النقر على زر الربط.</p><div id="status"></div><button id="bindBtn">ربط العميل</button></div><script>
-      const bindBtn=document.getElementById('bindBtn');
-      const statusDiv=document.getElementById('status');
-      const bindingToken='${bindingToken}';
-      const callbackPort=${port};
-      const serverUrl='${serverUrl}';
-      async function checkLogin(){
-        try{ const res=await fetch('/api/auth/me',{credentials:'include'}); const data=await res.json(); if(data.success){ statusDiv.innerHTML='<span style="color:#4caf50">✅ تم تسجيل الدخول كـ '+data.user.email+'</span>'; return true; } else { statusDiv.innerHTML='<span style="color:#ff9800">⚠️ لم تسجل الدخول. سيتم فتح نافذة تسجيل الدخول.</span>'; return false; } } catch(e){ statusDiv.innerHTML='<span class="error">❌ خطأ في الاتصال</span>'; return false; }
-      }
-      bindBtn.onclick=async()=>{
-        const loggedIn=await checkLogin();
-        if(!loggedIn){ window.open('/login','_blank'); alert('سجل الدخول ثم اضغط على الربط مرة أخرى'); return; }
-        const tokenRes=await fetch('/api/agent/binding-token',{credentials:'include'});
-        const tokenData=await tokenRes.json();
-        if(!tokenData.success){ statusDiv.innerHTML='<span class="error">فشل الحصول على رمز الربط</span>'; return; }
-        const finalToken=tokenData.token;
-        window.location.href=\`http://localhost:\${callbackPort}/callback?sessionToken=\${finalToken}&serverUrl=\${serverUrl}\`;
-      };
-      checkLogin();
-    </script></body></html>
+    <!DOCTYPE html>
+    <html lang="ar">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>ربط العميل المحلي - BlackMoon</title>
+      <style>
+        body{background:#0a0a0a;color:white;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;}
+        .container{background:#1e1e1e;padding:30px;border-radius:12px;text-align:center;max-width:400px;}
+        button{padding:10px 20px;margin:10px;border-radius:6px;border:none;background:#4caf50;color:white;cursor:pointer;font-size:16px;}
+        .error{color:#f44336;}
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h2>🔗 ربط العميل المحلي</h2>
+        <p>الرجاء تسجيل الدخول أولاً ثم النقر على زر الربط.</p>
+        <div id="status"></div>
+        <button id="bindBtn">ربط العميل</button>
+      </div>
+      <script>
+        (function(){
+          // استخراج القيم الآمنة باستخدام decodeURIComponent و JSON.parse
+          const bindingToken = JSON.parse(decodeURIComponent('${safeToken}'));
+          const callbackPort = ${safePort};
+          const serverUrl = decodeURIComponent('${safeServerUrl}');
+          
+          const bindBtn = document.getElementById('bindBtn');
+          const statusDiv = document.getElementById('status');
+
+          async function checkLogin() {
+            try {
+              const res = await fetch('/api/auth/me', { credentials: 'include' });
+              const data = await res.json();
+              if (data.success) {
+                statusDiv.innerHTML = '<span style="color:#4caf50">✅ تم تسجيل الدخول كـ ' + data.user.email + '</span>';
+                return true;
+              } else {
+                statusDiv.innerHTML = '<span style="color:#ff9800">⚠️ لم تسجل الدخول. سيتم فتح نافذة تسجيل الدخول.</span>';
+                return false;
+              }
+            } catch(e) {
+              statusDiv.innerHTML = '<span class="error">❌ خطأ في الاتصال</span>';
+              return false;
+            }
+          }
+
+          bindBtn.onclick = async function() {
+            const loggedIn = await checkLogin();
+            if (!loggedIn) {
+              window.open('/login', '_blank');
+              alert('سجل الدخول ثم اضغط على الربط مرة أخرى');
+              return;
+            }
+            const tokenRes = await fetch('/api/agent/binding-token', { credentials: 'include' });
+            const tokenData = await tokenRes.json();
+            if (!tokenData.success) {
+              statusDiv.innerHTML = '<span class="error">فشل الحصول على رمز الربط</span>';
+              return;
+            }
+            const finalToken = tokenData.token;
+            // توجيه آمن باستخدام encodeURIComponent
+            window.location.href = 'http://localhost:' + callbackPort + '/callback?sessionToken=' + encodeURIComponent(finalToken) + '&serverUrl=' + encodeURIComponent(serverUrl);
+          };
+
+          checkLogin();
+        })();
+      </script>
+    </body>
+    </html>
   `);
 });
-
 app.get("/api/agent/binding-token", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -5155,27 +5239,71 @@ app.post("/api/agent/exchange-binding", async (req, res) => {
   }
 });
 
-// كل 30 ثانية، تحقق من المستخدمين الذين لديهم اسم مستخدم محدد وحاول إعادة الاتصال إذا كانوا غير متصلين
-setInterval(async () => {
+// ================ الربط التلقائي للعميل المحلي ================
+app.post("/api/agent/auto-bind", async (req, res) => {
   try {
-    const users = await User.find({ tiktokUsername: { $ne: null, $ne: "" } });
-    for (const user of users) {
-      const userId = user._id.toString();
-      const conn = getTikTokConnection(userId);
-      // إذا لم يكن هناك اتصال أو كان غير حي، حاول إعادة الاتصال
-      if (!conn || (!conn.isLive && !conn.reconnecting)) {
-        logger.info(
-          `🔄 محاولة إعادة الاتصال الدورية للمستخدم ${user.email} (@${user.tiktokUsername})`,
-        );
-        await connectUser(userId, user.tiktokUsername);
-        // ننتظر قليلاً بين كل محاولة لتجنب إغراق الخادم
-        await new Promise((r) => setTimeout(r, 2000));
-      }
+    const { machineId, secret, hostname, platform } = req.body;
+
+    // تحقق من السر
+    if (secret !== "SteamMoon_AutoBind_Secret_2026") {
+      return res.status(403).json({ success: false, message: "غير مصرح" });
     }
+
+    if (!machineId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "معرّف الجهاز مطلوب" });
+    }
+
+    // 1. ابحث عن مستخدم مرتبط بهذا الجهاز
+    let user = await User.findOne({ machineId });
+
+    // 2. إذا لم يوجد، أنشئ مستخدمًا جديدًا تلقائيًا
+    if (!user) {
+      const tempEmail = `agent_${machineId.substring(0, 8)}@steammoon.local`;
+      const tempPassword = crypto.randomBytes(16).toString("hex");
+
+      const hashedPassword = await bcrypt.hash(tempPassword, 10);
+      const screenToken = crypto.randomBytes(32).toString("hex");
+
+      user = new User({
+        email: tempEmail,
+        password: hashedPassword,
+        plan: "free",
+        role: "user",
+        screenToken,
+        machineId,
+        selectedProfile: 1,
+        audioUsedMB: 0,
+        videoUsedMB: 0,
+      });
+
+      await user.save();
+      await ensureUserProfiles(user._id);
+      logger.info(`✅ تم إنشاء مستخدم تلقائي للجهاز ${machineId}`);
+    } else {
+      logger.info(
+        `✅ تم العثور على مستخدم موجود للجهاز ${machineId}: ${user.email}`,
+      );
+    }
+
+    // 3. حذف الجلسات القديمة لنفس المستخدم (اختياري للنظافة)
+    await AgentSession.deleteMany({ userId: user._id });
+
+    // 4. إنشاء جلسة جديدة
+    const sessionToken = crypto.randomBytes(32).toString("hex");
+    await AgentSession.create({
+      token: sessionToken,
+      userId: user._id,
+      expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 يوم
+    });
+
+    res.json({ success: true, sessionToken });
   } catch (err) {
-    logger.error("❌ خطأ في المهمة الدورية لإعادة الاتصال:", err.message);
+    logger.error("Auto-bind error:", err);
+    res.status(500).json({ success: false, message: err.message });
   }
-}, 30000); // كل 30 ثانية
+});
 
 // ================ بدء الخادم ================
 server.listen(PORT, "0.0.0.0", () => {
