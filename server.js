@@ -4993,25 +4993,39 @@ app.post("/api/agent/register", authenticateToken, async (req, res) => {
 });
 
 io.use(async (socket, next) => {
-  // 1. محاولة الحصول على التوكن من query أو auth
-  let token = socket.handshake.query.token || socket.handshake.auth?.token;
+  let token = socket.handshake.auth?.token || socket.handshake.query.token;
 
-  // 2. إذا كان هناك توكن، نتحقق منه
+  if (!token) {
+    const cookieHeader = socket.handshake.headers.cookie;
+    if (cookieHeader) {
+      const cookies = cookieHeader.split(";").reduce((acc, c) => {
+        const [key, val] = c.trim().split("=");
+        acc[key] = val;
+        return acc;
+      }, {});
+      token = cookies.token;
+    }
+  }
+
+  console.log(
+    `🔍 محاولة اتصال بالتوكن: ${token ? token.substring(0, 10) + "..." : "لا يوجد"}`,
+  );
+
   if (token) {
-    // 2.1 التحقق من screenToken أولاً
+    // التحقق من screenToken
     try {
       const user = await User.findOne({ screenToken: token });
       if (user) {
         socket.userId = String(user._id);
         socket.isScreen = true;
-        console.log(`✅ شاشة متصلة للمستخدم ${user.email} (token: ${token.substring(0, 10)}...)`);
+        console.log(`✅ شاشة متصلة للمستخدم ${user.email}`);
         return next();
       }
     } catch (err) {
       console.warn(`⚠️ فشل التحقق من screenToken: ${err.message}`);
     }
 
-    // 2.2 إذا لم يكن screenToken، نحاول JWT
+    // التحقق من JWT
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
       socket.userId = String(decoded.id);
@@ -5023,7 +5037,6 @@ io.use(async (socket, next) => {
     }
   }
 
-  // 3. إذا لم يتم التعرف على التوكن
   console.warn(`❌ رفض اتصال بدون توكن صالح: ${socket.id}`);
   return next(new Error("Invalid token"));
 });
