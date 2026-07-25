@@ -1826,6 +1826,10 @@ function startLiveHeartbeat(userId) {
     state.heartbeats.delete(userId);
   }
 
+  // ننتظر 60 ثانية قبل اعتبار البث منتهياً إذا لم نستقبل أي بيانات
+  let missedHeartbeats = 0;
+  const MAX_MISSED = 4; // 4 * 15 = 60 ثانية
+
   const interval = setInterval(async () => {
     const conn = getTikTokConnection(userId);
     if (!conn || !conn.connection) {
@@ -1833,33 +1837,46 @@ function startLiveHeartbeat(userId) {
       state.heartbeats.delete(userId);
       return;
     }
-    if (!conn.isLive) {
-      clearInterval(interval);
-      state.heartbeats.delete(userId);
-      return;
+
+    // محاولة الحصول على roomId من كائن الاتصال مباشرة
+    let roomId = conn.roomId;
+    if (!roomId && conn.connection.state?.roomInfo?.data) {
+      roomId = conn.connection.state.roomInfo.data.roomId || null;
+      if (roomId) {
+        conn.roomId = roomId;
+        setTikTokConnection(userId, conn);
+        logger.info(`✅ تم تحديث roomId من الاتصال: ${roomId}`);
+      }
     }
 
-    try {
-      // ✅ التعديل الأساسي: نعتمد فقط على roomId لتحديد انتهاء البث
-      if (!conn.roomId) {
+    // إذا كان roomId لا يزال فارغاً، نزيد العداد
+    if (!roomId) {
+      missedHeartbeats++;
+      logger.info(
+        `⏳ heartbeat: roomId غير موجود (${missedHeartbeats}/${MAX_MISSED}) للمستخدم ${userId}`,
+      );
+      if (missedHeartbeats >= MAX_MISSED) {
+        // بعد 60 ثانية من دون roomId، نعتبر البث منتهياً
         conn.isLive = false;
         setTikTokConnection(userId, conn);
         resetOncePerLiveForUser(userId);
         clearInterval(interval);
         state.heartbeats.delete(userId);
-        logger.info(`🔄 انتهاء البث للمستخدم ${userId} (roomId فارغ)`);
-        return;
+        logger.info(
+          `🔄 انتهاء البث للمستخدم ${userId} (لا يوجد roomId بعد 60 ثانية)`,
+        );
       }
+      return;
+    }
 
-      // ❌ نزيل التحقق الزمني بالكامل (كان سابقاً: if (now - lastUpdate > 60000))
-      // لا نقوم بأي إجراء إضافي
-    } catch (err) {
-      conn.isLive = false;
+    // إذا وصلنا هنا، roomId موجود، نعيد ضبط العداد
+    missedHeartbeats = 0;
+    logger.info(`💓 heartbeat: roomId موجود (${roomId}) للمستخدم ${userId}`);
+
+    // تحديث isLive إذا كان false
+    if (!conn.isLive) {
+      conn.isLive = true;
       setTikTokConnection(userId, conn);
-      resetOncePerLiveForUser(userId);
-      clearInterval(interval);
-      state.heartbeats.delete(userId);
-      logger.warn(`⚠️ خطأ في heartbeat للمستخدم ${userId}: ${err.message}`);
     }
   }, 15000);
 
@@ -2391,18 +2408,20 @@ async function connectUser(userId, username) {
 
   // ========== معالج ROOM_UPDATE ==========
   connection.on(WebcastEvent.ROOM_UPDATE, (data) => {
-    const prev = getTikTokConnection(userId)?.isLive;
     const newRoomId = data?.roomId ?? data?.room_id ?? null;
     const newIsLive =
       typeof data?.isLive === "boolean" ? data.isLive : !!newRoomId;
-    if (!prev && newIsLive) resetOncePerLiveForUser(userId);
-    if (prev && !newIsLive) resetOncePerLiveForUser(userId);
     const conn = getTikTokConnection(userId);
     if (conn) {
       conn.isLive = newIsLive;
       conn.roomId = newIsLive ? newRoomId : null;
       conn.lastRoomUpdate = Date.now();
       setTikTokConnection(userId, conn);
+      // إذا كان roomId جديداً، نعيد ضبط heartbeat
+      if (newRoomId) {
+        // إعادة تشغيل heartbeat لمسح العداد
+        startLiveHeartbeat(userId);
+      }
     }
   });
 
@@ -2428,7 +2447,10 @@ async function connectUser(userId, username) {
             await connectUser(userId, user.tiktokUsername);
           }
         } catch (err) {
-          logger.error(`❌ فشلت إعادة الاتصال للمستخدم ${userId}:`, err.message);
+          logger.error(
+            `❌ فشلت إعادة الاتصال للمستخدم ${userId}:`,
+            err.message,
+          );
         }
       }
     }, 5000);
@@ -3331,7 +3353,8 @@ app.post("/api/interaction-commands", authenticateToken, async (req, res) => {
     if (!canAccess) {
       return res.status(403).json({
         success: false,
-        message: "لا يمكنك إنشاء أوامر لهذا البروفايل في النسخة المجانية. قم بالترقية.",
+        message:
+          "لا يمكنك إنشاء أوامر لهذا البروفايل في النسخة المجانية. قم بالترقية.",
       });
     }
 
@@ -3341,13 +3364,17 @@ app.post("/api/interaction-commands", authenticateToken, async (req, res) => {
       if (total >= 7) {
         return res.status(403).json({
           success: false,
-          message: "لقد وصلت للحد الأقصى للأوامر (7) في النسخة المجانية. قم بالترقية لإضافة المزيد.",
+          message:
+            "لقد وصلت للحد الأقصى للأوامر (7) في النسخة المجانية. قم بالترقية لإضافة المزيد.",
         });
       }
     }
 
     const { type } = payload;
-    if (!type || !["follow", "like", "comment", "share", "gift", "all"].includes(type)) {
+    if (
+      !type ||
+      !["follow", "like", "comment", "share", "gift", "all"].includes(type)
+    ) {
       return res.status(400).json({
         success: false,
         message: `النوع غير مدعوم. الأنواع المسموحة: follow, like, comment, share, gift, all`,
