@@ -79,6 +79,9 @@ const CLEANUP_INTERVAL = 15 * 60 * 1000; // 15 دقيقة
 
 let lastLikeCount = new Map();
 
+const connectingUsers = new Set();
+const executedEvents = new NodeCache({ stdTTL: 5 }); // منع تكرار الأحداث لمدة 5 ثوانٍ
+
 function generateEventId() {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 8)}`;
 }
@@ -1527,7 +1530,6 @@ async function executeAction(
 
 // ================ دوال مساعدة لأحداث TikTok ================
 function resetOncePerLiveForUser(userId) {
-  // حذف oncePerLive
   const keys = state.tempStores.executedOncePerLive.keys();
   for (const key of keys) {
     if (key.startsWith(`${userId}:`)) {
@@ -1535,7 +1537,6 @@ function resetOncePerLiveForUser(userId) {
     }
   }
 
-  // حذف عدادات اللايك
   const likeKeys = state.tempStores.likeCounters.keys();
   for (const key of likeKeys) {
     if (key.startsWith(`${userId}:`)) {
@@ -1543,7 +1544,12 @@ function resetOncePerLiveForUser(userId) {
     }
   }
 
-  // ❌ لا نمسح interactionCooldown لأنه يعتمد على TTL تلقائي
+  const eventKeys = executedEvents.keys();
+  for (const key of eventKeys) {
+    if (key.startsWith(`${userId}:`)) {
+      executedEvents.del(key);
+    }
+  }
 }
 
 function getSenderFromEvent(data) {
@@ -1862,18 +1868,40 @@ function startLiveHeartbeat(userId) {
 
 // ================ إدارة اتصالات TikTok ================
 async function connectUser(userId, username) {
+  // منع الاتصال المتزامن
+  if (connectingUsers.has(userId)) {
+    console.log(`⏳ اتصال قيد التقدم للمستخدم ${userId}، تجاهل`);
+    return false;
+  }
+  connectingUsers.add(userId);
   console.log(`🔗 [CONNECT] محاولة اتصال للمستخدم ${userId} @${username}`);
-  if (getTikTokConnection(userId)) {
+
+  // إزالة الاتصال القديم نهائياً (مع إزالة المستمعات)
+  const oldConn = getTikTokConnection(userId);
+  if (oldConn && oldConn.connection) {
+    try {
+      oldConn.connection.removeAllListeners();
+      oldConn.connection.disconnect();
+    } catch (e) {}
     deleteTikTokConnection(userId);
   }
+
   const connection = new TikTokLiveConnection(username, {
     apiKey: BLACKMOON_KEY,
   });
 
   let debugOnce = false;
 
+  // ========== معالج GIFT ==========
   connection.on(WebcastEvent.GIFT, async (data) => {
-    const eventId = generateEventId(); // معرف فريد لهذا الحدث
+    const eventId = generateEventId();
+    const eventKey = `${userId}:${eventId}`;
+    // منع تكرار نفس الحدث
+    if (executedEvents.get(eventKey)) {
+      console.log(`⏭️ حدث مكرر (${eventId})، تجاهل`);
+      return;
+    }
+    executedEvents.set(eventKey, true);
     updateLastActivity(userId);
 
     if (!debugOnce) {
@@ -1970,6 +1998,7 @@ async function connectUser(userId, username) {
     }
   });
 
+  // ========== دالة مساعدة processGiftDelta ==========
   async function processGiftDelta({
     userId,
     sender,
@@ -2031,7 +2060,7 @@ async function connectUser(userId, username) {
         );
       }
 
-      // معالجة أوامر التفاعل من نوع "gift" (اختياري)
+      // معالجة أوامر التفاعل من نوع "gift"
       const giftInteractions = getInteractionCommandsForProfile(
         userId,
         userProfile,
@@ -2043,7 +2072,6 @@ async function connectUser(userId, username) {
           normalizeUser(ic.targetUser) !== sender
         )
           continue;
-        // قد ترغب في تنفيذها أيضاً مع eventId
         await executeAction(
           addKeystrokeToCommand(ic),
           sender,
@@ -2058,6 +2086,7 @@ async function connectUser(userId, username) {
     }
   }
 
+  // ========== معالج FOLLOW ==========
   connection.on(WebcastEvent.FOLLOW, async (data) => {
     const eventId = generateEventId();
     updateLastActivity(userId);
@@ -2104,6 +2133,7 @@ async function connectUser(userId, username) {
     }
   });
 
+  // ========== معالج CHAT ==========
   connection.on(WebcastEvent.CHAT, async (data) => {
     const eventId = generateEventId();
     updateLastActivity(userId);
@@ -2117,7 +2147,6 @@ async function connectUser(userId, username) {
         `💬 [CHAT] eventId=${eventId}, sender=${sender}, comment="${comment.substring(0, 30)}"`,
       );
 
-      // ✅ منع تكرار نفس التعليق لنفس المستخدم خلال 5 ثوانٍ
       const chatKey = `chat:${userId}:${sender}:${comment}`;
       if (state.getTemp("interactionCooldown", chatKey)) {
         console.log(`⏭️ [CHAT] مكرر (cooldown) eventId=${eventId}`);
@@ -2186,6 +2215,7 @@ async function connectUser(userId, username) {
     }
   });
 
+  // ========== معالج LIKE ==========
   connection.on(WebcastEvent.LIKE, async (data) => {
     const eventId = generateEventId();
     updateLastActivity(userId);
@@ -2301,6 +2331,7 @@ async function connectUser(userId, username) {
     }
   });
 
+  // ========== معالج SHARE ==========
   connection.on(WebcastEvent.SHARE, async (data) => {
     const eventId = generateEventId();
     updateLastActivity(userId);
@@ -2358,6 +2389,7 @@ async function connectUser(userId, username) {
     }
   });
 
+  // ========== معالج ROOM_UPDATE ==========
   connection.on(WebcastEvent.ROOM_UPDATE, (data) => {
     const prev = getTikTokConnection(userId)?.isLive;
     const newRoomId = data?.roomId ?? data?.room_id ?? null;
@@ -2374,6 +2406,7 @@ async function connectUser(userId, username) {
     }
   });
 
+  // ========== معالج DISCONNECTED (مع تحسين إعادة المحاولة) ==========
   connection.on(WebcastEvent.DISCONNECTED, () => {
     const conn = getTikTokConnection(userId);
     if (conn) {
@@ -2384,39 +2417,30 @@ async function connectUser(userId, username) {
     resetOncePerLiveForUser(userId);
     logger.info(`⚠️ تم قطع الاتصال بـ TikTok للمستخدم ${userId}`);
 
-    // 🔄 إعادة محاولة الاتصال بعد 5 ثوانٍ (إذا كان المستخدم لا يزال يريد الاتصال)
+    // إعادة محاولة الاتصال بعد 5 ثوانٍ (مع التحقق من عدم وجود محاولة أخرى)
     setTimeout(async () => {
       const currentConn = getTikTokConnection(userId);
-      // إذا كان الاتصال لا يزال مقطوعاً وليس هناك محاولة جارية
-      if (currentConn && !currentConn.isLive && !currentConn.reconnecting) {
+      if (currentConn && !currentConn.isLive && !connectingUsers.has(userId)) {
         logger.info(`🔄 محاولة إعادة الاتصال للمستخدم ${userId}...`);
-        currentConn.reconnecting = true;
-        setTikTokConnection(userId, currentConn);
         try {
           const user = await User.findById(userId);
           if (user && user.tiktokUsername) {
             await connectUser(userId, user.tiktokUsername);
           }
         } catch (err) {
-          logger.error(
-            `❌ فشلت إعادة الاتصال للمستخدم ${userId}:`,
-            err.message,
-          );
-        } finally {
-          const updatedConn = getTikTokConnection(userId);
-          if (updatedConn) {
-            updatedConn.reconnecting = false;
-            setTikTokConnection(userId, updatedConn);
-          }
+          logger.error(`❌ فشلت إعادة الاتصال للمستخدم ${userId}:`, err.message);
         }
       }
     }, 5000);
   });
+
+  // ========== معالج ERROR ==========
   connection.on(WebcastEvent.ERROR, (err) => {
     if (err?.message?.includes("illegal tag")) return;
     logger.error(`❌ خطأ في اتصال TikTok للمستخدم ${userId}:`, err.message);
   });
 
+  // ========== محاولة الاتصال ==========
   try {
     await connection.connect();
     await refreshCachesForUser(userId);
@@ -2427,7 +2451,7 @@ async function connectUser(userId, username) {
       isLive: true,
       roomId: null,
       lastRoomUpdate: Date.now(),
-      reconnecting: false, // ✅ أضف هذا السطر
+      reconnecting: false,
     });
     startLiveHeartbeat(userId);
     logger.info(`✅ متصل بحساب @${username} للمستخدم ${userId}`);
@@ -2439,9 +2463,11 @@ async function connectUser(userId, username) {
       username,
       isLive: false,
       roomId: null,
-      reconnecting: false, // ✅ أضف هنا أيضاً
+      reconnecting: false,
     });
     return false;
+  } finally {
+    connectingUsers.delete(userId);
   }
 }
 
