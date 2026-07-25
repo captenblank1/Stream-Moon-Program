@@ -1530,6 +1530,7 @@ async function executeAction(
 
 // ================ دوال مساعدة لأحداث TikTok ================
 function resetOncePerLiveForUser(userId) {
+  // مسح executedOncePerLive
   const keys = state.tempStores.executedOncePerLive.keys();
   for (const key of keys) {
     if (key.startsWith(`${userId}:`)) {
@@ -1537,6 +1538,7 @@ function resetOncePerLiveForUser(userId) {
     }
   }
 
+  // مسح عدادات اللايك
   const likeKeys = state.tempStores.likeCounters.keys();
   for (const key of likeKeys) {
     if (key.startsWith(`${userId}:`)) {
@@ -1544,6 +1546,7 @@ function resetOncePerLiveForUser(userId) {
     }
   }
 
+  // مسح executedEvents
   const eventKeys = executedEvents.keys();
   for (const key of eventKeys) {
     if (key.startsWith(`${userId}:`)) {
@@ -1826,10 +1829,6 @@ function startLiveHeartbeat(userId) {
     state.heartbeats.delete(userId);
   }
 
-  // ننتظر 60 ثانية قبل اعتبار البث منتهياً إذا لم نستقبل أي بيانات
-  let missedHeartbeats = 0;
-  const MAX_MISSED = 4; // 4 * 15 = 60 ثانية
-
   const interval = setInterval(async () => {
     const conn = getTikTokConnection(userId);
     if (!conn || !conn.connection) {
@@ -1838,46 +1837,22 @@ function startLiveHeartbeat(userId) {
       return;
     }
 
-    // محاولة الحصول على roomId من كائن الاتصال مباشرة
-    let roomId = conn.roomId;
-    if (!roomId && conn.connection.state?.roomInfo?.data) {
-      roomId = conn.connection.state.roomInfo.data.roomId || null;
-      if (roomId) {
-        conn.roomId = roomId;
-        setTikTokConnection(userId, conn);
-        logger.info(`✅ تم تحديث roomId من الاتصال: ${roomId}`);
+    // محاولة تحديث roomId من كائن الاتصال مباشرة
+    try {
+      if (conn.connection.state?.roomInfo?.data?.roomId) {
+        const newRoomId = conn.connection.state.roomInfo.data.roomId;
+        if (conn.roomId !== newRoomId) {
+          conn.roomId = newRoomId;
+          setTikTokConnection(userId, conn);
+          logger.info(`💓 heartbeat: تحديث roomId إلى ${newRoomId}`);
+        }
       }
-    }
+    } catch (err) {}
 
-    // إذا كان roomId لا يزال فارغاً، نزيد العداد
-    if (!roomId) {
-      missedHeartbeats++;
-      logger.info(
-        `⏳ heartbeat: roomId غير موجود (${missedHeartbeats}/${MAX_MISSED}) للمستخدم ${userId}`,
-      );
-      if (missedHeartbeats >= MAX_MISSED) {
-        // بعد 60 ثانية من دون roomId، نعتبر البث منتهياً
-        conn.isLive = false;
-        setTikTokConnection(userId, conn);
-        resetOncePerLiveForUser(userId);
-        clearInterval(interval);
-        state.heartbeats.delete(userId);
-        logger.info(
-          `🔄 انتهاء البث للمستخدم ${userId} (لا يوجد roomId بعد 60 ثانية)`,
-        );
-      }
-      return;
-    }
-
-    // إذا وصلنا هنا، roomId موجود، نعيد ضبط العداد
-    missedHeartbeats = 0;
-    logger.info(`💓 heartbeat: roomId موجود (${roomId}) للمستخدم ${userId}`);
-
-    // تحديث isLive إذا كان false
-    if (!conn.isLive) {
-      conn.isLive = true;
-      setTikTokConnection(userId, conn);
-    }
+    // لا نقطع الاتصال هنا، نكتفي بتسجيل الحالة
+    logger.info(
+      `💓 heartbeat للمستخدم ${userId}: isLive=${conn.isLive}, roomId=${conn.roomId || "غير موجود"}`,
+    );
   }, 15000);
 
   state.heartbeats.set(userId, interval);
@@ -1893,16 +1868,36 @@ async function connectUser(userId, username) {
   connectingUsers.add(userId);
   console.log(`🔗 [CONNECT] محاولة اتصال للمستخدم ${userId} @${username}`);
 
-  // إزالة الاتصال القديم نهائياً (مع إزالة المستمعات)
+  // ========== تنظيف شامل للاتصال القديم ==========
   const oldConn = getTikTokConnection(userId);
-  if (oldConn && oldConn.connection) {
-    try {
-      oldConn.connection.removeAllListeners();
-      oldConn.connection.disconnect();
-    } catch (e) {}
+  if (oldConn) {
+    // إزالة المستمعات أولاً
+    if (oldConn.connection) {
+      try {
+        oldConn.connection.removeAllListeners();
+        oldConn.connection.disconnect();
+      } catch (e) {
+        console.warn(`⚠️ خطأ أثناء قطع الاتصال القديم: ${e.message}`);
+      }
+    }
+    // مسح المؤقت
+    if (state.heartbeats.has(userId)) {
+      clearInterval(state.heartbeats.get(userId));
+      state.heartbeats.delete(userId);
+    }
     deleteTikTokConnection(userId);
+    console.log(`🧹 تم تنظيف الاتصال القديم للمستخدم ${userId}`);
   }
 
+  // ========== مسح executedEvents الخاصة بهذا المستخدم ==========
+  const eventKeys = executedEvents.keys();
+  for (const key of eventKeys) {
+    if (key.startsWith(`${userId}:`)) {
+      executedEvents.del(key);
+    }
+  }
+
+  // ========== إنشاء اتصال جديد ==========
   const connection = new TikTokLiveConnection(username, {
     apiKey: BLACKMOON_KEY,
   });
@@ -1913,7 +1908,7 @@ async function connectUser(userId, username) {
   connection.on(WebcastEvent.GIFT, async (data) => {
     const eventId = generateEventId();
     const eventKey = `${userId}:${eventId}`;
-    // منع تكرار نفس الحدث
+    // منع تكرار نفس الحدث خلال 5 ثوانٍ
     if (executedEvents.get(eventKey)) {
       console.log(`⏭️ حدث مكرر (${eventId})، تجاهل`);
       return;
@@ -2077,7 +2072,6 @@ async function connectUser(userId, username) {
         );
       }
 
-      // معالجة أوامر التفاعل من نوع "gift"
       const giftInteractions = getInteractionCommandsForProfile(
         userId,
         userProfile,
@@ -2406,7 +2400,7 @@ async function connectUser(userId, username) {
     }
   });
 
-  // ========== معالج ROOM_UPDATE ==========
+  // ========== معالج ROOM_UPDATE (بدون إعادة تشغيل heartbeat) ==========
   connection.on(WebcastEvent.ROOM_UPDATE, (data) => {
     const newRoomId = data?.roomId ?? data?.room_id ?? null;
     const newIsLive =
@@ -2414,18 +2408,14 @@ async function connectUser(userId, username) {
     const conn = getTikTokConnection(userId);
     if (conn) {
       conn.isLive = newIsLive;
-      conn.roomId = newIsLive ? newRoomId : null;
+      if (newRoomId) conn.roomId = newRoomId;
       conn.lastRoomUpdate = Date.now();
       setTikTokConnection(userId, conn);
-      // إذا كان roomId جديداً، نعيد ضبط heartbeat
-      if (newRoomId) {
-        // إعادة تشغيل heartbeat لمسح العداد
-        startLiveHeartbeat(userId);
-      }
+      // لا نستدعي startLiveHeartbeat هنا
     }
   });
 
-  // ========== معالج DISCONNECTED (مع تحسين إعادة المحاولة) ==========
+  // ========== معالج DISCONNECTED (مع تأخير أطول) ==========
   connection.on(WebcastEvent.DISCONNECTED, () => {
     const conn = getTikTokConnection(userId);
     if (conn) {
@@ -2433,10 +2423,15 @@ async function connectUser(userId, username) {
       conn.roomId = null;
       setTikTokConnection(userId, conn);
     }
+    // مسح المؤقت فوراً
+    if (state.heartbeats.has(userId)) {
+      clearInterval(state.heartbeats.get(userId));
+      state.heartbeats.delete(userId);
+    }
     resetOncePerLiveForUser(userId);
     logger.info(`⚠️ تم قطع الاتصال بـ TikTok للمستخدم ${userId}`);
 
-    // إعادة محاولة الاتصال بعد 5 ثوانٍ (مع التحقق من عدم وجود محاولة أخرى)
+    // إعادة محاولة الاتصال بعد 10 ثوانٍ (بدلاً من 5)
     setTimeout(async () => {
       const currentConn = getTikTokConnection(userId);
       if (currentConn && !currentConn.isLive && !connectingUsers.has(userId)) {
@@ -2453,7 +2448,7 @@ async function connectUser(userId, username) {
           );
         }
       }
-    }, 5000);
+    }, 10000);
   });
 
   // ========== معالج ERROR ==========
