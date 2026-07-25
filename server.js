@@ -1154,8 +1154,7 @@ async function sendRconCommand(userId, command, { nickname, username } = {}) {
   }
 }
 
-// ================ Webhook ================
-// ================ Webhook (نسخة معدلة بالكامل) ================
+// ================ Webhook (نسخة معدلة - بدون تكرار) ================
 async function sendWebhook(webhookUrl, data, userId = null) {
   if (!webhookUrl || !webhookUrl.trim()) return;
   webhookUrl = webhookUrl.trim();
@@ -1169,7 +1168,7 @@ async function sendWebhook(webhookUrl, data, userId = null) {
 
   // ==============================================================
   // 1. إذا كان الرابط داخلياً (localhost) ولدينا عميل محلي متصل،
-  //    نفضل إرساله إلى العميل (لأنه ينفذ على جهاز المستخدم الفعلي).
+  //    نرسل إليه فقط (لا نرسل إلى الفرونت ولا نرسل مباشرة)
   // ==============================================================
   if (isLocalhost && userId) {
     const userIdStr = userId.toString();
@@ -1178,7 +1177,6 @@ async function sendWebhook(webhookUrl, data, userId = null) {
       logger.info(
         `📡 إرسال webhook إلى العميل المحلي للمستخدم ${userId}: ${webhookUrl}`,
       );
-      // إضافة fromServer: true لتجاوز القيود الأمنية في العميل
       agentSocket.emit("webhook-request", {
         url: webhookUrl,
         method: "POST",
@@ -1187,20 +1185,20 @@ async function sendWebhook(webhookUrl, data, userId = null) {
         repeat: 1,
         interval: 0,
         delayBefore: 0,
-        fromServer: true, // <-- تخبر العميل أن الطلب موثوق
+        fromServer: true,
       });
-      return; // تم الإرسال، نخرج
+      return; // ✅ نخرج هنا، لا نرسل إلى أي مكان آخر
     } else {
-      // العميل غير متصل، نسجل تحذيراً ونكمل للإرسال المباشر (لا نخرج!)
+      // العميل غير متصل، نكمل للإرسال المباشر (ونحذف إرسال الفرونت)
       logger.warn(
-        `⚠️ العميل المحلي غير متصل للمستخدم ${userId}، سيتم محاولة الإرسال المباشر إلى ${webhookUrl}`,
+        `⚠️ العميل المحلي غير متصل للمستخدم ${userId}، سيتم الإرسال المباشر من الخادم.`,
       );
       // نكمل التنفيذ للإرسال المباشر عبر HTTP
     }
   }
 
   // ==============================================================
-  // 2. الإرسال المباشر عبر HTTP (للعناوين الخارجية أو الداخلية كحل احتياطي)
+  // 2. الإرسال المباشر عبر HTTP (للعناوين الخارجية أو كحل احتياطي)
   //    مع إعادة محاولة تلقائية ومهلة أطول.
   // ==============================================================
   logger.info(`🌐 إرسال Webhook مباشر إلى: ${webhookUrl.substring(0, 50)}...`);
@@ -1223,14 +1221,10 @@ async function sendWebhook(webhookUrl, data, userId = null) {
       clearTimeout(timeoutId);
 
       if (response.ok) {
-        logger.info(
-          `✅ Webhook نجح (${response.status}) في المحاولة ${attempt}`,
-        );
-        return; // نجاح، نخرج من الدالة
+        logger.info(`✅ Webhook نجح (${response.status}) في المحاولة ${attempt}`);
+        return;
       } else {
-        logger.warn(
-          `⚠️ Webhook فشل (${response.status}) في المحاولة ${attempt}`,
-        );
+        logger.warn(`⚠️ Webhook فشل (${response.status}) في المحاولة ${attempt}`);
         lastError = new Error(`HTTP ${response.status}`);
       }
     } catch (err) {
@@ -1244,19 +1238,16 @@ async function sendWebhook(webhookUrl, data, userId = null) {
       }
     }
 
-    // إذا لم تكن المحاولة الأخيرة، انتظر قبل إعادة المحاولة (تأخير تصاعدي)
     if (attempt < WEBHOOK_RETRIES) {
-      const delay = attempt * 1000; // 1s, 2s, 3s
+      const delay = attempt * 1000;
       logger.info(`⏳ إعادة المحاولة بعد ${delay}ms...`);
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
 
-  // فشلت جميع المحاولات
   logger.error(
     `❌ فشل Webhook بعد ${WEBHOOK_RETRIES} محاولات: ${lastError?.message || "خطأ غير معروف"}`,
   );
-  // إرسال إشعار للمستخدم عبر Socket.IO (اختياري)
   if (userId) {
     io.to(`user-${userId}`).emit("webhook-error", {
       message: `فشل إرسال Webhook: ${lastError?.message || "خطأ غير معروف"}`,
