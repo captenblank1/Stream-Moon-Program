@@ -1163,8 +1163,16 @@ async function sendWebhook(webhookUrl, data, userId = null) {
     return;
   }
 
-  const isLocalhost =
-    webhookUrl.includes("localhost") || webhookUrl.includes("127.0.0.1");
+  let isLocalhost = false;
+  try {
+    const parsed = new URL(webhookUrl);
+    const hostname = parsed.hostname;
+    isLocalhost =
+      ["localhost", "127.0.0.1", "::1"].includes(hostname) ||
+      /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(hostname);
+  } catch (e) {
+    // إذا فشل تحليل الرابط، نعتبره غير داخلي
+  }
 
   // ==============================================================
   // 1. إذا كان الرابط داخلياً (localhost)
