@@ -1154,7 +1154,7 @@ async function sendRconCommand(userId, command, { nickname, username } = {}) {
   }
 }
 
-// ================ Webhook (نسخة معدلة - بدون تكرار) ================
+// ================ Webhook (نسخة معدلة نهائياً) ================
 async function sendWebhook(webhookUrl, data, userId = null) {
   if (!webhookUrl || !webhookUrl.trim()) return;
   webhookUrl = webhookUrl.trim();
@@ -1167,13 +1167,14 @@ async function sendWebhook(webhookUrl, data, userId = null) {
     webhookUrl.includes("localhost") || webhookUrl.includes("127.0.0.1");
 
   // ==============================================================
-  // 1. إذا كان الرابط داخلياً (localhost) ولدينا عميل محلي متصل،
-  //    نرسل إليه فقط (لا نرسل إلى الفرونت ولا نرسل مباشرة)
+  // 1. إذا كان الرابط داخلياً (localhost)
   // ==============================================================
   if (isLocalhost && userId) {
     const userIdStr = userId.toString();
     const agentSocket = state.userLocalAgents.get(userIdStr);
+
     if (agentSocket && agentSocket.connected) {
+      // ✅ العميل المحلي متصل: أرسل إليه فقط (لا نرسل إلى الفرونت)
       logger.info(
         `📡 إرسال webhook إلى العميل المحلي للمستخدم ${userId}: ${webhookUrl}`,
       );
@@ -1187,19 +1188,29 @@ async function sendWebhook(webhookUrl, data, userId = null) {
         delayBefore: 0,
         fromServer: true,
       });
-      return; // ✅ نخرج هنا، لا نرسل إلى أي مكان آخر
+      return; // نخرج، لا نرسل مباشرة ولا إلى الفرونت
     } else {
-      // العميل غير متصل، نكمل للإرسال المباشر (ونحذف إرسال الفرونت)
+      // ❌ العميل غير متصل: نحاول إرسال الحدث إلى الفرونت (المتصفح)
       logger.warn(
-        `⚠️ العميل المحلي غير متصل للمستخدم ${userId}، سيتم الإرسال المباشر من الخادم.`,
+        `⚠️ العميل المحلي غير متصل للمستخدم ${userId}، سيتم إرسال الطلب إلى الفرونت.`,
       );
-      // نكمل التنفيذ للإرسال المباشر عبر HTTP
+      io.to(`user-${userId}`).emit("webhook-request", {
+        url: webhookUrl,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: data,
+        repeat: 1,
+        interval: 0,
+        delayBefore: 0,
+        fromServer: true,
+      });
+      // نخرج هنا ولا نحاول الإرسال المباشر لأنه سيفشل في البيئات السحابية
+      return;
     }
   }
 
   // ==============================================================
-  // 2. الإرسال المباشر عبر HTTP (للعناوين الخارجية أو كحل احتياطي)
-  //    مع إعادة محاولة تلقائية ومهلة أطول.
+  // 2. الإرسال المباشر للعناوين الخارجية فقط (مع إعادة المحاولة)
   // ==============================================================
   logger.info(`🌐 إرسال Webhook مباشر إلى: ${webhookUrl.substring(0, 50)}...`);
 
@@ -1221,10 +1232,14 @@ async function sendWebhook(webhookUrl, data, userId = null) {
       clearTimeout(timeoutId);
 
       if (response.ok) {
-        logger.info(`✅ Webhook نجح (${response.status}) في المحاولة ${attempt}`);
+        logger.info(
+          `✅ Webhook نجح (${response.status}) في المحاولة ${attempt}`,
+        );
         return;
       } else {
-        logger.warn(`⚠️ Webhook فشل (${response.status}) في المحاولة ${attempt}`);
+        logger.warn(
+          `⚠️ Webhook فشل (${response.status}) في المحاولة ${attempt}`,
+        );
         lastError = new Error(`HTTP ${response.status}`);
       }
     } catch (err) {
