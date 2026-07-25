@@ -182,6 +182,7 @@ class AppState {
       giftStreakState: new NodeCache({ stdTTL: 15, checkperiod: 5 }),
       userAvatarCache: new NodeCache({ stdTTL: 3600, checkperiod: 300 }),
       userInfoCache: new NodeCache({ stdTTL: 3600, checkperiod: 300 }),
+        interactionCooldown: new NodeCache({ stdTTL: 5, checkperiod: 1 }),
     };
 
     // الاتصالات والمقابس (تحتاج تحكم يدوي)
@@ -1485,7 +1486,7 @@ async function executeAction(
 
 // ================ دوال مساعدة لأحداث TikTok ================
 function resetOncePerLiveForUser(userId) {
-  // حذف جميع مفاتيح oncePerLive الخاصة بالمستخدم من NodeCache
+  // حذف oncePerLive
   const keys = state.tempStores.executedOncePerLive.keys();
   for (const key of keys) {
     if (key.startsWith(`${userId}:`)) {
@@ -1501,8 +1502,9 @@ function resetOncePerLiveForUser(userId) {
     }
   }
 
-  // ❌ تم إزالة مسح processedGiftEvents و processedInteractionEvents
+  // ❌ لا نمسح interactionCooldown لأنه يعتمد على TTL تلقائي
 }
+
 function getSenderFromEvent(data) {
   if (!data) return "Unknown";
   const user = data.user || {};
@@ -1829,6 +1831,7 @@ async function connectUser(userId, username) {
   let debugOnce = false;
 
   connection.on(WebcastEvent.GIFT, async (data) => {
+     console.log(`🟢 [RAW GIFT] Timestamp: ${Date.now()}, Data ID: ${data.id || 'NO_ID'}`);
     updateLastActivity(userId);
     if (!debugOnce) {
       console.log("🔍 هيكل بيانات الهدية (GIFT) - أول مرة:");
@@ -1969,202 +1972,182 @@ async function connectUser(userId, username) {
     }
   }
 
-  connection.on(WebcastEvent.CHAT, async (data) => {
-    updateLastActivity(userId);
-    try {
-      const sender = normalizeUser(getSenderFromEvent(data));
-      const comment = (data.comment || "").toString();
-      if (!comment) return;
+connection.on(WebcastEvent.CHAT, async (data) => {
+  updateLastActivity(userId);
+  try {
+    const sender = normalizeUser(getSenderFromEvent(data));
+    const comment = (data.comment || "").toString();
+    if (!comment) return;
 
-      // ❌ تم حذف التحقق من processedInteractionEvents
+    // ✅ منع تكرار نفس التعليق لنفس المستخدم خلال 5 ثوانٍ
+    const chatKey = `chat:${userId}:${sender}:${comment}`;
+    if (state.getTemp("interactionCooldown", chatKey)) {
+      logger.info(`⏭️ تجاهل تعليق مكرر من ${sender}: "${comment}"`);
+      return;
+    }
+    state.setTemp("interactionCooldown", chatKey, true, 5); // TTL 5 ثوانٍ
 
-      const userProfile = await getUserSelectedProfile(userId);
-      const commands = getInteractionCommandsForProfile(
-        userId,
-        userProfile,
-      ).filter((c) => c.type === "comment" && c.active);
-      for (let cmd of commands) {
-        if (
-          cmd.targetUser &&
-          normalizeUser(cmd.targetUser) !== "all" &&
-          normalizeUser(cmd.targetUser) !== sender
-        )
-          continue;
+    const userProfile = await getUserSelectedProfile(userId);
+    const commands = getInteractionCommandsForProfile(userId, userProfile)
+      .filter(c => c.type === "comment" && c.active);
 
-        if (cmd.oncePerLive) {
-          const key = `${userId}:${String(cmd._id)}`;
-          if (state.getTemp("executedOncePerLive", key)) continue;
-          if (cmd.keyword && cmd.keyword.trim()) {
-            if (
-              !comment.toLowerCase().includes(cmd.keyword.trim().toLowerCase())
-            )
-              continue;
-          }
+    for (let cmd of commands) {
+      if (cmd.targetUser && normalizeUser(cmd.targetUser) !== "all" && normalizeUser(cmd.targetUser) !== sender) continue;
+
+      if (cmd.oncePerLive) {
+        const key = `${userId}:${String(cmd._id)}`;
+        if (state.getTemp("executedOncePerLive", key)) continue;
+        if (cmd.keyword && !comment.toLowerCase().includes(cmd.keyword.trim().toLowerCase())) continue;
+        await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
+        state.setTemp("executedOncePerLive", key, true, 3600);
+      } else {
+        if (cmd.keyword && comment.toLowerCase().includes(cmd.keyword.trim().toLowerCase())) {
           await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
-          state.setTemp("executedOncePerLive", key, true, 3600);
-          continue;
-        }
-
-        if (cmd.keyword && cmd.keyword.trim()) {
-          if (
-            comment.toLowerCase().includes(cmd.keyword.trim().toLowerCase())
-          ) {
-            await executeAction(
-              addKeystrokeToCommand(cmd),
-              sender,
-              userId,
-              data,
-            );
-          }
-        } else {
+        } else if (!cmd.keyword) {
           await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
         }
       }
-    } catch (err) {
-      logger.error("❌ CHAT handler error:", err.message);
     }
-  });
+  } catch (err) {
+    logger.error("❌ CHAT handler error:", err.message);
+  }
+});
 
-  connection.on(WebcastEvent.FOLLOW, async (data) => {
-    updateLastActivity(userId);
-    try {
-      const sender = normalizeUser(getSenderFromEvent(data));
+ connection.on(WebcastEvent.FOLLOW, async (data) => {
+  updateLastActivity(userId);
+  try {
+    const sender = normalizeUser(getSenderFromEvent(data));
 
-      // ❌ تم حذف التحقق من processedInteractionEvents
+    // ✅ منع تكرار FOLLOW لنفس المستخدم خلال 5 ثوانٍ
+    const followKey = `follow:${userId}:${sender}`;
+    if (state.getTemp("interactionCooldown", followKey)) {
+      logger.info(`⏭️ تجاهل متابعة مكررة من ${sender}`);
+      return;
+    }
+    state.setTemp("interactionCooldown", followKey, true, 5);
 
-      const userProfile = await getUserSelectedProfile(userId);
-      const commands = getInteractionCommandsForProfile(
-        userId,
-        userProfile,
-      ).filter((c) => c.type === "follow" && c.active);
-      for (let cmd of commands) {
-        if (
-          cmd.targetUser &&
-          normalizeUser(cmd.targetUser) !== "all" &&
-          normalizeUser(cmd.targetUser) !== sender
-        )
-          continue;
+    const userProfile = await getUserSelectedProfile(userId);
+    const commands = getInteractionCommandsForProfile(userId, userProfile)
+      .filter(c => c.type === "follow" && c.active);
 
-        const key = `${userId}:${String(cmd._id)}:${sender}`;
-        if (cmd.oncePerLive) {
-          if (state.getTemp("executedOncePerLive", key)) continue;
-          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
-          state.setTemp("executedOncePerLive", key, true, 3600);
-        } else {
-          if (state.getTemp("executedOncePerLive", key)) continue;
-          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
-          state.setTemp("executedOncePerLive", key, true, 3600);
-        }
+    for (let cmd of commands) {
+      if (cmd.targetUser && normalizeUser(cmd.targetUser) !== "all" && normalizeUser(cmd.targetUser) !== sender) continue;
+
+      const key = `${userId}:${String(cmd._id)}:${sender}`;
+      if (state.getTemp("executedOncePerLive", key)) continue;
+      await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
+      state.setTemp("executedOncePerLive", key, true, 3600);
+    }
+  } catch (err) {
+    logger.error("❌ FOLLOW handler error:", err.message);
+  }
+});
+
+connection.on(WebcastEvent.LIKE, async (data) => {
+  updateLastActivity(userId);
+  try {
+    const sender = normalizeUser(getSenderFromEvent(data));
+
+    // ✅ منع تكرار حدث LIKE لنفس المستخدم خلال 5 ثوانٍ (اختياري)
+    const likeKey = `like:${userId}:${sender}`;
+    if (state.getTemp("interactionCooldown", likeKey)) {
+      logger.info(`⏭️ تجاهل LIKE مكرر من ${sender}`);
+      return;
+    }
+    state.setTemp("interactionCooldown", likeKey, true, 5);
+
+    // حساب delta كما هو موجود
+    const currentTotal = parseInt(String(data.likeCount ?? data.like_count ?? data.count ?? 0).replace(/\D/g, ''), 10) || 0;
+    if (currentTotal <= 0) return;
+
+    const keyTotal = `${userId}:${sender}`;
+    const lastTotal = lastLikeCount.get(keyTotal) || 0;
+    let delta = currentTotal - lastTotal;
+
+    if (delta < 0) {
+      lastLikeCount.set(keyTotal, currentTotal);
+      delta = currentTotal;
+    } else if (delta === 0) {
+      return;
+    } else {
+      lastLikeCount.set(keyTotal, currentTotal);
+    }
+
+    if (delta > LIKE_MAX_DELTA) delta = LIKE_MAX_DELTA;
+
+    const userProfile = await getUserSelectedProfile(userId);
+    const commands = getInteractionCommandsForProfile(userId, userProfile)
+      .filter(c => c.type === "like" && c.active);
+
+    for (let cmd of commands) {
+      if (cmd.targetUser && normalizeUser(cmd.targetUser) !== "all" && normalizeUser(cmd.targetUser) !== sender) continue;
+
+      if (cmd.oncePerLive) {
+        const key = `${userId}:${String(cmd._id)}`;
+        if (state.getTemp("executedOncePerLive", key)) continue;
+        await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
+        state.setTemp("executedOncePerLive", key, true, 3600);
+        continue;
       }
-    } catch (err) {
-      logger.error("❌ FOLLOW handler error:", err.message);
-    }
-  });
 
-  connection.on(WebcastEvent.LIKE, async (data) => {
-    updateLastActivity(userId);
-    try {
-      const sender = normalizeUser(getSenderFromEvent(data));
+      const threshold = parseInt(cmd.threshold || 0, 10) || 0;
+      const keyUser = `${userId}:${String(cmd._id)}:${sender}`;
+      let current = state.getTemp("likeCounters", keyUser) || 0;
+      current += delta;
+      state.setTemp("likeCounters", keyUser, current, 3600);
 
-      // ❌ تم حذف التحقق من processedInteractionEvents
-
-      let delta =
-        parseInt(
-          String(data.likeCount ?? data.like_count ?? data.count ?? 1).replace(
-            /\D/g,
-            "",
-          ),
-          10,
-        ) || 1;
-      if (delta > LIKE_MAX_DELTA) delta = LIKE_MAX_DELTA;
-      if (delta <= 0) return;
-
-      const userProfile = await getUserSelectedProfile(userId);
-      const commands = getInteractionCommandsForProfile(
-        userId,
-        userProfile,
-      ).filter((c) => c.type === "like" && c.active);
-
-      for (let cmd of commands) {
-        if (
-          cmd.targetUser &&
-          normalizeUser(cmd.targetUser) !== "all" &&
-          normalizeUser(cmd.targetUser) !== sender
-        )
-          continue;
-
-        if (cmd.oncePerLive) {
-          const key = `${userId}:${String(cmd._id)}`;
-          if (state.getTemp("executedOncePerLive", key)) continue;
-          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
-          state.setTemp("executedOncePerLive", key, true, 3600);
-          continue;
-        }
-
-        const threshold = parseInt(cmd.threshold || 0, 10) || 0;
-        const keyUser = `${userId}:${String(cmd._id)}:${sender}`;
-        let current = state.getTemp("likeCounters", keyUser) || 0;
-        current += delta;
-        state.setTemp("likeCounters", keyUser, current, 3600);
-
-        if (threshold <= 0) {
-          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
-          continue;
-        }
-
-        const times = Math.floor(current / threshold);
-        if (times <= 0) continue;
-
-        for (let i = 0; i < times; i++) {
-          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
-        }
-
-        state.setTemp(
-          "likeCounters",
-          keyUser,
-          current - times * threshold,
-          3600,
-        );
-        if (state.getTemp("likeCounters", keyUser) < 0)
-          state.delTemp("likeCounters", keyUser);
+      if (threshold <= 0) {
+        await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
+        continue;
       }
-    } catch (err) {
-      logger.error("❌ LIKE handler error:", err.message);
-    }
-  });
-  connection.on(WebcastEvent.SHARE, async (data) => {
-    updateLastActivity(userId);
-    try {
-      const sender = normalizeUser(getSenderFromEvent(data));
 
-      // ❌ تم حذف التحقق من processedInteractionEvents
+      const times = Math.floor(current / threshold);
+      if (times <= 0) continue;
 
-      const userProfile = await getUserSelectedProfile(userId);
-      const commands = getInteractionCommandsForProfile(
-        userId,
-        userProfile,
-      ).filter((c) => c.type === "share" && c.active);
-      for (let cmd of commands) {
-        if (
-          cmd.targetUser &&
-          normalizeUser(cmd.targetUser) !== "all" &&
-          normalizeUser(cmd.targetUser) !== sender
-        )
-          continue;
-
-        if (cmd.oncePerLive) {
-          const key = `${userId}:${String(cmd._id)}`;
-          if (state.getTemp("executedOncePerLive", key)) continue;
-          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
-          state.setTemp("executedOncePerLive", key, true, 3600);
-        } else {
-          await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
-        }
+      for (let i = 0; i < times; i++) {
+        await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
       }
-    } catch (err) {
-      logger.error("❌ SHARE handler error:", err.message);
+      state.setTemp("likeCounters", keyUser, current - times * threshold, 3600);
+      if (state.getTemp("likeCounters", keyUser) < 0) state.delTemp("likeCounters", keyUser);
     }
-  });
+  } catch (err) {
+    logger.error("❌ LIKE handler error:", err.message);
+  }
+});
+
+connection.on(WebcastEvent.SHARE, async (data) => {
+  updateLastActivity(userId);
+  try {
+    const sender = normalizeUser(getSenderFromEvent(data));
+
+    // ✅ منع تكرار SHARE لنفس المستخدم خلال 5 ثوانٍ
+    const shareKey = `share:${userId}:${sender}`;
+    if (state.getTemp("interactionCooldown", shareKey)) {
+      logger.info(`⏭️ تجاهل مشاركة مكررة من ${sender}`);
+      return;
+    }
+    state.setTemp("interactionCooldown", shareKey, true, 5);
+
+    const userProfile = await getUserSelectedProfile(userId);
+    const commands = getInteractionCommandsForProfile(userId, userProfile)
+      .filter(c => c.type === "share" && c.active);
+
+    for (let cmd of commands) {
+      if (cmd.targetUser && normalizeUser(cmd.targetUser) !== "all" && normalizeUser(cmd.targetUser) !== sender) continue;
+
+      if (cmd.oncePerLive) {
+        const key = `${userId}:${String(cmd._id)}`;
+        if (state.getTemp("executedOncePerLive", key)) continue;
+        await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
+        state.setTemp("executedOncePerLive", key, true, 3600);
+      } else {
+        await executeAction(addKeystrokeToCommand(cmd), sender, userId, data);
+      }
+    }
+  } catch (err) {
+    logger.error("❌ SHARE handler error:", err.message);
+  }
+});
 
   connection.on(WebcastEvent.ROOM_UPDATE, (data) => {
     const prev = getTikTokConnection(userId)?.isLive;
