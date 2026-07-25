@@ -79,6 +79,9 @@ const CLEANUP_INTERVAL = 15 * 60 * 1000; // 15 دقيقة
 
 let lastLikeCount = new Map();
 
+const WEBHOOK_TIMEOUT = parseInt(process.env.WEBHOOK_TIMEOUT) || 15000; // 15 ثانية
+const WEBHOOK_RETRIES = parseInt(process.env.WEBHOOK_RETRIES) || 3; // عدد المحاولات
+
 const connectingUsers = new Set();
 const executedEvents = new NodeCache({ stdTTL: 5 }); // منع تكرار الأحداث لمدة 5 ثوانٍ
 
@@ -1152,6 +1155,7 @@ async function sendRconCommand(userId, command, { nickname, username } = {}) {
 }
 
 // ================ Webhook ================
+// ================ Webhook (نسخة معدلة بالكامل) ================
 async function sendWebhook(webhookUrl, data, userId = null) {
   if (!webhookUrl || !webhookUrl.trim()) return;
   webhookUrl = webhookUrl.trim();
@@ -1162,54 +1166,103 @@ async function sendWebhook(webhookUrl, data, userId = null) {
 
   const isLocalhost =
     webhookUrl.includes("localhost") || webhookUrl.includes("127.0.0.1");
+
+  // ==============================================================
+  // 1. إذا كان الرابط داخلياً (localhost) ولدينا عميل محلي متصل،
+  //    نفضل إرساله إلى العميل (لأنه ينفذ على جهاز المستخدم الفعلي).
+  // ==============================================================
   if (isLocalhost && userId) {
     const userIdStr = userId.toString();
     const agentSocket = state.userLocalAgents.get(userIdStr);
-    if (!agentSocket || !agentSocket.connected) {
-      logger.warn(
-        `⚠️ لا يوجد عميل محلي للمستخدم ${userId}، تجاهل webhook إلى ${webhookUrl}`,
+    if (agentSocket && agentSocket.connected) {
+      logger.info(
+        `📡 إرسال webhook إلى العميل المحلي للمستخدم ${userId}: ${webhookUrl}`,
       );
-      io.to(`user-${userId}`).emit("webhook-error", {
-        message: "العميل المحلي غير متصل",
+      // إضافة fromServer: true لتجاوز القيود الأمنية في العميل
+      agentSocket.emit("webhook-request", {
         url: webhookUrl,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: data,
+        repeat: 1,
+        interval: 0,
+        delayBefore: 0,
+        fromServer: true, // <-- تخبر العميل أن الطلب موثوق
       });
-      return;
+      return; // تم الإرسال، نخرج
+    } else {
+      // العميل غير متصل، نسجل تحذيراً ونكمل للإرسال المباشر (لا نخرج!)
+      logger.warn(
+        `⚠️ العميل المحلي غير متصل للمستخدم ${userId}، سيتم محاولة الإرسال المباشر إلى ${webhookUrl}`,
+      );
+      // نكمل التنفيذ للإرسال المباشر عبر HTTP
     }
-    logger.info(
-      `📡 إرسال webhook إلى العميل المحلي للمستخدم ${userId}: ${webhookUrl}`,
-    );
-    agentSocket.emit("webhook-request", {
-      url: webhookUrl,
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: data,
-      repeat: 1,
-      interval: 0,
-      delayBefore: 0,
-    });
-    return;
   }
 
-  logger.info(`🌐 إرسال Webhook إلى: ${webhookUrl.substring(0, 50)}...`);
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000);
-  try {
-    const response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "BlackMoon/1.0",
-      },
-      body: JSON.stringify(data),
-      signal: controller.signal,
+  // ==============================================================
+  // 2. الإرسال المباشر عبر HTTP (للعناوين الخارجية أو الداخلية كحل احتياطي)
+  //    مع إعادة محاولة تلقائية ومهلة أطول.
+  // ==============================================================
+  logger.info(`🌐 إرسال Webhook مباشر إلى: ${webhookUrl.substring(0, 50)}...`);
+
+  let lastError = null;
+  for (let attempt = 1; attempt <= WEBHOOK_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT);
+
+    try {
+      const response = await fetch(webhookUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": "BlackMoon/1.0",
+        },
+        body: JSON.stringify(data),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        logger.info(
+          `✅ Webhook نجح (${response.status}) في المحاولة ${attempt}`,
+        );
+        return; // نجاح، نخرج من الدالة
+      } else {
+        logger.warn(
+          `⚠️ Webhook فشل (${response.status}) في المحاولة ${attempt}`,
+        );
+        lastError = new Error(`HTTP ${response.status}`);
+      }
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err.name === "AbortError") {
+        lastError = new Error(`Timeout (${WEBHOOK_TIMEOUT}ms)`);
+        logger.error(`❌ Webhook timeout في المحاولة ${attempt}`);
+      } else {
+        lastError = err;
+        logger.error(`❌ Webhook error في المحاولة ${attempt}:`, err.message);
+      }
+    }
+
+    // إذا لم تكن المحاولة الأخيرة، انتظر قبل إعادة المحاولة (تأخير تصاعدي)
+    if (attempt < WEBHOOK_RETRIES) {
+      const delay = attempt * 1000; // 1s, 2s, 3s
+      logger.info(`⏳ إعادة المحاولة بعد ${delay}ms...`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  // فشلت جميع المحاولات
+  logger.error(
+    `❌ فشل Webhook بعد ${WEBHOOK_RETRIES} محاولات: ${lastError?.message || "خطأ غير معروف"}`,
+  );
+  // إرسال إشعار للمستخدم عبر Socket.IO (اختياري)
+  if (userId) {
+    io.to(`user-${userId}`).emit("webhook-error", {
+      message: `فشل إرسال Webhook: ${lastError?.message || "خطأ غير معروف"}`,
+      url: webhookUrl,
+      attempts: WEBHOOK_RETRIES,
     });
-    clearTimeout(timeoutId);
-    if (response.ok) logger.info(`✅ Webhook نجح (${response.status})`);
-    else logger.warn(`⚠️ Webhook فشل (${response.status})`);
-  } catch (err) {
-    clearTimeout(timeoutId);
-    if (err.name === "AbortError") logger.error("❌ Webhook timeout");
-    else logger.error("❌ Webhook error:", err.message);
   }
 }
 
