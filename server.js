@@ -300,6 +300,19 @@ const state = new AppState();
 function getTikTokConnection(userId) {
   return state.userTikTokConnections.get(userId);
 }
+function isUserLive(userId) {
+  const conn = getTikTokConnection(userId);
+  if (!conn) return false;
+  // إذا كان لدينا isLive محفوظ، استخدمه
+  if (conn.isLive) return true;
+  // وإلا تحقق من وجود roomId في كائن الاتصال
+  try {
+    if (conn.connection?.state?.roomInfo?.data?.roomId) {
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
 function setTikTokConnection(userId, conn) {
   state.userTikTokConnections.set(userId, conn);
 }
@@ -1831,10 +1844,14 @@ function startLiveHeartbeat(userId) {
 
   const interval = setInterval(async () => {
     const conn = getTikTokConnection(userId);
-    if (!conn || !conn.connection) {
-      clearInterval(interval);
-      state.heartbeats.delete(userId);
-      return;
+    // داخل setInterval في startLiveHeartbeat
+    if (conn.connection?.state?.roomInfo?.data?.roomId) {
+      const roomId = conn.connection.state.roomInfo.data.roomId;
+      if (!conn.roomId || conn.roomId !== roomId) {
+        conn.roomId = roomId;
+        conn.isLive = true; // تأكد من تحديث isLive
+        setTikTokConnection(userId, conn);
+      }
     }
 
     // محاولة تحديث roomId من كائن الاتصال مباشرة
@@ -5109,9 +5126,7 @@ app.get("/api/admin/users", authenticateToken, isAdmin, async (req, res) => {
         role: user.role,
         tiktokUsername: user.tiktokUsername,
         commandCount: await getTotalCommandsForUser(user._id),
-        isLiveNow:
-          state.userTikTokConnections.has(user._id.toString()) &&
-          state.userTikTokConnections.get(user._id.toString())?.isLive,
+        isLiveNow: isUserLive(user._id.toString()), // استخدم الدالة هنا
         createdAt: user.createdAt,
       })),
     );
