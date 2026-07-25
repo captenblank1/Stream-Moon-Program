@@ -77,6 +77,8 @@ const DEFAULT_RCON_PLAYER = process.env.RCON_PLAYER || "Player";
 const CACHE_TTL = 3600; // 1 ساعة
 const CLEANUP_INTERVAL = 15 * 60 * 1000; // 15 دقيقة
 
+let lastLikeCount = new Map();
+
 function generateEventId() {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 8)}`;
 }
