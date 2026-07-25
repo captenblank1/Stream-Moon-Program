@@ -1177,45 +1177,34 @@ async function sendWebhook(webhookUrl, data, userId = null) {
   // ==============================================================
   // 1. إذا كان الرابط داخلياً (localhost)
   // ==============================================================
-  if (isLocalhost && userId) {
-    const userIdStr = userId.toString();
-    const agentSocket = state.userLocalAgents.get(userIdStr);
+if (isLocalhost && userId) {
+  const userIdStr = userId.toString();
+  const agentSocket = state.userLocalAgents.get(userIdStr);
 
-    if (agentSocket && agentSocket.connected) {
-      // ✅ العميل المحلي متصل: أرسل إليه فقط (لا نرسل إلى الفرونت)
-      logger.info(
-        `📡 إرسال webhook إلى العميل المحلي للمستخدم ${userId}: ${webhookUrl}`,
-      );
-      agentSocket.emit("webhook-request", {
-        url: webhookUrl,
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: data,
-        repeat: 1,
-        interval: 0,
-        delayBefore: 0,
-        fromServer: true,
-      });
-      return; // نخرج، لا نرسل مباشرة ولا إلى الفرونت
-    } else {
-      // ❌ العميل غير متصل: نحاول إرسال الحدث إلى الفرونت (المتصفح)
-      logger.warn(
-        `⚠️ العميل المحلي غير متصل للمستخدم ${userId}، سيتم إرسال الطلب إلى الفرونت.`,
-      );
-      io.to(`user-${userId}`).emit("webhook-request", {
-        url: webhookUrl,
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: data,
-        repeat: 1,
-        interval: 0,
-        delayBefore: 0,
-        fromServer: true,
-      });
-      // نخرج هنا ولا نحاول الإرسال المباشر لأنه سيفشل في البيئات السحابية
-      return;
-    }
+  if (agentSocket && agentSocket.connected) {
+    // ✅ العميل المحلي متصل: أرسل إليه فقط
+    agentSocket.emit("webhook-request", {
+      url: webhookUrl,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: data,
+      repeat: 1,
+      interval: 0,
+      delayBefore: 0,
+      fromServer: true,
+    });
+    return;
+  } else {
+    // ❌ العميل غير متصل: لا يمكن إرسال الطلب، نرسل إشعار للمستخدم
+    logger.warn(`⚠️ العميل المحلي غير متصل للمستخدم ${userId}، لا يمكن إرسال webhook داخلي.`);
+    io.to(`user-${userId}`).emit("webhook-error", {
+      message: "لا يمكن إرسال webhook إلى localhost لأن العميل المحلي (Agent) غير متصل. يرجى تثبيت وتشغيل العميل المحلي.",
+      url: webhookUrl,
+      attempts: 1,
+    });
+    return;
   }
+}
 
   // ==============================================================
   // 2. الإرسال المباشر للعناوين الخارجية فقط (مع إعادة المحاولة)
