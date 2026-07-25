@@ -3288,6 +3288,99 @@ app.get("/api/profiles", authenticateToken, async (req, res) => {
   }
 });
 
+// ===== إنشاء أمر تفاعل جديد =====
+app.post("/api/interaction-commands", authenticateToken, async (req, res) => {
+  try {
+    const payload = req.body;
+    const user = await User.findById(req.user.id);
+    const profile = Math.max(
+      1,
+      Math.min(
+        MAX_PROFILES,
+        parseInt(payload.profile || user.selectedProfile, 10) ||
+          user.selectedProfile,
+      ),
+    );
+    const canAccess = await canAccessProfile(req.user.id, profile);
+    if (!canAccess) {
+      return res.status(403).json({
+        success: false,
+        message: "لا يمكنك إنشاء أوامر لهذا البروفايل في النسخة المجانية. قم بالترقية.",
+      });
+    }
+
+    const plan = await getUserPlan(req.user.id);
+    if (plan === "free") {
+      const total = await getTotalCommandsForUser(req.user.id);
+      if (total >= 7) {
+        return res.status(403).json({
+          success: false,
+          message: "لقد وصلت للحد الأقصى للأوامر (7) في النسخة المجانية. قم بالترقية لإضافة المزيد.",
+        });
+      }
+    }
+
+    const { type } = payload;
+    if (!type || !["follow", "like", "comment", "share", "gift", "all"].includes(type)) {
+      return res.status(400).json({
+        success: false,
+        message: `النوع غير مدعوم. الأنواع المسموحة: follow, like, comment, share, gift, all`,
+      });
+    }
+
+    // التحقق من عدم تكرار الـ combo لنفس المستخدم والبروفايل (إذا تم توفيره)
+    if (payload.combo && payload.combo.trim() !== "") {
+      const existingCombo = await InteractionCommand.findOne({
+        userId: req.user.id,
+        profile,
+        combo: payload.combo.trim(),
+      });
+      if (existingCombo) {
+        return res.status(400).json({
+          success: false,
+          message: "هذا الاختصار موجود بالفعل في هذا البروفايل",
+        });
+      }
+    }
+
+    const newCommand = await InteractionCommand.create({
+      type: payload.type,
+      combo: payload.combo || null,
+      name: payload.name || "",
+      command: payload.command || "",
+      webhookUrl: payload.webhookUrl || "",
+      repeat: parseInt(payload.repeat || 1, 10) || 1,
+      interval: parseInt(payload.interval || 500, 10) || 500,
+      delayBefore: parseInt(payload.delayBefore || 0, 10) || 0,
+      audio: payload.audio || null,
+      volume: parseInt(payload.volume || 100, 10) || 100,
+      video: payload.video || null,
+      videoVolume: parseInt(payload.videoVolume || 100, 10) || 100,
+      screen: parseInt(payload.screen || 1, 10) || 1,
+      targetUser: payload.targetUser || "all",
+      active: payload.active !== false,
+      playSound: payload.playSound !== false,
+      playVideo: payload.playVideo !== false,
+      keyword: payload.keyword || "",
+      threshold: parseInt(payload.threshold || 0, 10) || 0,
+      oncePerLive: !!payload.oncePerLive,
+      profile: profile,
+      userId: req.user.id,
+      showOverlay: payload.showOverlay === true,
+      overlayText: payload.overlayText || "",
+      duration: parseInt(payload.duration) || 5,
+    });
+
+    await enforceFreePlanLimits(req.user.id, profile);
+    await refreshCachesForUser(req.user.id);
+
+    res.json({ success: true, command: newCommand });
+  } catch (err) {
+    logger.error("❌ خطأ في إنشاء أمر التفاعل:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 app.post(
   "/api/profiles/copy/:sourceId",
   authenticateToken,
