@@ -83,7 +83,6 @@ const WEBHOOK_TIMEOUT = parseInt(process.env.WEBHOOK_TIMEOUT) || 15000; // 15 ث
 const WEBHOOK_RETRIES = parseInt(process.env.WEBHOOK_RETRIES) || 3; // عدد المحاولات
 
 const connectingUsers = new Set();
-const executedEvents = new NodeCache({ stdTTL: 20, checkperiod: 10 });
 
 function generateEventId() {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 8)}`;
@@ -1361,16 +1360,6 @@ async function executeAction(
 
   if (!cmdObj.active) return;
 
-  // ===== منع تكرار نفس الأمر لنفس الحدث (تمت الإضافة) =====
-  if (eventId && cmdObj._id) {
-    const cmdDedupKey = `${userId}:cmd:${String(cmdObj._id)}:${eventId}`;
-    if (executedEvents.get(cmdDedupKey)) {
-      logger.info(`⏭️ أمر مكرر لنفس الحدث (${cmdDedupKey})، تجاهل`);
-      return;
-    }
-    executedEvents.set(cmdDedupKey, true, 10); // 10 ثوانٍ كافية
-  }
-
   const {
     command,
     webhookUrl,
@@ -1626,13 +1615,7 @@ function resetOncePerLiveForUser(userId) {
     }
   }
 
-  // مسح executedEvents
-  const eventKeys = executedEvents.keys();
-  for (const key of eventKeys) {
-    if (key.startsWith(`${userId}:`)) {
-      executedEvents.del(key);
-    }
-  }
+  // لا يوجد executedEvents للحذف
 }
 
 function getSenderFromEvent(data) {
@@ -1973,14 +1956,6 @@ async function connectUser(userId, username) {
     console.log(`🧹 تم تنظيف الاتصال القديم للمستخدم ${userId}`);
   }
 
-  // ========== مسح executedEvents الخاصة بهذا المستخدم ==========
-  const eventKeys = executedEvents.keys();
-  for (const key of eventKeys) {
-    if (key.startsWith(`${userId}:`)) {
-      executedEvents.del(key);
-    }
-  }
-
   // ========== إنشاء اتصال جديد ==========
   const connection = new TikTokLiveConnection(username, {
     apiKey: BLACKMOON_KEY,
@@ -1995,20 +1970,7 @@ async function connectUser(userId, username) {
       data.giftId ?? data.gift_id ?? data.giftDetails?.id ?? data.id ?? null;
     const giftIdStr = rawGiftId ? String(rawGiftId).trim() : "unknown";
 
-    // ===== نافذة زمنية 2 ثانية (قابلة للتعديل) =====
-    const timeWindow = Math.floor(Date.now() / 2000); // يتغير كل 2 ثانية
-    const dedupKey = `${userId}:gift:${giftIdStr}:${sender}:${timeWindow}`;
-
-    // التحقق من التكرار
-    if (executedEvents.get(dedupKey)) {
-      console.log(`⏭️ [GIFT] مكرر (${dedupKey})، تجاهل`);
-      return;
-    }
-    executedEvents.set(dedupKey, true, 3); // 3 ثوانٍ كافية
-
-    console.log(`✅ [GIFT] جديد (${dedupKey})`);
-
-    // ===== استخراج البيانات (بدون استخدام repeatId لتجنب التعقيد) =====
+    // استخراج البيانات
     const rawCount =
       data.repeatCount ??
       data.repeat_count ??
@@ -2023,23 +1985,25 @@ async function connectUser(userId, username) {
       data.giftType ?? data.gift_type ?? data.giftDetails?.giftType ?? 0,
     );
     const repeatEnd = !!(data.repeatEnd ?? data.repeat_end);
+    const repeatId = data.repeatId ?? data.repeat_id ?? data.comboId ?? null;
 
-    // ===== معالجة الهدايا المتكررة (Streak) - للحفاظ على العد الصحيح =====
+    // معالجة الهدايا المتكررة (Streak) باستخدام giftStreakState
     if (giftType === 1) {
-      const repeatId =
-        data.repeatId ?? data.repeat_id ?? data.comboId ?? "default";
-      const streakKey = `${userId}:streak:${giftIdStr}:${sender}:${repeatId}`;
-      let stateObj = state.getTemp("giftStreakState", streakKey) || {
+      const streakKey = repeatId
+        ? `${userId}:${sender}:${giftIdStr}:${repeatId}`
+        : `${userId}:${sender}:${giftIdStr}`;
+
+      const now = Date.now();
+      let st = state.getTemp("giftStreakState", streakKey) || {
         lastRepeat: 0,
-        ts: Date.now(),
+        ts: now,
       };
       let delta = 0;
-      if (repeatCount > stateObj.lastRepeat)
-        delta = repeatCount - stateObj.lastRepeat;
-      else if (repeatCount < stateObj.lastRepeat) delta = repeatCount;
-      stateObj.lastRepeat = Math.max(stateObj.lastRepeat, repeatCount);
-      stateObj.ts = Date.now();
-      state.setTemp("giftStreakState", streakKey, stateObj, 15);
+      if (repeatCount > st.lastRepeat) delta = repeatCount - st.lastRepeat;
+      else if (repeatCount < st.lastRepeat) delta = repeatCount;
+      st.lastRepeat = Math.max(st.lastRepeat, repeatCount);
+      st.ts = now;
+      state.setTemp("giftStreakState", streakKey, st, 15);
 
       if (repeatEnd) {
         if (delta > 0) {
@@ -2067,7 +2031,7 @@ async function connectUser(userId, username) {
         eventId: generateEventId(),
       });
     } else {
-      // ===== هدايا عادية: نمرر delta = repeatCount =====
+      // هدايا عادية
       await processGiftDelta({
         userId,
         sender,
@@ -2090,15 +2054,6 @@ async function connectUser(userId, username) {
     data,
     eventId,
   }) {
-    // مفتاح إضافي لمنع الدلتا من التكرار (نفس النافذة الزمنية)
-    const timeWindow = Math.floor(Date.now() / 2000);
-    const deltaKey = `${userId}:delta:${giftIdStr}:${sender}:${timeWindow}`;
-    if (executedEvents.get(deltaKey)) {
-      console.log(`⏭️ [DELTA] مكرر (${deltaKey})، تجاهل`);
-      return;
-    }
-    executedEvents.set(deltaKey, true, 3);
-
     try {
       const userProfile = await getUserSelectedProfile(userId);
       let giftCmd = getGiftCommandForProfile(userId, userProfile, giftIdStr);
@@ -2110,6 +2065,7 @@ async function connectUser(userId, username) {
         });
         if (giftCmd) await refreshCachesForUser(userId);
       }
+
       if (
         giftCmd &&
         (giftCmd.command ||
@@ -2139,6 +2095,7 @@ async function connectUser(userId, username) {
         }
       }
 
+      // أوامر تفاعل من نوع "gift"
       const giftInteractions = getInteractionCommandsForProfile(
         userId,
         userProfile,
