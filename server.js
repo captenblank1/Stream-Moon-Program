@@ -1990,24 +1990,25 @@ async function connectUser(userId, username) {
 
   // ========== معالج GIFT ==========
   connection.on(WebcastEvent.GIFT, async (data) => {
-    const eventId = generateEventId(); // للاستخدام الداخلي
+    // لا نحتاج eventId هنا بعد الآن، لكن نتركه للسجلات
+    const eventId = generateEventId();
     const sender = normalizeUser(getSenderFromEvent(data));
     const rawGiftId =
       data.giftId ?? data.gift_id ?? data.giftDetails?.id ?? data.id ?? null;
     const giftIdStr = rawGiftId ? String(rawGiftId).trim() : "unknown";
 
-    // استخراج repeatId (قد يكون null إذا لم يكن موجوداً)
+    // استخراج repeatId (قد يكون null)
     const repeatId = data.repeatId ?? data.repeat_id ?? data.comboId ?? null;
 
-    // بناء المفتاح حسب نوع الهدية
+    // مفتاح منع التكرار: للهدايا المتكررة نستخدم repeatId، وللعادية نستخدم الوقت مقرباً إلى ثانية
+    const roundedSecond = Math.floor(Date.now() / 1000);
     const dedupKey = repeatId
       ? `${userId}:gift:${giftIdStr}:${sender}:${repeatId}`
-      : `${userId}:gift:${giftIdStr}:${sender}:${eventId}`;
+      : `${userId}:gift:${giftIdStr}:${sender}:${roundedSecond}`;
 
-    // TTL مختلف: 20 ثانية للهدايا المتكررة، 2 ثانية للهدايا العادية
+    // TTL مختلف
     const ttl = repeatId ? 20 : 2;
 
-    // التحقق من التكرار
     if (executedEvents.get(dedupKey)) {
       console.log(`⏭️ حدث مكرر (${dedupKey})، تجاهل`);
       return;
@@ -2017,7 +2018,7 @@ async function connectUser(userId, username) {
     // تحديث وقت النشاط
     updateLastActivity(userId);
 
-    // باقي الكود الأصلي (استخراج البيانات ومعالجتها)
+    // باقي الكود الأصلي
     const rawCount =
       data.repeatCount ??
       data.repeat_count ??
@@ -2058,6 +2059,7 @@ async function connectUser(userId, username) {
             newRepeat: repeatCount,
             data,
             eventId,
+            repeatId, // تمرير repeatId
           });
         }
         state.delTemp("giftStreakState", streakKey);
@@ -2072,6 +2074,7 @@ async function connectUser(userId, username) {
         newRepeat: repeatCount,
         data,
         eventId,
+        repeatId,
       });
     } else {
       // هدايا عادية
@@ -2083,6 +2086,7 @@ async function connectUser(userId, username) {
         newRepeat: repeatCount,
         data,
         eventId,
+        repeatId,
       });
     }
   });
@@ -2096,14 +2100,19 @@ async function connectUser(userId, username) {
     newRepeat,
     data,
     eventId,
+    repeatId, // تم إضافة repeatId
   }) {
-    // مفتاح إضافي لمنع معالجة نفس الدلتا أكثر من مرة
-    const deltaKey = `${userId}:delta:${giftIdStr}:${sender}:${eventId}`;
+    // مفتاح منع تكرار الدلتا: نستخدم نفس المنطق (repeatId أو الوقت المقرب)
+    const roundedSecond = Math.floor(Date.now() / 1000);
+    const deltaKey = repeatId
+      ? `${userId}:delta:${giftIdStr}:${sender}:${repeatId}`
+      : `${userId}:delta:${giftIdStr}:${sender}:${roundedSecond}`;
+
     if (executedEvents.get(deltaKey)) {
       console.log(`⏭️ Delta مكرر (${deltaKey})، تجاهل`);
       return;
     }
-    executedEvents.set(deltaKey, true, 10); // 10 ثوانٍ كافية
+    executedEvents.set(deltaKey, true, 5); // 5 ثوانٍ كافية
 
     try {
       const userProfile = await getUserSelectedProfile(userId);
