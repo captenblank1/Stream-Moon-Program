@@ -1422,7 +1422,7 @@ async function executeAction(
       );
       return;
     }
-    state.setTemp("executedOncePerLive", key, true, 3600);
+    state.setTemp("executedOncePerLive", key, true, 86400); // 24 ساعة
   }
 
   // تشغيل الصوت فوراً
