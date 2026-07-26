@@ -83,7 +83,7 @@ const WEBHOOK_TIMEOUT = parseInt(process.env.WEBHOOK_TIMEOUT) || 15000; // 15 ث
 const WEBHOOK_RETRIES = parseInt(process.env.WEBHOOK_RETRIES) || 3; // عدد المحاولات
 
 const connectingUsers = new Set();
-const executedEvents = new NodeCache({ stdTTL: 5 }); // منع تكرار الأحداث لمدة 5 ثوانٍ
+const executedEvents = new NodeCache({ stdTTL: 20, checkperiod: 10 });
 
 function generateEventId() {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 8)}`;
@@ -1177,34 +1177,37 @@ async function sendWebhook(webhookUrl, data, userId = null) {
   // ==============================================================
   // 1. إذا كان الرابط داخلياً (localhost)
   // ==============================================================
-if (isLocalhost && userId) {
-  const userIdStr = userId.toString();
-  const agentSocket = state.userLocalAgents.get(userIdStr);
+  if (isLocalhost && userId) {
+    const userIdStr = userId.toString();
+    const agentSocket = state.userLocalAgents.get(userIdStr);
 
-  if (agentSocket && agentSocket.connected) {
-    // ✅ العميل المحلي متصل: أرسل إليه فقط
-    agentSocket.emit("webhook-request", {
-      url: webhookUrl,
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: data,
-      repeat: 1,
-      interval: 0,
-      delayBefore: 0,
-      fromServer: true,
-    });
-    return;
-  } else {
-    // ❌ العميل غير متصل: لا يمكن إرسال الطلب، نرسل إشعار للمستخدم
-    logger.warn(`⚠️ العميل المحلي غير متصل للمستخدم ${userId}، لا يمكن إرسال webhook داخلي.`);
-    io.to(`user-${userId}`).emit("webhook-error", {
-      message: "لا يمكن إرسال webhook إلى localhost لأن العميل المحلي (Agent) غير متصل. يرجى تثبيت وتشغيل العميل المحلي.",
-      url: webhookUrl,
-      attempts: 1,
-    });
-    return;
+    if (agentSocket && agentSocket.connected) {
+      // ✅ العميل المحلي متصل: أرسل إليه فقط
+      agentSocket.emit("webhook-request", {
+        url: webhookUrl,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: data,
+        repeat: 1,
+        interval: 0,
+        delayBefore: 0,
+        fromServer: true,
+      });
+      return;
+    } else {
+      // ❌ العميل غير متصل: لا يمكن إرسال الطلب، نرسل إشعار للمستخدم
+      logger.warn(
+        `⚠️ العميل المحلي غير متصل للمستخدم ${userId}، لا يمكن إرسال webhook داخلي.`,
+      );
+      io.to(`user-${userId}`).emit("webhook-error", {
+        message:
+          "لا يمكن إرسال webhook إلى localhost لأن العميل المحلي (Agent) غير متصل. يرجى تثبيت وتشغيل العميل المحلي.",
+        url: webhookUrl,
+        attempts: 1,
+      });
+      return;
+    }
   }
-}
 
   // ==============================================================
   // 2. الإرسال المباشر للعناوين الخارجية فقط (مع إعادة المحاولة)
@@ -1358,6 +1361,16 @@ async function executeAction(
 
   if (!cmdObj.active) return;
 
+  // ===== منع تكرار نفس الأمر لنفس الحدث (تمت الإضافة) =====
+  if (eventId && cmdObj._id) {
+    const cmdDedupKey = `${userId}:cmd:${String(cmdObj._id)}:${eventId}`;
+    if (executedEvents.get(cmdDedupKey)) {
+      logger.info(`⏭️ أمر مكرر لنفس الحدث (${cmdDedupKey})، تجاهل`);
+      return;
+    }
+    executedEvents.set(cmdDedupKey, true, 10); // 10 ثوانٍ كافية
+  }
+
   const {
     command,
     webhookUrl,
@@ -1504,9 +1517,7 @@ async function executeAction(
       await new Promise((r) => setTimeout(r, interval));
     }
 
-    // ========== التعديل الأساسي هنا ==========
     // الكيستروك: يُرسل فقط إذا لم يكن هناك أمر RCON (command فارغ)
-    // حتى لا تتداخل الأوامر المعقدة (مثل أوامر ماينكرافت) مع SendKeys
     if (keystrokeText && !command) {
       const finalKeystroke = replacePlaceholders(
         keystrokeText,
@@ -1530,7 +1541,7 @@ async function executeAction(
       }
     }
 
-    // أوامر RCON (تبقى كما هي، تُرسل مباشرة إلى السيرفر)
+    // أوامر RCON
     if (command && command.trim()) {
       console.log(
         `📟 [RCON] eventId=${eventId}, command="${command.substring(0, 50)}..."`,
@@ -1566,7 +1577,7 @@ async function executeAction(
               nickname: realName,
               username: triggerUser,
             });
-          }, cumulativeDelay * 1000); // تحويل الثواني إلى ملي ثانية
+          }, cumulativeDelay * 1000);
           cumulativeDelay += DEFAULT_COMMAND_DELAY_MS / 1000;
         }
       } else {
@@ -1979,107 +1990,100 @@ async function connectUser(userId, username) {
 
   // ========== معالج GIFT ==========
   connection.on(WebcastEvent.GIFT, async (data) => {
-    const eventId = generateEventId();
-    const eventKey = `${userId}:${eventId}`;
-    // منع تكرار نفس الحدث خلال 5 ثوانٍ
-    if (executedEvents.get(eventKey)) {
-      console.log(`⏭️ حدث مكرر (${eventId})، تجاهل`);
+    const eventId = generateEventId(); // للاستخدام الداخلي
+    const sender = normalizeUser(getSenderFromEvent(data));
+    const rawGiftId =
+      data.giftId ?? data.gift_id ?? data.giftDetails?.id ?? data.id ?? null;
+    const giftIdStr = rawGiftId ? String(rawGiftId).trim() : "unknown";
+
+    // استخراج repeatId (قد يكون null إذا لم يكن موجوداً)
+    const repeatId = data.repeatId ?? data.repeat_id ?? data.comboId ?? null;
+
+    // بناء المفتاح حسب نوع الهدية
+    const dedupKey = repeatId
+      ? `${userId}:gift:${giftIdStr}:${sender}:${repeatId}`
+      : `${userId}:gift:${giftIdStr}:${sender}:${eventId}`;
+
+    // TTL مختلف: 20 ثانية للهدايا المتكررة، 2 ثانية للهدايا العادية
+    const ttl = repeatId ? 20 : 2;
+
+    // التحقق من التكرار
+    if (executedEvents.get(dedupKey)) {
+      console.log(`⏭️ حدث مكرر (${dedupKey})، تجاهل`);
       return;
     }
-    executedEvents.set(eventKey, true);
+    executedEvents.set(dedupKey, true, ttl);
+
+    // تحديث وقت النشاط
     updateLastActivity(userId);
 
-    if (!debugOnce) {
-      console.log("🔍 هيكل بيانات الهدية (GIFT) - أول مرة:");
-      console.log(JSON.stringify(data, null, 2).substring(0, 2000));
-      console.log("🔍 المفاتيح الرئيسية:", Object.keys(data));
-      console.log(
-        "🔍 مفاتيح user:",
-        data.user ? Object.keys(data.user) : "لا يوجد user",
-      );
-      debugOnce = true;
-    }
+    // باقي الكود الأصلي (استخراج البيانات ومعالجتها)
+    const rawCount =
+      data.repeatCount ??
+      data.repeat_count ??
+      data.repeat ??
+      data.comboCount ??
+      1;
+    const repeatCount = Math.max(
+      1,
+      parseInt(String(rawCount).replace(/\D/g, ""), 10) || 1,
+    );
+    const giftType = Number(
+      data.giftType ?? data.gift_type ?? data.giftDetails?.giftType ?? 0,
+    );
+    const repeatEnd = !!(data.repeatEnd ?? data.repeat_end);
 
-    try {
-      const sender = normalizeUser(getSenderFromEvent(data));
-      const rawGiftId =
-        data.giftId ?? data.gift_id ?? data.giftDetails?.id ?? data.id ?? null;
-      const giftIdStr = rawGiftId ? String(rawGiftId).trim() : "unknown";
-      const rawCount =
-        data.repeatCount ??
-        data.repeat_count ??
-        data.repeat ??
-        data.comboCount ??
-        1;
-      const repeatCount = Math.max(
-        1,
-        parseInt(String(rawCount).replace(/\D/g, ""), 10) || 1,
-      );
-      const giftType = Number(
-        data.giftType ?? data.gift_type ?? data.giftDetails?.giftType ?? 0,
-      );
-      const repeatEnd = !!(data.repeatEnd ?? data.repeat_end);
+    if (giftType === 1) {
+      // هدايا متكررة (Streak)
+      const streakKey = `${userId}:streak:${giftIdStr}:${sender}:${repeatId || "default"}`;
+      let stateObj = state.getTemp("giftStreakState", streakKey) || {
+        lastRepeat: 0,
+        ts: Date.now(),
+      };
+      let delta = 0;
+      if (repeatCount > stateObj.lastRepeat)
+        delta = repeatCount - stateObj.lastRepeat;
+      else if (repeatCount < stateObj.lastRepeat) delta = repeatCount;
+      stateObj.lastRepeat = Math.max(stateObj.lastRepeat, repeatCount);
+      stateObj.ts = Date.now();
+      state.setTemp("giftStreakState", streakKey, stateObj, 15);
 
-      console.log(
-        `📥 [GIFT] eventId=${eventId}, sender=${sender}, giftId=${giftIdStr}, repeatCount=${repeatCount}, type=${giftType}, repeatEnd=${repeatEnd}`,
-      );
-
-      if (giftType === 1) {
-        const streakKey =
-          data.repeatId ??
-          data.repeat_id ??
-          data.comboId ??
-          `${userId}:${sender}:${giftIdStr}`;
-        let stateObj = state.getTemp("giftStreakState", streakKey) || {
-          lastRepeat: 0,
-          ts: Date.now(),
-        };
-        let delta = 0;
-        if (repeatCount > stateObj.lastRepeat)
-          delta = repeatCount - stateObj.lastRepeat;
-        else if (repeatCount < stateObj.lastRepeat) delta = repeatCount;
-        stateObj.lastRepeat = Math.max(stateObj.lastRepeat, repeatCount);
-        stateObj.ts = Date.now();
-        state.setTemp("giftStreakState", streakKey, stateObj, 15);
-
-        if (repeatEnd) {
-          if (delta > 0) {
-            await processGiftDelta({
-              userId,
-              sender,
-              giftIdStr,
-              delta,
-              newRepeat: repeatCount,
-              data,
-              eventId,
-            });
-          }
-          state.delTemp("giftStreakState", streakKey);
-          return;
+      if (repeatEnd) {
+        if (delta > 0) {
+          await processGiftDelta({
+            userId,
+            sender,
+            giftIdStr,
+            delta,
+            newRepeat: repeatCount,
+            data,
+            eventId,
+          });
         }
-        if (delta <= 0) return;
-        await processGiftDelta({
-          userId,
-          sender,
-          giftIdStr,
-          delta,
-          newRepeat: repeatCount,
-          data,
-          eventId,
-        });
-      } else {
-        await processGiftDelta({
-          userId,
-          sender,
-          giftIdStr,
-          delta: repeatCount,
-          newRepeat: repeatCount,
-          data,
-          eventId,
-        });
+        state.delTemp("giftStreakState", streakKey);
+        return;
       }
-    } catch (err) {
-      logger.error(`❌ خطأ في GIFT handler للمستخدم ${userId}:`, err.message);
+      if (delta <= 0) return;
+      await processGiftDelta({
+        userId,
+        sender,
+        giftIdStr,
+        delta,
+        newRepeat: repeatCount,
+        data,
+        eventId,
+      });
+    } else {
+      // هدايا عادية
+      await processGiftDelta({
+        userId,
+        sender,
+        giftIdStr,
+        delta: repeatCount,
+        newRepeat: repeatCount,
+        data,
+        eventId,
+      });
     }
   });
 
@@ -2093,9 +2097,13 @@ async function connectUser(userId, username) {
     data,
     eventId,
   }) {
-    console.log(
-      `🔁 [processGiftDelta] eventId=${eventId}, sender=${sender}, giftId=${giftIdStr}, delta=${delta}`,
-    );
+    // مفتاح إضافي لمنع معالجة نفس الدلتا أكثر من مرة
+    const deltaKey = `${userId}:delta:${giftIdStr}:${sender}:${eventId}`;
+    if (executedEvents.get(deltaKey)) {
+      console.log(`⏭️ Delta مكرر (${deltaKey})، تجاهل`);
+      return;
+    }
+    executedEvents.set(deltaKey, true, 10); // 10 ثوانٍ كافية
 
     try {
       const userProfile = await getUserSelectedProfile(userId);
@@ -2108,6 +2116,7 @@ async function connectUser(userId, username) {
         });
         if (giftCmd) await refreshCachesForUser(userId);
       }
+
       if (
         giftCmd &&
         (giftCmd.command ||
@@ -2134,17 +2143,10 @@ async function connectUser(userId, username) {
               ? cmdObj.command
               : cmdObj.combo || "";
           await executeAction(cmdObj, sender, userId, data, "auto", eventId);
-        } else {
-          console.log(
-            `⏭️ [processGiftDelta] target mismatch for eventId=${eventId}`,
-          );
         }
-      } else {
-        console.log(
-          `⏭️ [processGiftDelta] no command found for eventId=${eventId}`,
-        );
       }
 
+      // معالجة أوامر التفاعل من نوع "gift"
       const giftInteractions = getInteractionCommandsForProfile(
         userId,
         userProfile,
