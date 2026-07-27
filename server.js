@@ -77,8 +77,6 @@ const DEFAULT_RCON_PLAYER = process.env.RCON_PLAYER || "Player";
 const CACHE_TTL = 3600; // 1 ساعة
 const CLEANUP_INTERVAL = 15 * 60 * 1000; // 15 دقيقة
 
-let lastLikeCount = new Map();
-
 const WEBHOOK_TIMEOUT = parseInt(process.env.WEBHOOK_TIMEOUT) || 15000; // 15 ثانية
 const WEBHOOK_RETRIES = parseInt(process.env.WEBHOOK_RETRIES) || 3; // عدد المحاولات
 
@@ -203,7 +201,6 @@ class AppState {
 
     // مخازن مؤقتة بصلاحيات مختلفة
     this.tempStores = {
-      executedOncePerLive: new NodeCache({ stdTTL: 3600, checkperiod: 120 }),
       likeCounters: new NodeCache({ stdTTL: 3600, checkperiod: 120 }),
       giftStreakState: new NodeCache({ stdTTL: 15, checkperiod: 5 }),
       userAvatarCache: new NodeCache({ stdTTL: 3600, checkperiod: 300 }),
@@ -221,6 +218,7 @@ class AppState {
     this.heartbeats = new Map(); // لتخزين معرفات المؤقتات
     this.executingCommands = new Map(); // لمنع التكرار اليدوي
     this.liveHeartbeats = new Map(); // (سيتم استخدام heartbeats بدلاً منه)
+    this.oncePerLiveMap = new Map();
   }
 
   // طرق مساعدة للوصول للمخازن
@@ -1413,16 +1411,16 @@ async function executeAction(
     }
   }
 
-  // oncePerLive (باستخدام NodeCache)
+  // oncePerLive (باستخدام Map دائم)
   if (oncePerLive && _id && userId) {
     const key = `${userId}:${String(_id)}`;
-    if (state.getTemp("executedOncePerLive", key)) {
+    if (state.oncePerLiveMap.has(key)) {
       logger.info(
         `⏭️ الأمر ${name} تم تنفيذه مرة واحدة - تخطي (eventId=${eventId})`,
       );
       return;
     }
-    state.setTemp("executedOncePerLive", key, true, 86400); // 24 ساعة
+    state.oncePerLiveMap.set(key, true);
   }
 
   // تشغيل الصوت فوراً
@@ -1599,23 +1597,21 @@ async function executeAction(
 
 // ================ دوال مساعدة لأحداث TikTok ================
 function resetOncePerLiveForUser(userId) {
-  // مسح executedOncePerLive
-  const keys = state.tempStores.executedOncePerLive.keys();
-  for (const key of keys) {
-    if (key.startsWith(`${userId}:`)) {
-      state.delTemp("executedOncePerLive", key);
+  // مسح الـ Map المخصص لمنع التكرار
+  const prefix = `${userId}:`;
+  for (const key of state.oncePerLiveMap.keys()) {
+    if (key.startsWith(prefix)) {
+      state.oncePerLiveMap.delete(key);
     }
   }
 
-  // مسح عدادات اللايك
+  // مسح عدادات اللايك (تبقى كما هي)
   const likeKeys = state.tempStores.likeCounters.keys();
   for (const key of likeKeys) {
     if (key.startsWith(`${userId}:`)) {
       state.delTemp("likeCounters", key);
     }
   }
-
-  // لا يوجد executedEvents للحذف
 }
 
 function getSenderFromEvent(data) {
@@ -2151,8 +2147,10 @@ async function connectUser(userId, username) {
         )
           continue;
 
-        const key = `${userId}:${String(cmd._id)}:${sender}`;
-        if (state.getTemp("executedOncePerLive", key)) continue;
+        const key = `${userId}:${String(cmd._id)}`;
+        // استخدام oncePerLiveMap بدلاً من executedOncePerLive
+        if (cmd.oncePerLive && state.oncePerLiveMap.has(key)) continue;
+
         await executeAction(
           addKeystrokeToCommand(cmd),
           sender,
@@ -2161,7 +2159,10 @@ async function connectUser(userId, username) {
           "auto",
           eventId,
         );
-        state.setTemp("executedOncePerLive", key, true, 3600);
+
+        if (cmd.oncePerLive) {
+          state.oncePerLiveMap.set(key, true);
+        }
       }
     } catch (err) {
       logger.error("❌ FOLLOW handler error:", err.message);
@@ -2203,46 +2204,29 @@ async function connectUser(userId, username) {
         )
           continue;
 
+        const key = `${userId}:${String(cmd._id)}`;
+        // التحقق من oncePerLive
+        if (cmd.oncePerLive && state.oncePerLiveMap.has(key)) continue;
+
+        // التحقق من الكلمة المفتاحية
+        if (
+          cmd.keyword &&
+          !comment.toLowerCase().includes(cmd.keyword.trim().toLowerCase())
+        ) {
+          continue;
+        }
+
+        await executeAction(
+          addKeystrokeToCommand(cmd),
+          sender,
+          userId,
+          data,
+          "auto",
+          eventId,
+        );
+
         if (cmd.oncePerLive) {
-          const key = `${userId}:${String(cmd._id)}`;
-          if (state.getTemp("executedOncePerLive", key)) continue;
-          if (
-            cmd.keyword &&
-            !comment.toLowerCase().includes(cmd.keyword.trim().toLowerCase())
-          )
-            continue;
-          await executeAction(
-            addKeystrokeToCommand(cmd),
-            sender,
-            userId,
-            data,
-            "auto",
-            eventId,
-          );
-          state.setTemp("executedOncePerLive", key, true, 3600);
-        } else {
-          if (
-            cmd.keyword &&
-            comment.toLowerCase().includes(cmd.keyword.trim().toLowerCase())
-          ) {
-            await executeAction(
-              addKeystrokeToCommand(cmd),
-              sender,
-              userId,
-              data,
-              "auto",
-              eventId,
-            );
-          } else if (!cmd.keyword) {
-            await executeAction(
-              addKeystrokeToCommand(cmd),
-              sender,
-              userId,
-              data,
-              "auto",
-              eventId,
-            );
-          }
+          state.oncePerLiveMap.set(key, true);
         }
       }
     } catch (err) {
@@ -2254,44 +2238,23 @@ async function connectUser(userId, username) {
   connection.on(WebcastEvent.LIKE, async (data) => {
     const eventId = generateEventId();
     updateLastActivity(userId);
-
     try {
       const sender = normalizeUser(getSenderFromEvent(data));
       console.log(`❤️ [LIKE] eventId=${eventId}, sender=${sender}`);
 
-      const likeKey = `like:${userId}:${sender}`;
-      if (state.getTemp("interactionCooldown", likeKey)) {
-        console.log(`⏭️ [LIKE] مكرر (cooldown) eventId=${eventId}`);
-        return;
-      }
-      state.setTemp("interactionCooldown", likeKey, true, 5);
-
-      const currentTotal =
-        parseInt(
-          String(data.likeCount ?? data.like_count ?? data.count ?? 0).replace(
-            /\D/g,
-            "",
-          ),
-          10,
-        ) || 0;
-      if (currentTotal <= 0) return;
-
-      const keyTotal = `${userId}:${sender}`;
-      const lastTotal = lastLikeCount.get(keyTotal) || 0;
-      let delta = currentTotal - lastTotal;
-
-      if (delta < 0) {
-        lastLikeCount.set(keyTotal, currentTotal);
-        delta = currentTotal;
-      } else if (delta === 0) {
-        return;
-      } else {
-        lastLikeCount.set(keyTotal, currentTotal);
-      }
-
+      // 1. استخدم العدد الجديد مباشرة
+      let delta = data.count || data.likeCount || data.like_count || 0;
+      delta = parseInt(String(delta).replace(/\D/g, ""), 10) || 0;
+      if (delta <= 0) return;
       if (delta > LIKE_MAX_DELTA) delta = LIKE_MAX_DELTA;
-      console.log(`📊 [LIKE] delta=${delta} for eventId=${eventId}`);
+      console.log(`📊 [LIKE] delta=${delta}`);
 
+      // 2. (اختياري) يمكن إزالة الـ cooldown
+      // const likeKey = `like:${userId}:${sender}`;
+      // if (state.getTemp("interactionCooldown", likeKey)) return;
+      // state.setTemp("interactionCooldown", likeKey, true, 5);
+
+      // 3. جلب الأوامر من الكاش
       const userProfile = await getUserSelectedProfile(userId);
       const commands = getInteractionCommandsForProfile(
         userId,
@@ -2306,9 +2269,11 @@ async function connectUser(userId, username) {
         )
           continue;
 
+        const key = `${userId}:${String(cmd._id)}`;
+
+        // oncePerLive
         if (cmd.oncePerLive) {
-          const key = `${userId}:${String(cmd._id)}`;
-          if (state.getTemp("executedOncePerLive", key)) continue;
+          if (state.oncePerLiveMap.has(key)) continue;
           await executeAction(
             addKeystrokeToCommand(cmd),
             sender,
@@ -2317,10 +2282,11 @@ async function connectUser(userId, username) {
             "auto",
             eventId,
           );
-          state.setTemp("executedOncePerLive", key, true, 3600);
+          state.oncePerLiveMap.set(key, true);
           continue;
         }
 
+        // threshold logic
         const threshold = parseInt(cmd.threshold || 0, 10) || 0;
         const keyUser = `${userId}:${String(cmd._id)}:${sender}`;
         let current = state.getTemp("likeCounters", keyUser) || 0;
@@ -2340,26 +2306,24 @@ async function connectUser(userId, username) {
         }
 
         const times = Math.floor(current / threshold);
-        if (times <= 0) continue;
-
-        for (let i = 0; i < times; i++) {
-          await executeAction(
-            addKeystrokeToCommand(cmd),
-            sender,
-            userId,
-            data,
-            "auto",
-            eventId,
+        if (times > 0) {
+          for (let i = 0; i < times; i++) {
+            await executeAction(
+              addKeystrokeToCommand(cmd),
+              sender,
+              userId,
+              data,
+              "auto",
+              eventId,
+            );
+          }
+          state.setTemp(
+            "likeCounters",
+            keyUser,
+            current - times * threshold,
+            3600,
           );
         }
-        state.setTemp(
-          "likeCounters",
-          keyUser,
-          current - times * threshold,
-          3600,
-        );
-        if (state.getTemp("likeCounters", keyUser) < 0)
-          state.delTemp("likeCounters", keyUser);
       }
     } catch (err) {
       logger.error("❌ LIKE handler error:", err.message);
@@ -2396,27 +2360,21 @@ async function connectUser(userId, username) {
         )
           continue;
 
+        const key = `${userId}:${String(cmd._id)}`;
+        // التحقق من oncePerLive
+        if (cmd.oncePerLive && state.oncePerLiveMap.has(key)) continue;
+
+        await executeAction(
+          addKeystrokeToCommand(cmd),
+          sender,
+          userId,
+          data,
+          "auto",
+          eventId,
+        );
+
         if (cmd.oncePerLive) {
-          const key = `${userId}:${String(cmd._id)}`;
-          if (state.getTemp("executedOncePerLive", key)) continue;
-          await executeAction(
-            addKeystrokeToCommand(cmd),
-            sender,
-            userId,
-            data,
-            "auto",
-            eventId,
-          );
-          state.setTemp("executedOncePerLive", key, true, 3600);
-        } else {
-          await executeAction(
-            addKeystrokeToCommand(cmd),
-            sender,
-            userId,
-            data,
-            "auto",
-            eventId,
-          );
+          state.oncePerLiveMap.set(key, true);
         }
       }
     } catch (err) {
@@ -2424,18 +2382,31 @@ async function connectUser(userId, username) {
     }
   });
 
-  // ========== معالج ROOM_UPDATE (بدون إعادة تشغيل heartbeat) ==========
+  // ========== معالج ROOM_UPDATE (مع إعادة تعيين oncePerLive عند بداية بث جديد) ==========
   connection.on(WebcastEvent.ROOM_UPDATE, (data) => {
     const newRoomId = data?.roomId ?? data?.room_id ?? null;
     const newIsLive =
       typeof data?.isLive === "boolean" ? data.isLive : !!newRoomId;
     const conn = getTikTokConnection(userId);
     if (conn) {
+      const oldRoomId = conn.roomId;
+      const oldIsLive = conn.isLive;
+
+      // إذا كان بث جديد (تغير roomId أو أصبح لايف بعد أن كان غير لايف)
+      if (
+        (newRoomId && oldRoomId && newRoomId !== oldRoomId) ||
+        (newIsLive && !oldIsLive)
+      ) {
+        console.log(
+          `🔄 [ROOM_UPDATE] بداية بث جديد للمستخدم ${userId}، إعادة تعيين oncePerLive`,
+        );
+        resetOncePerLiveForUser(userId);
+      }
+
       conn.isLive = newIsLive;
       if (newRoomId) conn.roomId = newRoomId;
       conn.lastRoomUpdate = Date.now();
       setTikTokConnection(userId, conn);
-      // لا نستدعي startLiveHeartbeat هنا
     }
   });
 
