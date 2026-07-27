@@ -2235,101 +2235,107 @@ async function connectUser(userId, username) {
   });
 
   // ========== معالج LIKE ==========
-  connection.on(WebcastEvent.LIKE, async (data) => {
-    const eventId = generateEventId();
-    updateLastActivity(userId);
-    try {
-      const sender = normalizeUser(getSenderFromEvent(data));
-      console.log(`❤️ [LIKE] eventId=${eventId}, sender=${sender}`);
+connection.on(WebcastEvent.LIKE, async (data) => {
+  const eventId = generateEventId();
+  updateLastActivity(userId);
+  try {
+    const sender = normalizeUser(getSenderFromEvent(data));
+    console.log(`❤️ [LIKE] eventId=${eventId}, sender=${sender}`);
 
-      // 1. استخدم العدد الجديد مباشرة
-      let delta = data.count || data.likeCount || data.like_count || 0;
-      delta = parseInt(String(delta).replace(/\D/g, ""), 10) || 0;
-      if (delta <= 0) return;
-      if (delta > LIKE_MAX_DELTA) delta = LIKE_MAX_DELTA;
-      console.log(`📊 [LIKE] delta=${delta}`);
+    // 1. استخدم العدد الجديد مباشرة
+    let delta = data.count || data.likeCount || data.like_count || 0;
+    delta = parseInt(String(delta).replace(/\D/g, ""), 10) || 0;
+    if (delta <= 0) return;
+    if (delta > LIKE_MAX_DELTA) delta = LIKE_MAX_DELTA;
+    console.log(`📊 [LIKE] delta=${delta}`);
 
-      // 2. (اختياري) يمكن إزالة الـ cooldown
-      // const likeKey = `like:${userId}:${sender}`;
-      // if (state.getTemp("interactionCooldown", likeKey)) return;
-      // state.setTemp("interactionCooldown", likeKey, true, 5);
+    // 2. (اختياري) يمكن إزالة الـ cooldown
+    // const likeKey = `like:${userId}:${sender}`;
+    // if (state.getTemp("interactionCooldown", likeKey)) return;
+    // state.setTemp("interactionCooldown", likeKey, true, 5);
 
-      // 3. جلب الأوامر من الكاش
-      const userProfile = await getUserSelectedProfile(userId);
-      const commands = getInteractionCommandsForProfile(
-        userId,
-        userProfile,
-      ).filter((c) => c.type === "like" && c.active);
+    // 3. جلب الأوامر من الكاش
+    const userProfile = await getUserSelectedProfile(userId);
+    const commands = getInteractionCommandsForProfile(
+      userId,
+      userProfile,
+    ).filter((c) => c.type === "like" && c.active);
 
-      for (let cmd of commands) {
-        if (
-          cmd.targetUser &&
-          normalizeUser(cmd.targetUser) !== "all" &&
-          normalizeUser(cmd.targetUser) !== sender
-        )
-          continue;
+    for (let cmd of commands) {
+      if (
+        cmd.targetUser &&
+        normalizeUser(cmd.targetUser) !== "all" &&
+        normalizeUser(cmd.targetUser) !== sender
+      )
+        continue;
 
-        const key = `${userId}:${String(cmd._id)}`;
+      const key = `${userId}:${String(cmd._id)}`;
 
-        // oncePerLive
-        if (cmd.oncePerLive) {
-          if (state.oncePerLiveMap.has(key)) continue;
-          await executeAction(
-            addKeystrokeToCommand(cmd),
-            sender,
-            userId,
-            data,
-            "auto",
-            eventId,
-          );
-          state.oncePerLiveMap.set(key, true);
-          continue;
-        }
-
-        // threshold logic
-        const threshold = parseInt(cmd.threshold || 0, 10) || 0;
-        const keyUser = `${userId}:${String(cmd._id)}:${sender}`;
-        let current = state.getTemp("likeCounters", keyUser) || 0;
-        current += delta;
-        state.setTemp("likeCounters", keyUser, current, 3600);
-
-        if (threshold <= 0) {
-          await executeAction(
-            addKeystrokeToCommand(cmd),
-            sender,
-            userId,
-            data,
-            "auto",
-            eventId,
-          );
-          continue;
-        }
-
-        const times = Math.floor(current / threshold);
-        if (times > 0) {
-          for (let i = 0; i < times; i++) {
-            await executeAction(
-              addKeystrokeToCommand(cmd),
-              sender,
-              userId,
-              data,
-              "auto",
-              eventId,
-            );
-          }
-          state.setTemp(
-            "likeCounters",
-            keyUser,
-            current - times * threshold,
-            3600,
-          );
-        }
+      // oncePerLive
+      if (cmd.oncePerLive) {
+        if (state.oncePerLiveMap.has(key)) continue;
+        await executeAction(
+          addKeystrokeToCommand(cmd),
+          sender,
+          userId,
+          data,
+          "auto",
+          eventId,
+        );
+        state.oncePerLiveMap.set(key, true);
+        continue;
       }
-    } catch (err) {
-      logger.error("❌ LIKE handler error:", err.message);
-    }
-  });
 
+      // threshold logic
+      const threshold = parseInt(cmd.threshold || 0, 10) || 0;
+      const keyUser = `${userId}:${String(cmd._id)}:${sender}`;
+      let current = state.getTemp("likeCounters", keyUser) || 0;
+      current += delta;
+      state.setTemp("likeCounters", keyUser, current, 3600);
+
+      if (threshold <= 0) {
+        await executeAction(
+          addKeystrokeToCommand(cmd),
+          sender,
+          userId,
+          data,
+          "auto",
+          eventId,
+        );
+        continue;
+      }
+
+      // ✅ التعديل: تنفيذ الأمر مرة واحدة فقط عند الوصول إلى العتبة
+      if (current >= threshold) {
+        await executeAction(
+          addKeystrokeToCommand(cmd),
+          sender,
+          userId,
+          data,
+          "auto",
+          eventId,
+        );
+        // خصم العتبة مرة واحدة فقط، وترك الباقي للعتبة التالية
+        state.setTemp(
+          "likeCounters",
+          keyUser,
+          current - threshold,
+          3600,
+        );
+      } else {
+        // تخزين العدد الحالي إذا لم يصل للعتبة
+        state.setTemp(
+          "likeCounters",
+          keyUser,
+          current,
+          3600,
+        );
+      }
+    }
+  } catch (err) {
+    logger.error("❌ LIKE handler error:", err.message);
+  }
+});
   // ========== معالج SHARE ==========
   connection.on(WebcastEvent.SHARE, async (data) => {
     const eventId = generateEventId();
