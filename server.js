@@ -5232,7 +5232,7 @@ async function initializeOrders() {
   console.log("✅ تم تهيئة ترتيب الأوامر القديمة");
 }
 
-initializeOrders().catch(console.error);
+// initializeOrders().catch(console.error);
 
 app.post(
   "/api/admin/user/:id/renew",
