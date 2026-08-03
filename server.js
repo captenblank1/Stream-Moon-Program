@@ -1,7 +1,3 @@
-// ============================================================
-// server.js - الإصدار المُحسَّن بالكامل (مع إصلاح الذاكرة والأداء)
-// ============================================================
-
 require("dotenv").config();
 const FRONTEND_URL = process.env.FRONTEND_URL;
 if (!FRONTEND_URL && process.env.NODE_ENV === "production") {
@@ -512,26 +508,30 @@ mongoose
 
 // ================ موديل إعدادات الـ Overlay لكل مستخدم ================
 const overlaySettingSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
+    unique: true,
+  },
   overlay1: {
-    title: { type: String, default: '🏆 قائمة الأساطير' },
+    title: { type: String, default: "🏆 قائمة الأساطير" },
     names: { type: [String], default: [] },
-    theme: { type: String, default: 'theme-neon' },
-    glowColor: { type: String, default: '#00ffe1' },
-    badgeColor: { type: String, default: '#ff0055' },
-    crownedIndices: { type: [Number], default: [] }
+    theme: { type: String, default: "theme-neon" },
+    glowColor: { type: String, default: "#00ffe1" },
+    badgeColor: { type: String, default: "#ff0055" },
+    crownedIndices: { type: [Number], default: [] },
   },
   overlay2: {
-    title: { type: String, default: '🔥 كبار الداعمين' },
+    title: { type: String, default: "🔥 كبار الداعمين" },
     names: { type: [String], default: [] },
-    theme: { type: String, default: 'theme-gold' },
-    glowColor: { type: String, default: '#ffcc00' },
-    badgeColor: { type: String, default: '#a855f7' },
-    crownedIndices: { type: [Number], default: [] }
-  }
+    theme: { type: String, default: "theme-gold" },
+    glowColor: { type: String, default: "#ffcc00" },
+    badgeColor: { type: String, default: "#a855f7" },
+    crownedIndices: { type: [Number], default: [] },
+  },
 });
-const OverlaySetting = mongoose.model('OverlaySetting', overlaySettingSchema);
-
+const OverlaySetting = mongoose.model("OverlaySetting", overlaySettingSchema);
 
 const agentSessionSchema = new mongoose.Schema(
   {
@@ -5411,12 +5411,10 @@ app.post(
       }
       // لا يمكن إزالة صلاحية المدير عن نفسه (اختياري ولكن مفيد)
       if (user._id.toString() === req.user.id) {
-        return res
-          .status(403)
-          .json({
-            success: false,
-            message: "لا يمكنك إزالة صلاحية المدير عن نفسك",
-          });
+        return res.status(403).json({
+          success: false,
+          message: "لا يمكنك إزالة صلاحية المدير عن نفسك",
+        });
       }
       user.role = "user";
       await user.save();
@@ -5736,7 +5734,7 @@ app.post("/api/agent/exchange-binding", async (req, res) => {
 // ================ نقاط نهاية الـ Overlay ================
 
 // جلب إعدادات الـ Overlay للمستخدم الحالي
-app.get('/api/overlay', authenticateToken, async (req, res) => {
+app.get("/api/overlay", authenticateToken, async (req, res) => {
   try {
     let settings = await OverlaySetting.findOne({ userId: req.user.id });
     if (!settings) {
@@ -5744,7 +5742,10 @@ app.get('/api/overlay', authenticateToken, async (req, res) => {
       settings = new OverlaySetting({ userId: req.user.id });
       await settings.save();
     }
-    res.json({ success: true, data: { overlay1: settings.overlay1, overlay2: settings.overlay2 } });
+    res.json({
+      success: true,
+      data: { overlay1: settings.overlay1, overlay2: settings.overlay2 },
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -5766,16 +5767,21 @@ app.put('/api/overlay/:id', authenticateToken, async (req, res) => {
     const key = `overlay${id}`;
     const { title, names, theme, glowColor, badgeColor, crownedIndices } = req.body;
 
+    // ✅ التحقق من صحة البيانات قبل الحفظ
     if (title !== undefined) settings[key].title = title;
-    if (names !== undefined) settings[key].names = names;
+    if (names !== undefined) settings[key].names = Array.isArray(names) ? names : [];
     if (theme !== undefined) settings[key].theme = theme;
     if (glowColor !== undefined) settings[key].glowColor = glowColor;
     if (badgeColor !== undefined) settings[key].badgeColor = badgeColor;
-    if (crownedIndices !== undefined) settings[key].crownedIndices = crownedIndices;
+    if (crownedIndices !== undefined) {
+      settings[key].crownedIndices = Array.isArray(crownedIndices) ? crownedIndices : [];
+    }
+
+    // ✅ طباعة البيانات قبل الحفظ (للتشخيص)
+    console.log(`💾 حفظ الإعدادات للمستخدم ${req.user.id}, overlay ${id}:`, JSON.stringify(settings[key], null, 2));
 
     await settings.save();
 
-    // 🔥 إرسال تحديث فوري لكل الشاشات المفتوحة لهذا المستخدم (عبر Socket.IO)
     io.to(`user-${req.user.id}`).emit('overlay-update', {
       id: id,
       data: settings[key]
@@ -5783,7 +5789,14 @@ app.put('/api/overlay/:id', authenticateToken, async (req, res) => {
 
     res.json({ success: true, data: settings[key] });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    // ✅ طباعة تفاصيل الخطأ كاملة
+    console.error('❌ خطأ في حفظ الـ Overlay:', err);
+    console.error('📄 تفاصيل الخطأ:', err.stack);
+    res.status(500).json({ 
+      success: false, 
+      message: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 });
 
