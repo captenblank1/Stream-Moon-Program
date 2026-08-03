@@ -5736,34 +5736,34 @@ app.post("/api/agent/exchange-binding", async (req, res) => {
 // جلب إعدادات الـ Overlay للمستخدم الحالي
 // داخل نقطة /api/overlay (GET)
 app.get("/api/overlay", async (req, res) => {
-    try {
-        let userId = null;
-        // محاولة المصادقة عبر الكوكي أولاً
-        if (req.user && req.user.id) {
-            userId = req.user.id;
-        } else if (req.query.token) {
-            // البحث عن مستخدم بواسطة screenToken
-            const user = await User.findOne({ screenToken: req.query.token });
-            if (user) {
-                userId = user._id;
-            }
-        }
-        if (!userId) {
-            return res.status(401).json({ success: false, message: "غير مصرح" });
-        }
-
-        let settings = await OverlaySetting.findOne({ userId });
-        if (!settings) {
-            settings = new OverlaySetting({ userId });
-            await settings.save();
-        }
-        res.json({
-            success: true,
-            data: { overlay1: settings.overlay1, overlay2: settings.overlay2 }
-        });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+  try {
+    let userId = null;
+    // محاولة المصادقة عبر الكوكي أولاً
+    if (req.user && req.user.id) {
+      userId = req.user.id;
+    } else if (req.query.token) {
+      // البحث عن مستخدم بواسطة screenToken
+      const user = await User.findOne({ screenToken: req.query.token });
+      if (user) {
+        userId = user._id;
+      }
     }
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "غير مصرح" });
+    }
+
+    let settings = await OverlaySetting.findOne({ userId });
+    if (!settings) {
+      settings = new OverlaySetting({ userId });
+      await settings.save();
+    }
+    res.json({
+      success: true,
+      data: { overlay1: settings.overlay1, overlay2: settings.overlay2 },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // تحديث إعدادات Overlay معين (1 أو 2)

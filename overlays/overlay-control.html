@@ -160,6 +160,14 @@
     <div class="toast" id="toast"></div>
 
     <script>
+        // ===== إعدادات البيئة =====
+        // سيتم تعيين هذه القيم من السيرفر أو من المتغيرات العامة
+        const API_BASE = window.API_BASE || 'https://backend-7hj8.onrender.com';
+
+        // جلب token من query string (إذا كان موجوداً)
+        const urlParams = new URLSearchParams(window.location.search);
+        const queryToken = urlParams.get('token');
+
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         //  TOAST & COPY
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -173,13 +181,16 @@
         }
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        //  جلب screenToken من السيرفر
+        //  جلب screenToken (من query أو من السيرفر)
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        let screenToken = null;
+        let screenToken = queryToken || null;
 
         async function fetchScreenToken() {
+            // إذا كان لدينا token من query، استخدمه مباشرة
+            if (screenToken) return true;
+
             try {
-                const res = await fetch('/api/user/screen-token', {
+                const res = await fetch(`${API_BASE}/api/user/screen-token`, {
                     credentials: 'include'
                 });
                 const json = await res.json();
@@ -204,16 +215,15 @@
                 document.getElementById(`linkDisplay${overlayId}`).textContent = 'غير متاح (سجل الدخول)';
                 return;
             }
-            const base = window.location.origin;
-            const url = `${base}/screens/${screenToken}/${overlayId}`;
+            // استخدام API_BASE لأن ملفات التراكب على الباك إند
+            const url = `${API_BASE}/overlays/overlay${overlayId}.html?token=${screenToken}`;
             document.getElementById(`linkDisplay${overlayId}`).textContent = url;
-            // نعيد تعيين حدث النسخ بالرابط الجديد
             const btn = document.querySelector(`.copy-btn[data-overlay="${overlayId}"]`);
             btn.dataset.url = url;
         }
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        //  زر النسخ (يستخدم الرابط المخزن في data-url)
+        //  زر النسخ
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         document.querySelectorAll('.copy-btn').forEach(btn => {
             btn.addEventListener('click', async function() {
@@ -226,7 +236,6 @@
                     await navigator.clipboard.writeText(url);
                     showToast(`✅ تم نسخ الرابط! ضعه في OBS:\n${url}`);
                 } catch (err) {
-                    // fallback
                     const dummy = document.createElement('input');
                     dummy.value = url;
                     document.body.appendChild(dummy);
@@ -255,13 +264,17 @@
                 this.linkDisplay = document.getElementById(`linkDisplay${id}`);
 
                 this.bindEvents();
-                // بعد تحميل الصفحة، نجلب البيانات
                 this.loadFromServer();
             }
 
             async loadFromServer() {
                 try {
-                    const res = await fetch('/api/overlay', {
+                    // استخدام API_BASE وإضافة token في query إن وجد
+                    let url = `${API_BASE}/api/overlay`;
+                    if (screenToken) {
+                        url += `?token=${screenToken}`;
+                    }
+                    const res = await fetch(url, {
                         credentials: 'include'
                     });
                     const json = await res.json();
@@ -275,7 +288,6 @@
                         this.crownedIndices = new Set(data.crownedIndices || []);
                         this.updateCrownsUI();
                         this.status.textContent = '✓ تم التحميل من السيرفر';
-                        // تحديث رابط الشاشة (يستخدم screenToken)
                         updateOverlayLink(this.id);
                     } else {
                         this.status.textContent = '⚠️ فشل التحميل: ' + (json.message || 'غير مصرح');
@@ -300,7 +312,7 @@
                 };
 
                 try {
-                    const res = await fetch(`/api/overlay/${this.id}`, {
+                    const res = await fetch(`${API_BASE}/api/overlay/${this.id}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         credentials: 'include',
@@ -360,19 +372,14 @@
         //  INIT
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         (async function init() {
-            // 1. جلب screenToken
             const hasToken = await fetchScreenToken();
             if (!hasToken) {
                 showToast('⚠️ لم يتم العثور على رمز الشاشة، يرجى تسجيل الدخول');
-                // مع ذلك نستمر في تحميل اللوحة لكن الروابط ستكون غير صالحة
             }
 
-            // 2. إنشاء المتحكمين
             const c1 = new Controller(1);
             const c2 = new Controller(2);
 
-            // 3. تحديث الروابط عند تغير screenToken لاحقاً (إن أمكن)
-            // نمرر المتحكمين للدالة updateOverlayLink إذا احتجنا تحديث يدوي
             window.controllers = { c1, c2 };
             console.log('✅ لوحة التحكم متصلة بالسيرفر لكل مستخدم!');
         })();
