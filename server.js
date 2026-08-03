@@ -378,6 +378,7 @@ app.use(
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
 app.use("/audios", express.static(path.join(__dirname, "audios")));
+app.use("/overlays", express.static(path.join(__dirname, "overlays")));
 app.use(cookieParser());
 app.use((req, res, next) => {
   req.setTimeout(30 * 1000);
@@ -508,6 +509,30 @@ mongoose
   .catch((err) => logger.error("❌ فشل الاتصال بـ MongoDB:", err));
 
 // ================ تعريف Schemas ================
+
+// ================ موديل إعدادات الـ Overlay لكل مستخدم ================
+const overlaySettingSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+  overlay1: {
+    title: { type: String, default: '🏆 قائمة الأساطير' },
+    names: { type: [String], default: [] },
+    theme: { type: String, default: 'theme-neon' },
+    glowColor: { type: String, default: '#00ffe1' },
+    badgeColor: { type: String, default: '#ff0055' },
+    crownedIndices: { type: [Number], default: [] }
+  },
+  overlay2: {
+    title: { type: String, default: '🔥 كبار الداعمين' },
+    names: { type: [String], default: [] },
+    theme: { type: String, default: 'theme-gold' },
+    glowColor: { type: String, default: '#ffcc00' },
+    badgeColor: { type: String, default: '#a855f7' },
+    crownedIndices: { type: [Number], default: [] }
+  }
+});
+const OverlaySetting = mongoose.model('OverlaySetting', overlaySettingSchema);
+
+
 const agentSessionSchema = new mongoose.Schema(
   {
     token: { type: String, required: true, unique: true },
@@ -5703,6 +5728,60 @@ app.post("/api/agent/exchange-binding", async (req, res) => {
     let wsProtocol = process.env.NODE_ENV === "production" ? "wss" : "ws";
     const wsUrl = `${wsProtocol}://${req.headers.host}/agent`;
     res.json({ success: true, sessionToken, wsUrl });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ================ نقاط نهاية الـ Overlay ================
+
+// جلب إعدادات الـ Overlay للمستخدم الحالي
+app.get('/api/overlay', authenticateToken, async (req, res) => {
+  try {
+    let settings = await OverlaySetting.findOne({ userId: req.user.id });
+    if (!settings) {
+      // لو مفيش إعدادات، اعمله إعدادات افتراضية
+      settings = new OverlaySetting({ userId: req.user.id });
+      await settings.save();
+    }
+    res.json({ success: true, data: { overlay1: settings.overlay1, overlay2: settings.overlay2 } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// تحديث إعدادات Overlay معين (1 أو 2)
+app.put('/api/overlay/:id', authenticateToken, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (![1, 2].includes(id)) {
+      return res.status(400).json({ success: false, message: 'معرف غير صالح (يجب 1 أو 2)' });
+    }
+
+    let settings = await OverlaySetting.findOne({ userId: req.user.id });
+    if (!settings) {
+      settings = new OverlaySetting({ userId: req.user.id });
+    }
+
+    const key = `overlay${id}`;
+    const { title, names, theme, glowColor, badgeColor, crownedIndices } = req.body;
+
+    if (title !== undefined) settings[key].title = title;
+    if (names !== undefined) settings[key].names = names;
+    if (theme !== undefined) settings[key].theme = theme;
+    if (glowColor !== undefined) settings[key].glowColor = glowColor;
+    if (badgeColor !== undefined) settings[key].badgeColor = badgeColor;
+    if (crownedIndices !== undefined) settings[key].crownedIndices = crownedIndices;
+
+    await settings.save();
+
+    // 🔥 إرسال تحديث فوري لكل الشاشات المفتوحة لهذا المستخدم (عبر Socket.IO)
+    io.to(`user-${req.user.id}`).emit('overlay-update', {
+      id: id,
+      data: settings[key]
+    });
+
+    res.json({ success: true, data: settings[key] });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
