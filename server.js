@@ -1578,8 +1578,16 @@ async function executeAction(
       }
     }
 
-    // الويبهوك
+    // داخل executeAction، قبل sendWebhook
     if (webhookUrl && webhookUrl.trim()) {
+      // استبدال المتغيرات في الرابط
+      let processedWebhookUrl = replacePlaceholders(
+        webhookUrl,
+        realName, // nickname
+        triggerUser, // username
+        "", // rconPlayer (غير مستخدم هنا)
+      );
+
       const webhookData = {
         name: name || "",
         user: triggerUser,
@@ -1592,7 +1600,7 @@ async function executeAction(
         interval: 0,
         iteration: i + 1,
       };
-      await sendWebhook(webhookUrl, webhookData, userId);
+      await sendWebhook(processedWebhookUrl, webhookData, userId);
     }
   }
 }
