@@ -1,3 +1,7 @@
+// ============================================================
+// server.js - الإصدار المُحسَّن بالكامل (مع إصلاح الذاكرة والأداء)
+// ============================================================
+
 require("dotenv").config();
 const FRONTEND_URL = process.env.FRONTEND_URL;
 if (!FRONTEND_URL && process.env.NODE_ENV === "production") {
@@ -374,7 +378,6 @@ app.use(
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
 app.use("/audios", express.static(path.join(__dirname, "audios")));
-app.use("/overlays", express.static(path.join(__dirname, "overlays")));
 app.use(cookieParser());
 app.use((req, res, next) => {
   req.setTimeout(30 * 1000);
@@ -505,34 +508,6 @@ mongoose
   .catch((err) => logger.error("❌ فشل الاتصال بـ MongoDB:", err));
 
 // ================ تعريف Schemas ================
-
-// ================ موديل إعدادات الـ Overlay لكل مستخدم ================
-const overlaySettingSchema = new mongoose.Schema({
-  userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
-    required: true,
-    unique: true,
-  },
-  overlay1: {
-    title: { type: String, default: "🏆 قائمة الأساطير" },
-    names: { type: [String], default: [] },
-    theme: { type: String, default: "theme-neon" },
-    glowColor: { type: String, default: "#00ffe1" },
-    badgeColor: { type: String, default: "#ff0055" },
-    crownedIndices: { type: [Number], default: [] },
-  },
-  overlay2: {
-    title: { type: String, default: "🔥 كبار الداعمين" },
-    names: { type: [String], default: [] },
-    theme: { type: String, default: "theme-gold" },
-    glowColor: { type: String, default: "#ffcc00" },
-    badgeColor: { type: String, default: "#a855f7" },
-    crownedIndices: { type: [Number], default: [] },
-  },
-});
-const OverlaySetting = mongoose.model("OverlaySetting", overlaySettingSchema);
-
 const agentSessionSchema = new mongoose.Schema(
   {
     token: { type: String, required: true, unique: true },
@@ -5411,10 +5386,12 @@ app.post(
       }
       // لا يمكن إزالة صلاحية المدير عن نفسه (اختياري ولكن مفيد)
       if (user._id.toString() === req.user.id) {
-        return res.status(403).json({
-          success: false,
-          message: "لا يمكنك إزالة صلاحية المدير عن نفسك",
-        });
+        return res
+          .status(403)
+          .json({
+            success: false,
+            message: "لا يمكنك إزالة صلاحية المدير عن نفسك",
+          });
       }
       user.role = "user";
       await user.save();
@@ -5729,91 +5706,6 @@ app.post("/api/agent/exchange-binding", async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
-});
-
-// ================ نقاط نهاية الـ Overlay ================
-
-// جلب إعدادات الـ Overlay للمستخدم الحالي
-// داخل نقطة /api/overlay (GET)
-app.get("/api/overlay", async (req, res) => {
-  try {
-    let userId = null;
-    // محاولة المصادقة عبر الكوكي أولاً
-    if (req.user && req.user.id) {
-      userId = req.user.id;
-    } else if (req.query.token) {
-      // البحث عن مستخدم بواسطة screenToken
-      const user = await User.findOne({ screenToken: req.query.token });
-      if (user) {
-        userId = user._id;
-      }
-    }
-    if (!userId) {
-      return res.status(401).json({ success: false, message: "غير مصرح" });
-    }
-
-    let settings = await OverlaySetting.findOne({ userId });
-    if (!settings) {
-      settings = new OverlaySetting({ userId });
-      await settings.save();
-    }
-    res.json({
-      success: true,
-      data: { overlay1: settings.overlay1, overlay2: settings.overlay2 },
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// تحديث إعدادات Overlay معين (1 أو 2)
-app.put("/api/overlay/:id", async (req, res) => {
-    try {
-        const id = parseInt(req.params.id);
-        if (![1, 2].includes(id)) {
-            return res.status(400).json({ success: false, message: "معرف غير صالح (يجب 1 أو 2)" });
-        }
-
-        let userId = null;
-        if (req.user && req.user.id) {
-            userId = req.user.id;
-        } else if (req.query.token) {
-            const user = await User.findOne({ screenToken: req.query.token });
-            if (user) {
-                userId = user._id;
-            }
-        }
-        if (!userId) {
-            return res.status(401).json({ success: false, message: "غير مصرح" });
-        }
-
-        let settings = await OverlaySetting.findOne({ userId });
-        if (!settings) {
-            settings = new OverlaySetting({ userId });
-        }
-
-        const key = `overlay${id}`;
-        const { title, names, theme, glowColor, badgeColor, crownedIndices } = req.body;
-
-        if (title !== undefined) settings[key].title = title;
-        if (names !== undefined) settings[key].names = names;
-        if (theme !== undefined) settings[key].theme = theme;
-        if (glowColor !== undefined) settings[key].glowColor = glowColor;
-        if (badgeColor !== undefined) settings[key].badgeColor = badgeColor;
-        if (crownedIndices !== undefined) settings[key].crownedIndices = crownedIndices;
-
-        await settings.save();
-
-        io.to(`user-${userId}`).emit("overlay-update", {
-            id: id,
-            data: settings[key],
-        });
-
-        res.json({ success: true, data: settings[key] });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ success: false, message: err.message });
-    }
 });
 
 // ================ بدء الخادم ================
