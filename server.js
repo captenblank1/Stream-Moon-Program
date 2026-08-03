@@ -5371,6 +5371,38 @@ app.delete(
   },
 );
 
+// ===== إزالة صلاحية المدير =====
+app.post(
+  "/api/admin/user/:id/remove-admin",
+  authenticateToken,
+  isAdmin,
+  async (req, res) => {
+    try {
+      const user = await User.findById(req.params.id);
+      if (!user) {
+        return res
+          .status(404)
+          .json({ success: false, message: "المستخدم غير موجود" });
+      }
+      // لا يمكن إزالة صلاحية المدير عن نفسه (اختياري ولكن مفيد)
+      if (user._id.toString() === req.user.id) {
+        return res
+          .status(403)
+          .json({
+            success: false,
+            message: "لا يمكنك إزالة صلاحية المدير عن نفسك",
+          });
+      }
+      user.role = "user";
+      await user.save();
+      res.json({ success: true, message: "تم إزالة صلاحية المدير بنجاح" });
+    } catch (err) {
+      logger.error("❌ خطأ في إزالة صلاحية المدير:", err.message);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  },
+);
+
 // ================ Socket.IO ================
 const pluginNamespace = io.of("/plugin");
 pluginNamespace.use((socket, next) => {
