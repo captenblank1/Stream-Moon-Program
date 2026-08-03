@@ -5752,11 +5752,13 @@ app.get("/api/overlay", authenticateToken, async (req, res) => {
 });
 
 // تحديث إعدادات Overlay معين (1 أو 2)
-app.put('/api/overlay/:id', authenticateToken, async (req, res) => {
+app.put("/api/overlay/:id", authenticateToken, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     if (![1, 2].includes(id)) {
-      return res.status(400).json({ success: false, message: 'معرف غير صالح (يجب 1 أو 2)' });
+      return res
+        .status(400)
+        .json({ success: false, message: "معرف غير صالح (يجب 1 أو 2)" });
     }
 
     let settings = await OverlaySetting.findOne({ userId: req.user.id });
@@ -5765,38 +5767,28 @@ app.put('/api/overlay/:id', authenticateToken, async (req, res) => {
     }
 
     const key = `overlay${id}`;
-    const { title, names, theme, glowColor, badgeColor, crownedIndices } = req.body;
+    const { title, names, theme, glowColor, badgeColor, crownedIndices } =
+      req.body;
 
-    // ✅ التحقق من صحة البيانات قبل الحفظ
     if (title !== undefined) settings[key].title = title;
-    if (names !== undefined) settings[key].names = Array.isArray(names) ? names : [];
+    if (names !== undefined) settings[key].names = names;
     if (theme !== undefined) settings[key].theme = theme;
     if (glowColor !== undefined) settings[key].glowColor = glowColor;
     if (badgeColor !== undefined) settings[key].badgeColor = badgeColor;
-    if (crownedIndices !== undefined) {
-      settings[key].crownedIndices = Array.isArray(crownedIndices) ? crownedIndices : [];
-    }
-
-    // ✅ طباعة البيانات قبل الحفظ (للتشخيص)
-    console.log(`💾 حفظ الإعدادات للمستخدم ${req.user.id}, overlay ${id}:`, JSON.stringify(settings[key], null, 2));
+    if (crownedIndices !== undefined)
+      settings[key].crownedIndices = crownedIndices;
 
     await settings.save();
 
-    io.to(`user-${req.user.id}`).emit('overlay-update', {
+    // 🔥 إرسال تحديث فوري لكل الشاشات المفتوحة لهذا المستخدم (عبر Socket.IO)
+    io.to(`user-${req.user.id}`).emit("overlay-update", {
       id: id,
-      data: settings[key]
+      data: settings[key],
     });
 
     res.json({ success: true, data: settings[key] });
   } catch (err) {
-    // ✅ طباعة تفاصيل الخطأ كاملة
-    console.error('❌ خطأ في حفظ الـ Overlay:', err);
-    console.error('📄 تفاصيل الخطأ:', err.stack);
-    res.status(500).json({ 
-      success: false, 
-      message: err.message,
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-    });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
