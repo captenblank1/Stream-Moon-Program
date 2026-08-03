@@ -582,6 +582,7 @@ const giftCommandSchema = new mongoose.Schema(
     showOverlay: { type: Boolean, default: false },
     overlayText: { type: String, default: "" },
     duration: { type: Number, default: 5, min: 1, max: 60 },
+    order: { type: Number, default: 0 },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -623,6 +624,7 @@ const interactionCommandSchema = new mongoose.Schema(
     showOverlay: { type: Boolean, default: false },
     overlayText: { type: String, default: "" },
     duration: { type: Number, default: 5, min: 1, max: 60 },
+    order: { type: Number, default: 0 },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -2235,107 +2237,97 @@ async function connectUser(userId, username) {
   });
 
   // ========== معالج LIKE ==========
-connection.on(WebcastEvent.LIKE, async (data) => {
-  const eventId = generateEventId();
-  updateLastActivity(userId);
-  try {
-    const sender = normalizeUser(getSenderFromEvent(data));
-    console.log(`❤️ [LIKE] eventId=${eventId}, sender=${sender}`);
+  connection.on(WebcastEvent.LIKE, async (data) => {
+    const eventId = generateEventId();
+    updateLastActivity(userId);
+    try {
+      const sender = normalizeUser(getSenderFromEvent(data));
+      console.log(`❤️ [LIKE] eventId=${eventId}, sender=${sender}`);
 
-    // 1. استخدم العدد الجديد مباشرة
-    let delta = data.count || data.likeCount || data.like_count || 0;
-    delta = parseInt(String(delta).replace(/\D/g, ""), 10) || 0;
-    if (delta <= 0) return;
-    if (delta > LIKE_MAX_DELTA) delta = LIKE_MAX_DELTA;
-    console.log(`📊 [LIKE] delta=${delta}`);
+      // 1. استخدم العدد الجديد مباشرة
+      let delta = data.count || data.likeCount || data.like_count || 0;
+      delta = parseInt(String(delta).replace(/\D/g, ""), 10) || 0;
+      if (delta <= 0) return;
+      if (delta > LIKE_MAX_DELTA) delta = LIKE_MAX_DELTA;
+      console.log(`📊 [LIKE] delta=${delta}`);
 
-    // 2. (اختياري) يمكن إزالة الـ cooldown
-    // const likeKey = `like:${userId}:${sender}`;
-    // if (state.getTemp("interactionCooldown", likeKey)) return;
-    // state.setTemp("interactionCooldown", likeKey, true, 5);
+      // 2. (اختياري) يمكن إزالة الـ cooldown
+      // const likeKey = `like:${userId}:${sender}`;
+      // if (state.getTemp("interactionCooldown", likeKey)) return;
+      // state.setTemp("interactionCooldown", likeKey, true, 5);
 
-    // 3. جلب الأوامر من الكاش
-    const userProfile = await getUserSelectedProfile(userId);
-    const commands = getInteractionCommandsForProfile(
-      userId,
-      userProfile,
-    ).filter((c) => c.type === "like" && c.active);
+      // 3. جلب الأوامر من الكاش
+      const userProfile = await getUserSelectedProfile(userId);
+      const commands = getInteractionCommandsForProfile(
+        userId,
+        userProfile,
+      ).filter((c) => c.type === "like" && c.active);
 
-    for (let cmd of commands) {
-      if (
-        cmd.targetUser &&
-        normalizeUser(cmd.targetUser) !== "all" &&
-        normalizeUser(cmd.targetUser) !== sender
-      )
-        continue;
+      for (let cmd of commands) {
+        if (
+          cmd.targetUser &&
+          normalizeUser(cmd.targetUser) !== "all" &&
+          normalizeUser(cmd.targetUser) !== sender
+        )
+          continue;
 
-      const key = `${userId}:${String(cmd._id)}`;
+        const key = `${userId}:${String(cmd._id)}`;
 
-      // oncePerLive
-      if (cmd.oncePerLive) {
-        if (state.oncePerLiveMap.has(key)) continue;
-        await executeAction(
-          addKeystrokeToCommand(cmd),
-          sender,
-          userId,
-          data,
-          "auto",
-          eventId,
-        );
-        state.oncePerLiveMap.set(key, true);
-        continue;
+        // oncePerLive
+        if (cmd.oncePerLive) {
+          if (state.oncePerLiveMap.has(key)) continue;
+          await executeAction(
+            addKeystrokeToCommand(cmd),
+            sender,
+            userId,
+            data,
+            "auto",
+            eventId,
+          );
+          state.oncePerLiveMap.set(key, true);
+          continue;
+        }
+
+        // threshold logic
+        const threshold = parseInt(cmd.threshold || 0, 10) || 0;
+        const keyUser = `${userId}:${String(cmd._id)}:${sender}`;
+        let current = state.getTemp("likeCounters", keyUser) || 0;
+        current += delta;
+        state.setTemp("likeCounters", keyUser, current, 3600);
+
+        if (threshold <= 0) {
+          await executeAction(
+            addKeystrokeToCommand(cmd),
+            sender,
+            userId,
+            data,
+            "auto",
+            eventId,
+          );
+          continue;
+        }
+
+        // ✅ التعديل: تنفيذ الأمر مرة واحدة فقط عند الوصول إلى العتبة
+        if (current >= threshold) {
+          await executeAction(
+            addKeystrokeToCommand(cmd),
+            sender,
+            userId,
+            data,
+            "auto",
+            eventId,
+          );
+          // خصم العتبة مرة واحدة فقط، وترك الباقي للعتبة التالية
+          state.setTemp("likeCounters", keyUser, current - threshold, 3600);
+        } else {
+          // تخزين العدد الحالي إذا لم يصل للعتبة
+          state.setTemp("likeCounters", keyUser, current, 3600);
+        }
       }
-
-      // threshold logic
-      const threshold = parseInt(cmd.threshold || 0, 10) || 0;
-      const keyUser = `${userId}:${String(cmd._id)}:${sender}`;
-      let current = state.getTemp("likeCounters", keyUser) || 0;
-      current += delta;
-      state.setTemp("likeCounters", keyUser, current, 3600);
-
-      if (threshold <= 0) {
-        await executeAction(
-          addKeystrokeToCommand(cmd),
-          sender,
-          userId,
-          data,
-          "auto",
-          eventId,
-        );
-        continue;
-      }
-
-      // ✅ التعديل: تنفيذ الأمر مرة واحدة فقط عند الوصول إلى العتبة
-      if (current >= threshold) {
-        await executeAction(
-          addKeystrokeToCommand(cmd),
-          sender,
-          userId,
-          data,
-          "auto",
-          eventId,
-        );
-        // خصم العتبة مرة واحدة فقط، وترك الباقي للعتبة التالية
-        state.setTemp(
-          "likeCounters",
-          keyUser,
-          current - threshold,
-          3600,
-        );
-      } else {
-        // تخزين العدد الحالي إذا لم يصل للعتبة
-        state.setTemp(
-          "likeCounters",
-          keyUser,
-          current,
-          3600,
-        );
-      }
+    } catch (err) {
+      logger.error("❌ LIKE handler error:", err.message);
     }
-  } catch (err) {
-    logger.error("❌ LIKE handler error:", err.message);
-  }
-});
+  });
   // ========== معالج SHARE ==========
   connection.on(WebcastEvent.SHARE, async (data) => {
     const eventId = generateEventId();
@@ -2488,6 +2480,56 @@ connection.on(WebcastEvent.LIKE, async (data) => {
     connectingUsers.delete(userId);
   }
 }
+
+// ===== إعادة ترتيب الأوامر (للهدايا والتفاعلات) =====
+app.post("/api/commands/reorder", authenticateToken, async (req, res) => {
+  try {
+    const { orderedIds } = req.body; // مصفوفة من المعرفات بالترتيب الجديد
+    if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "بيانات غير صالحة" });
+    }
+
+    const userId = req.user.id;
+    const profile = await getUserSelectedProfile(userId);
+
+    // جلب جميع أوامر المستخدم للبروفايل الحالي (هدايا وتفاعلات)
+    const gifts = await GiftCommand.find({ userId, profile });
+    const interactions = await InteractionCommand.find({ userId, profile });
+
+    // دمجهم في مصفوفة واحدة مع تحديد النوع
+    const allCommands = [
+      ...gifts.map((c) => ({ ...c.toObject(), __type: "gift" })),
+      ...interactions.map((c) => ({ ...c.toObject(), __type: "interaction" })),
+    ];
+
+    // إنشاء خريطة من المعرف إلى الكائن
+    const commandMap = new Map();
+    allCommands.forEach((cmd) => commandMap.set(cmd._id.toString(), cmd));
+
+    // تحديث الترتيب لكل أمر بناءً على المصفوفة المرسلة
+    for (let i = 0; i < orderedIds.length; i++) {
+      const id = orderedIds[i];
+      const cmd = commandMap.get(id);
+      if (!cmd) continue; // تجاهل المعرفات غير الموجودة
+
+      const Model = cmd.__type === "gift" ? GiftCommand : InteractionCommand;
+      await Model.updateOne(
+        { _id: id, userId, profile },
+        { $set: { order: i } },
+      );
+    }
+
+    // إعادة تحميل الكاش بعد التحديث
+    await refreshCachesForUser(userId);
+
+    res.json({ success: true, message: "تم تحديث الترتيب بنجاح" });
+  } catch (err) {
+    logger.error("❌ خطأ في إعادة ترتيب الأوامر:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 // ================ نقاط نهاية المصادقة ================
 app.post("/api/auth/register", authLimiter, async (req, res) => {
@@ -3890,7 +3932,7 @@ app.get("/api/gift-commands", authenticateToken, async (req, res) => {
     const gifts = await GiftCommand.find({
       userId: req.user.id,
       profile: p,
-    }).sort({ createdAt: -1 });
+    }).sort({ order: 1, createdAt: -1 });
     res.json({ success: true, gifts });
   } catch (err) {
     logger.error("❌ خطأ في جلب أوامر الهدايا:", err.message);
@@ -4245,7 +4287,7 @@ app.get("/api/interaction-commands", authenticateToken, async (req, res) => {
     const list = await InteractionCommand.find({
       userId: req.user.id,
       profile: p,
-    }).sort({ createdAt: -1 });
+    }).sort({ order: 1, createdAt: -1 });
     res.json({ success: true, list });
   } catch (err) {
     logger.error("❌ خطأ في جلب أوامر التفاعل:", err.message);
@@ -5168,6 +5210,29 @@ app.get("/api/admin/users", authenticateToken, isAdmin, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
+
+async function initializeOrders() {
+  const users = await User.find();
+  for (const user of users) {
+    const gifts = await GiftCommand.find({ userId: user._id }).sort({
+      createdAt: 1,
+    });
+    for (let i = 0; i < gifts.length; i++) {
+      gifts[i].order = i;
+      await gifts[i].save();
+    }
+    const interactions = await InteractionCommand.find({
+      userId: user._id,
+    }).sort({ createdAt: 1 });
+    for (let i = 0; i < interactions.length; i++) {
+      interactions[i].order = i;
+      await interactions[i].save();
+    }
+  }
+  console.log("✅ تم تهيئة ترتيب الأوامر القديمة");
+}
+// استدعها مرة واحدة بعد الاتصال بقاعدة البيانات:
+// initializeOrders().catch(console.error);
 
 app.post(
   "/api/admin/user/:id/renew",
