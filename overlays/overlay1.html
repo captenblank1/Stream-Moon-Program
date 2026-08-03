@@ -40,28 +40,76 @@
 
     <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
     <script>
-        const OVERLAY_ID = 1;
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        //  استخراج screenToken و overlayId من الرابط
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        const pathParts = window.location.pathname.split('/').filter(Boolean);
+        let screenToken = null;
+        let OVERLAY_ID = 1; // افتراضي
 
-        // ─── جلب الإعدادات من السيرفر ───
-        async function loadAndDisplay() {
+        // الرابط المتوقع: /screens/{token}/{id}
+        if (pathParts.length >= 3 && pathParts[0] === 'screens') {
+            screenToken = pathParts[1];
+            OVERLAY_ID = parseInt(pathParts[2], 10) || 1;
+        } else {
+            // محاولة استخراج من query (للاختبار)
+            const params = new URLSearchParams(window.location.search);
+            screenToken = params.get('token') || null;
+            OVERLAY_ID = parseInt(params.get('id'), 10) || 1;
+        }
+
+        console.log(`📺 Overlay ${OVERLAY_ID}, token=${screenToken ? '✅ موجود' : '❌ غير موجود'}`);
+
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        //  جلب البيانات من السيرفر (مع دعم المصادقة المزدوجة)
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        async function fetchOverlayData() {
+            let url = '/api/overlay';
+            const options = { credentials: 'include' };
+
             try {
-                const res = await fetch('/api/overlay', { credentials: 'include' });
-                const json = await res.json();
-                if (json.success) {
-                    const data = json.data[`overlay${OVERLAY_ID}`];
-                    applyData(data);
+                // المحاولة الأولى: استخدام الكوكي (إذا كان المستخدم مسجلاً)
+                let res = await fetch(url, options);
+                if (res.ok) {
+                    const json = await res.json();
+                    if (json.success) {
+                        const data = json.data[`overlay${OVERLAY_ID}`];
+                        applyData(data);
+                        return true;
+                    }
                 }
+
+                // إذا فشل أو كان 401، نحاول باستخدام screenToken في query
+                if (screenToken) {
+                    url = `/api/overlay?token=${encodeURIComponent(screenToken)}`;
+                    res = await fetch(url, { credentials: 'omit' }); // لا حاجة لكوكي
+                    if (res.ok) {
+                        const json = await res.json();
+                        if (json.success) {
+                            const data = json.data[`overlay${OVERLAY_ID}`];
+                            applyData(data);
+                            return true;
+                        }
+                    }
+                }
+
+                // فشل كل المحاولات
+                console.warn('⚠️ فشل تحميل الـ Overlay');
+                return false;
             } catch (e) {
-                console.warn('فشل تحميل الـ Overlay', e);
+                console.error('❌ خطأ في الاتصال:', e);
+                return false;
             }
         }
 
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        //  تطبيق البيانات على الواجهة
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         function applyData(data) {
             const container = document.getElementById('overlayContainer');
             const displayTitle = document.getElementById('displayTitle');
             const displayList = document.getElementById('displayList');
 
-            // الثيم والألوان
             container.className = `overlay-box ${data.theme || 'theme-neon'}`;
             if (data.glowColor) container.style.setProperty('--theme-glow', data.glowColor);
             if (data.badgeColor) container.style.setProperty('--theme-badge', data.badgeColor);
@@ -101,24 +149,36 @@
             });
         }
 
-        // ─── استماع للتحديثات الفورية عبر Socket.IO ───
-        const socket = io({
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        //  Socket.IO (مع دعم screenToken)
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        const socketOptions = {
             transports: ['websocket', 'polling'],
             withCredentials: true
-        });
+        };
+        // إذا كان لدينا screenToken، نرسله كـ query لربط الجلسة
+        if (screenToken) {
+            socketOptions.query = { token: screenToken };
+        }
+
+        const socket = io(socketOptions);
 
         socket.on('overlay-update', (payload) => {
             if (payload.id === OVERLAY_ID) {
-                console.log('✅ تحديث فوري للقائمة 1');
+                console.log(`✅ تحديث فوري للقائمة ${OVERLAY_ID}`);
                 applyData(payload.data);
             }
         });
 
-        // ─── تحميل أولي ───
-        loadAndDisplay();
+        socket.on('connect_error', (err) => {
+            console.warn('⚠️ Socket.IO connect error:', err.message);
+        });
 
-        // تحديث كل 30 ثانية احتياطياً (لو حصل خطأ فى الـ Socket)
-        setInterval(loadAndDisplay, 30000);
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        //  التحميل الأولي والتحديث الدوري
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        fetchOverlayData();
+        setInterval(fetchOverlayData, 30000); // تحديث احتياطي كل 30 ثانية
     </script>
 </body>
 </html>

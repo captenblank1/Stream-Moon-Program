@@ -85,7 +85,7 @@
                 <h2>🎮 القائمة الأولى</h2>
                 <div class="link-box">
                     <label>🔗 رابط OBS:</label>
-                    <span class="link-url" id="linkDisplay1">overlay1.html</span>
+                    <span class="link-url" id="linkDisplay1">جاري التحميل...</span>
                     <button class="copy-btn" data-overlay="1">📋 نسخ الرابط</button>
                 </div>
                 <div class="form-group">
@@ -123,7 +123,7 @@
                 <h2>⭐ القائمة الثانية</h2>
                 <div class="link-box">
                     <label>🔗 رابط OBS:</label>
-                    <span class="link-url" id="linkDisplay2">overlay2.html</span>
+                    <span class="link-url" id="linkDisplay2">جاري التحميل...</span>
                     <button class="copy-btn" data-overlay="2">📋 نسخ الرابط</button>
                 </div>
                 <div class="form-group">
@@ -169,25 +169,72 @@
             el.textContent = msg;
             el.classList.add('show');
             clearTimeout(toastTimeout);
-            toastTimeout = setTimeout(() => el.classList.remove('show'), 3000);
+            toastTimeout = setTimeout(() => el.classList.remove('show'), 4000);
         }
 
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        //  جلب screenToken من السيرفر
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        let screenToken = null;
+
+        async function fetchScreenToken() {
+            try {
+                const res = await fetch('/api/user/screen-token', {
+                    credentials: 'include'
+                });
+                const json = await res.json();
+                if (json.success) {
+                    screenToken = json.token;
+                    return true;
+                } else {
+                    showToast('⚠️ فشل جلب رمز الشاشة: ' + (json.message || 'يرجى تسجيل الدخول'));
+                    return false;
+                }
+            } catch (e) {
+                showToast('⚠️ خطأ في الاتصال بالسيرفر');
+                return false;
+            }
+        }
+
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        //  تحديث رابط OBS للـ overlay
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        function updateOverlayLink(overlayId) {
+            if (!screenToken) {
+                document.getElementById(`linkDisplay${overlayId}`).textContent = 'غير متاح (سجل الدخول)';
+                return;
+            }
+            const base = window.location.origin;
+            const url = `${base}/screens/${screenToken}/${overlayId}`;
+            document.getElementById(`linkDisplay${overlayId}`).textContent = url;
+            // نعيد تعيين حدث النسخ بالرابط الجديد
+            const btn = document.querySelector(`.copy-btn[data-overlay="${overlayId}"]`);
+            btn.dataset.url = url;
+        }
+
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        //  زر النسخ (يستخدم الرابط المخزن في data-url)
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         document.querySelectorAll('.copy-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const id = this.dataset.overlay;
-                const base = window.location.href.replace(/\/[^/]*$/, '');
-                const fullUrl = base + `/overlay${id}.html`;
-                navigator.clipboard.writeText(fullUrl).then(() => {
-                    showToast(`✅ تم نسخ الرابط! ضعه في OBS:\n${fullUrl}`);
-                }).catch(() => {
+            btn.addEventListener('click', async function() {
+                const url = this.dataset.url;
+                if (!url) {
+                    showToast('⚠️ الرابط غير جاهز بعد، حاول مجدداً');
+                    return;
+                }
+                try {
+                    await navigator.clipboard.writeText(url);
+                    showToast(`✅ تم نسخ الرابط! ضعه في OBS:\n${url}`);
+                } catch (err) {
+                    // fallback
                     const dummy = document.createElement('input');
-                    dummy.value = fullUrl;
+                    dummy.value = url;
                     document.body.appendChild(dummy);
                     dummy.select();
                     document.execCommand('copy');
                     dummy.remove();
-                    showToast(`✅ تم النسخ (احتياطي):\n${fullUrl}`);
-                });
+                    showToast(`✅ تم النسخ (احتياطي):\n${url}`);
+                }
             });
         });
 
@@ -206,15 +253,17 @@
                 this.crownList = document.getElementById(`crownList${id}`);
                 this.status = document.getElementById(`status${id}`);
                 this.linkDisplay = document.getElementById(`linkDisplay${id}`);
-                this.linkDisplay.textContent = `overlay${id}.html`;
 
                 this.bindEvents();
+                // بعد تحميل الصفحة، نجلب البيانات
                 this.loadFromServer();
             }
 
             async loadFromServer() {
                 try {
-                    const res = await fetch('/api/overlay', { credentials: 'include' });
+                    const res = await fetch('/api/overlay', {
+                        credentials: 'include'
+                    });
                     const json = await res.json();
                     if (json.success) {
                         const data = json.data[`overlay${this.id}`];
@@ -226,9 +275,17 @@
                         this.crownedIndices = new Set(data.crownedIndices || []);
                         this.updateCrownsUI();
                         this.status.textContent = '✓ تم التحميل من السيرفر';
+                        // تحديث رابط الشاشة (يستخدم screenToken)
+                        updateOverlayLink(this.id);
+                    } else {
+                        this.status.textContent = '⚠️ فشل التحميل: ' + (json.message || 'غير مصرح');
+                        if (json.message && json.message.includes('token')) {
+                            showToast('⚠️ يرجى تسجيل الدخول أولاً');
+                        }
                     }
                 } catch (e) {
                     this.status.textContent = '⚠️ فشل تحميل الإعدادات';
+                    console.error(e);
                 }
             }
 
@@ -254,10 +311,11 @@
                         this.status.textContent = '✓ تم الحفظ على السيرفر';
                         setTimeout(() => { this.status.textContent = ''; }, 1500);
                     } else {
-                        this.status.textContent = '❌ فشل الحفظ';
+                        this.status.textContent = '❌ فشل الحفظ: ' + (json.message || '');
                     }
                 } catch (e) {
                     this.status.textContent = '❌ خطأ في الاتصال';
+                    console.error(e);
                 }
             }
 
@@ -299,12 +357,25 @@
         }
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        //  INSTANTIATE
+        //  INIT
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        const c1 = new Controller(1);
-        const c2 = new Controller(2);
+        (async function init() {
+            // 1. جلب screenToken
+            const hasToken = await fetchScreenToken();
+            if (!hasToken) {
+                showToast('⚠️ لم يتم العثور على رمز الشاشة، يرجى تسجيل الدخول');
+                // مع ذلك نستمر في تحميل اللوحة لكن الروابط ستكون غير صالحة
+            }
 
-        console.log('✅ لوحة التحكم متصلة بالسيرفر لكل مستخدم!');
+            // 2. إنشاء المتحكمين
+            const c1 = new Controller(1);
+            const c2 = new Controller(2);
+
+            // 3. تحديث الروابط عند تغير screenToken لاحقاً (إن أمكن)
+            // نمرر المتحكمين للدالة updateOverlayLink إذا احتجنا تحديث يدوي
+            window.controllers = { c1, c2 };
+            console.log('✅ لوحة التحكم متصلة بالسيرفر لكل مستخدم!');
+        })();
     </script>
 </body>
 </html>
