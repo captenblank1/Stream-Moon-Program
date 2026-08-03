@@ -5767,44 +5767,53 @@ app.get("/api/overlay", async (req, res) => {
 });
 
 // تحديث إعدادات Overlay معين (1 أو 2)
-app.put("/api/overlay/:id", authenticateToken, async (req, res) => {
-  try {
-    const id = parseInt(req.params.id);
-    if (![1, 2].includes(id)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "معرف غير صالح (يجب 1 أو 2)" });
+app.put("/api/overlay/:id", async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        if (![1, 2].includes(id)) {
+            return res.status(400).json({ success: false, message: "معرف غير صالح (يجب 1 أو 2)" });
+        }
+
+        let userId = null;
+        if (req.user && req.user.id) {
+            userId = req.user.id;
+        } else if (req.query.token) {
+            const user = await User.findOne({ screenToken: req.query.token });
+            if (user) {
+                userId = user._id;
+            }
+        }
+        if (!userId) {
+            return res.status(401).json({ success: false, message: "غير مصرح" });
+        }
+
+        let settings = await OverlaySetting.findOne({ userId });
+        if (!settings) {
+            settings = new OverlaySetting({ userId });
+        }
+
+        const key = `overlay${id}`;
+        const { title, names, theme, glowColor, badgeColor, crownedIndices } = req.body;
+
+        if (title !== undefined) settings[key].title = title;
+        if (names !== undefined) settings[key].names = names;
+        if (theme !== undefined) settings[key].theme = theme;
+        if (glowColor !== undefined) settings[key].glowColor = glowColor;
+        if (badgeColor !== undefined) settings[key].badgeColor = badgeColor;
+        if (crownedIndices !== undefined) settings[key].crownedIndices = crownedIndices;
+
+        await settings.save();
+
+        io.to(`user-${userId}`).emit("overlay-update", {
+            id: id,
+            data: settings[key],
+        });
+
+        res.json({ success: true, data: settings[key] });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: err.message });
     }
-
-    let settings = await OverlaySetting.findOne({ userId: req.user.id });
-    if (!settings) {
-      settings = new OverlaySetting({ userId: req.user.id });
-    }
-
-    const key = `overlay${id}`;
-    const { title, names, theme, glowColor, badgeColor, crownedIndices } =
-      req.body;
-
-    if (title !== undefined) settings[key].title = title;
-    if (names !== undefined) settings[key].names = names;
-    if (theme !== undefined) settings[key].theme = theme;
-    if (glowColor !== undefined) settings[key].glowColor = glowColor;
-    if (badgeColor !== undefined) settings[key].badgeColor = badgeColor;
-    if (crownedIndices !== undefined)
-      settings[key].crownedIndices = crownedIndices;
-
-    await settings.save();
-
-    // 🔥 إرسال تحديث فوري لكل الشاشات المفتوحة لهذا المستخدم (عبر Socket.IO)
-    io.to(`user-${req.user.id}`).emit("overlay-update", {
-      id: id,
-      data: settings[key],
-    });
-
-    res.json({ success: true, data: settings[key] });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
 });
 
 // ================ بدء الخادم ================

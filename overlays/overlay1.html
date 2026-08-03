@@ -1,184 +1,290 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
-<head>
+  <head>
     <meta charset="UTF-8" />
     <title>Overlay 1 - الفائزين</title>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap"
+      rel="stylesheet"
+    />
     <style>
-        :root { --bg-glass: rgba(18, 18, 28, 0.85); --text-main: #ffffff; }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: "Cairo", sans-serif; background-color: transparent !important; color: var(--text-main); overflow: hidden; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
-        .overlay-box { width: 340px; background: var(--bg-glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-radius: 18px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); transition: all 0.3s ease; }
-        .theme-neon { border: 2px solid var(--theme-glow, #00ffe1); }
-        .theme-neon .overlay-header h2 { color: var(--theme-glow, #00ffe1); }
-        .theme-neon .name-card { background: rgba(255,255,255,0.04); border-right: 4px solid var(--theme-badge, #ff0055); }
-        .theme-neon .badge-num { background: linear-gradient(135deg, var(--theme-badge, #ff0055), #ff5500); color: #fff; }
-        .theme-gold { border: 2px solid #ffcc00; background: rgba(20,16,8,0.9); }
-        .theme-gold .overlay-header h2 { color: #ffcc00; }
-        .theme-gold .name-card { background: rgba(255,204,0,0.08); border: 1px solid rgba(255,204,0,0.2); }
-        .theme-gold .badge-num { background: linear-gradient(135deg, #ffcc00, #ff8800); color: #000; }
-        .theme-purple { border: 2px solid #a855f7; background: rgba(20,10,30,0.9); }
-        .theme-purple .overlay-header h2 { color: #d8b4fe; }
-        .theme-purple .name-card { background: rgba(168,85,247,0.1); border-right: 4px solid #ec4899; }
-        .theme-purple .badge-num { background: linear-gradient(135deg, #ec4899, #a855f7); color: #fff; }
-        .overlay-header { display: flex; align-items: center; justify-content: center; padding-bottom: 12px; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); }
-        .overlay-header h2 { font-size: 1.2rem; font-weight: 900; }
-        .overlay-list { display: flex; flex-direction: column; gap: 10px; }
-        .name-card { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: 8px; animation: fadeIn 0.3s ease forwards; }
-        .name-info { display: flex; align-items: center; gap: 10px; }
-        .badge-num { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; font-weight: 900; }
-        .name-text { font-size: 0.95rem; font-weight: 700; color: #ffffff; }
-        .crown-icon { font-size: 1.1rem; filter: drop-shadow(0 0 5px rgba(255,215,0,0.8)); }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+      :root {
+        --bg-glass: rgba(18, 18, 28, 0.85);
+        --text-main: #ffffff;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: "Cairo", sans-serif;
+        background-color: transparent !important;
+        color: var(--text-main);
+        overflow: hidden;
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .overlay-box {
+        width: 340px;
+        background: var(--bg-glass);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border-radius: 18px;
+        padding: 20px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        transition: all 0.3s ease;
+      }
+      .theme-neon {
+        border: 2px solid var(--theme-glow, #00ffe1);
+      }
+      .theme-neon .overlay-header h2 {
+        color: var(--theme-glow, #00ffe1);
+      }
+      .theme-neon .name-card {
+        background: rgba(255, 255, 255, 0.04);
+        border-right: 4px solid var(--theme-badge, #ff0055);
+      }
+      .theme-neon .badge-num {
+        background: linear-gradient(
+          135deg,
+          var(--theme-badge, #ff0055),
+          #ff5500
+        );
+        color: #fff;
+      }
+      .theme-gold {
+        border: 2px solid #ffcc00;
+        background: rgba(20, 16, 8, 0.9);
+      }
+      .theme-gold .overlay-header h2 {
+        color: #ffcc00;
+      }
+      .theme-gold .name-card {
+        background: rgba(255, 204, 0, 0.08);
+        border: 1px solid rgba(255, 204, 0, 0.2);
+      }
+      .theme-gold .badge-num {
+        background: linear-gradient(135deg, #ffcc00, #ff8800);
+        color: #000;
+      }
+      .theme-purple {
+        border: 2px solid #a855f7;
+        background: rgba(20, 10, 30, 0.9);
+      }
+      .theme-purple .overlay-header h2 {
+        color: #d8b4fe;
+      }
+      .theme-purple .name-card {
+        background: rgba(168, 85, 247, 0.1);
+        border-right: 4px solid #ec4899;
+      }
+      .theme-purple .badge-num {
+        background: linear-gradient(135deg, #ec4899, #a855f7);
+        color: #fff;
+      }
+      .overlay-header {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding-bottom: 12px;
+        margin-bottom: 15px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .overlay-header h2 {
+        font-size: 1.2rem;
+        font-weight: 900;
+      }
+      .overlay-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .name-card {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 12px;
+        border-radius: 8px;
+        animation: fadeIn 0.3s ease forwards;
+      }
+      .name-info {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .badge-num {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.85rem;
+        font-weight: 900;
+      }
+      .name-text {
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #ffffff;
+      }
+      .crown-icon {
+        font-size: 1.1rem;
+        filter: drop-shadow(0 0 5px rgba(255, 215, 0, 0.8));
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div class="overlay-box" id="overlayContainer">
-        <div class="overlay-header"><h2 id="displayTitle">---</h2></div>
-        <div class="overlay-list" id="displayList"></div>
+      <div class="overlay-header"><h2 id="displayTitle">---</h2></div>
+      <div class="overlay-list" id="displayList"></div>
     </div>
 
     <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
     <script>
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        //  استخراج screenToken و overlayId من الرابط
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        const pathParts = window.location.pathname.split('/').filter(Boolean);
-        let screenToken = null;
-        let OVERLAY_ID = 1; // افتراضي
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      //  استخراج screenToken و overlayId من الرابط
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      const pathParts = window.location.pathname.split("/").filter(Boolean);
+      let screenToken = null;
+      let OVERLAY_ID = 1; // افتراضي
 
-        // الرابط المتوقع: /screens/{token}/{id}
-        if (pathParts.length >= 3 && pathParts[0] === 'screens') {
-            screenToken = pathParts[1];
-            OVERLAY_ID = parseInt(pathParts[2], 10) || 1;
-        } else {
-            // محاولة استخراج من query (للاختبار)
-            const params = new URLSearchParams(window.location.search);
-            screenToken = params.get('token') || null;
-            OVERLAY_ID = parseInt(params.get('id'), 10) || 1;
-        }
+      // الرابط المتوقع: /screens/{token}/{id}
+      if (pathParts.length >= 3 && pathParts[0] === "screens") {
+        screenToken = pathParts[1];
+        OVERLAY_ID = parseInt(pathParts[2], 10) || 1;
+      } else {
+        // محاولة استخراج من query (للاختبار)
+        const params = new URLSearchParams(window.location.search);
+        screenToken = params.get("token") || null;
+        OVERLAY_ID = parseInt(params.get("id"), 10) || 1;
+      }
 
-        console.log(`📺 Overlay ${OVERLAY_ID}, token=${screenToken ? '✅ موجود' : '❌ غير موجود'}`);
+      console.log(
+        `📺 Overlay ${OVERLAY_ID}, token=${screenToken ? "✅ موجود" : "❌ غير موجود"}`,
+      );
 
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        //  جلب البيانات من السيرفر (مع دعم المصادقة المزدوجة)
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        async function fetchOverlayData() {
-            let url = '/api/overlay';
-            const options = { credentials: 'include' };
-
-            try {
-                // المحاولة الأولى: استخدام الكوكي (إذا كان المستخدم مسجلاً)
-                let res = await fetch(url, options);
-                if (res.ok) {
-                    const json = await res.json();
-                    if (json.success) {
-                        const data = json.data[`overlay${OVERLAY_ID}`];
-                        applyData(data);
-                        return true;
-                    }
-                }
-
-                // إذا فشل أو كان 401، نحاول باستخدام screenToken في query
-                if (screenToken) {
-                    url = `/api/overlay?token=${encodeURIComponent(screenToken)}`;
-                    res = await fetch(url, { credentials: 'omit' }); // لا حاجة لكوكي
-                    if (res.ok) {
-                        const json = await res.json();
-                        if (json.success) {
-                            const data = json.data[`overlay${OVERLAY_ID}`];
-                            applyData(data);
-                            return true;
-                        }
-                    }
-                }
-
-                // فشل كل المحاولات
-                console.warn('⚠️ فشل تحميل الـ Overlay');
-                return false;
-            } catch (e) {
-                console.error('❌ خطأ في الاتصال:', e);
-                return false;
-            }
-        }
-
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        //  تطبيق البيانات على الواجهة
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        function applyData(data) {
-            const container = document.getElementById('overlayContainer');
-            const displayTitle = document.getElementById('displayTitle');
-            const displayList = document.getElementById('displayList');
-
-            container.className = `overlay-box ${data.theme || 'theme-neon'}`;
-            if (data.glowColor) container.style.setProperty('--theme-glow', data.glowColor);
-            if (data.badgeColor) container.style.setProperty('--theme-badge', data.badgeColor);
-
-            displayTitle.innerText = data.title || '🏆 قائمة الفائزين';
-
-            const names = data.names || [];
-            const crowned = new Set(data.crownedIndices || []);
-            displayList.innerHTML = '';
-
-            if (names.length === 0) {
-                displayList.innerHTML = '<div style="color:#888;text-align:center;padding:10px;">لا توجد أسماء</div>';
-                return;
-            }
-
-            names.forEach((name, index) => {
-                const card = document.createElement('div');
-                card.className = 'name-card';
-                const info = document.createElement('div');
-                info.className = 'name-info';
-                const badge = document.createElement('div');
-                badge.className = 'badge-num';
-                badge.innerText = index + 1;
-                const nameText = document.createElement('span');
-                nameText.className = 'name-text';
-                nameText.innerText = name.trim();
-                info.appendChild(badge);
-                info.appendChild(nameText);
-                card.appendChild(info);
-                if (crowned.has(index)) {
-                    const crown = document.createElement('span');
-                    crown.className = 'crown-icon';
-                    crown.innerText = '👑';
-                    card.appendChild(crown);
-                }
-                displayList.appendChild(card);
-            });
-        }
-
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        //  Socket.IO (مع دعم screenToken)
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        const socketOptions = {
-            transports: ['websocket', 'polling'],
-            withCredentials: true
-        };
-        // إذا كان لدينا screenToken، نرسله كـ query لربط الجلسة
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      //  جلب البيانات من السيرفر (مع دعم المصادقة المزدوجة)
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      async function fetchOverlayData() {
+        // استخدام API_BASE إذا كانت معرفة، وإلا استخدم المسار النسبي
+        const base = window.API_BASE || "";
+        let url = `${base}/api/overlay`;
         if (screenToken) {
-            socketOptions.query = { token: screenToken };
+          url += `?token=${encodeURIComponent(screenToken)}`;
+        }
+        try {
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const json = await res.json();
+          if (json.success) {
+            const data = json.data[`overlay${OVERLAY_ID}`];
+            applyData(data);
+            return true;
+          } else {
+            console.warn("⚠️ فشل تحميل الـ Overlay (API):", json.message);
+            return false;
+          }
+        } catch (e) {
+          console.error("❌ خطأ في الاتصال:", e);
+          return false;
+        }
+      }
+
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      //  تطبيق البيانات على الواجهة
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      function applyData(data) {
+        const container = document.getElementById("overlayContainer");
+        const displayTitle = document.getElementById("displayTitle");
+        const displayList = document.getElementById("displayList");
+
+        container.className = `overlay-box ${data.theme || "theme-neon"}`;
+        if (data.glowColor)
+          container.style.setProperty("--theme-glow", data.glowColor);
+        if (data.badgeColor)
+          container.style.setProperty("--theme-badge", data.badgeColor);
+
+        displayTitle.innerText = data.title || "🏆 قائمة الفائزين";
+
+        const names = data.names || [];
+        const crowned = new Set(data.crownedIndices || []);
+        displayList.innerHTML = "";
+
+        if (names.length === 0) {
+          displayList.innerHTML =
+            '<div style="color:#888;text-align:center;padding:10px;">لا توجد أسماء</div>';
+          return;
         }
 
-        const socket = io(socketOptions);
-
-        socket.on('overlay-update', (payload) => {
-            if (payload.id === OVERLAY_ID) {
-                console.log(`✅ تحديث فوري للقائمة ${OVERLAY_ID}`);
-                applyData(payload.data);
-            }
+        names.forEach((name, index) => {
+          const card = document.createElement("div");
+          card.className = "name-card";
+          const info = document.createElement("div");
+          info.className = "name-info";
+          const badge = document.createElement("div");
+          badge.className = "badge-num";
+          badge.innerText = index + 1;
+          const nameText = document.createElement("span");
+          nameText.className = "name-text";
+          nameText.innerText = name.trim();
+          info.appendChild(badge);
+          info.appendChild(nameText);
+          card.appendChild(info);
+          if (crowned.has(index)) {
+            const crown = document.createElement("span");
+            crown.className = "crown-icon";
+            crown.innerText = "👑";
+            card.appendChild(crown);
+          }
+          displayList.appendChild(card);
         });
+      }
 
-        socket.on('connect_error', (err) => {
-            console.warn('⚠️ Socket.IO connect error:', err.message);
-        });
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      //  Socket.IO (مع دعم screenToken)
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      const socketOptions = {
+        transports: ["websocket", "polling"],
+        withCredentials: true,
+      };
+      // إذا كان لدينا screenToken، نرسله كـ query لربط الجلسة
+      if (screenToken) {
+        socketOptions.query = { token: screenToken };
+      }
 
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        //  التحميل الأولي والتحديث الدوري
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        fetchOverlayData();
-        setInterval(fetchOverlayData, 30000); // تحديث احتياطي كل 30 ثانية
+      const socket = io(socketOptions);
+
+      socket.on("overlay-update", (payload) => {
+        if (payload.id === OVERLAY_ID) {
+          console.log(`✅ تحديث فوري للقائمة ${OVERLAY_ID}`);
+          applyData(payload.data);
+        }
+      });
+
+      socket.on("connect_error", (err) => {
+        console.warn("⚠️ Socket.IO connect error:", err.message);
+      });
+
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      //  التحميل الأولي والتحديث الدوري
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      fetchOverlayData();
+      setInterval(fetchOverlayData, 30000); // تحديث احتياطي كل 30 ثانية
     </script>
-</body>
+  </body>
 </html>
