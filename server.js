@@ -1424,13 +1424,14 @@ async function executeAction(
     state.oncePerLiveMap.set(key, true);
   }
 
-  // ========== التأخير أولاً ==========
+  // ========== 1. التأخير أولاً (قبل أي شيء) ==========
   if (delayBefore > 0) {
     console.log(`⏳ تأخير ${delayBefore} مللي قبل التنفيذ...`);
     await new Promise((resolve) => setTimeout(resolve, delayBefore));
   }
 
-  // ========== تشغيل الصوت (مرة واحدة) ==========
+  // ========== 2. تشغيل الصوت والفيديو والتراكب (مرة واحدة فقط) ==========
+  // تشغيل الصوت
   if (playSound && audio) {
     const giftId = cmdObj.giftId || cmdObj._id || "default";
     const sendToUser = source === "manual";
@@ -1444,7 +1445,7 @@ async function executeAction(
     );
   }
 
-  // ========== تشغيل الفيديو (مرة واحدة) ==========
+  // تشغيل الفيديو
   if (playVideo && video && userId) {
     let videoUrl = video;
     try {
@@ -1478,7 +1479,7 @@ async function executeAction(
     }
   }
 
-  // ========== التراكب (مرة واحدة) ==========
+  // التراكب
   if (cmdObj.showOverlay && userId) {
     const overlayPayload = {
       username: realName,
@@ -1500,13 +1501,17 @@ async function executeAction(
     }
   }
 
-  // ========== حلقة التكرار (للكيستروك، RCON، ويب هوك فقط) ==========
-  for (let i = 0; i < repeat; i++) {
+  // ========== 3. حلقة التكرار (للكيستروك، RCON، ويب هوك فقط) ==========
+  // نضمن أن repeat لا يقل عن 1 حتى لا تدخل الحلقة فارغة
+  const finalRepeat = Math.max(1, repeat);
+  console.log(`🔄 [EXECUTE] finalRepeat = ${finalRepeat} (original repeat = ${repeat})`);
+
+  for (let i = 0; i < finalRepeat; i++) {
     if (i > 0 && interval > 0) {
       await new Promise((r) => setTimeout(r, interval));
     }
 
-    // الكيستروك
+    // الكيستروك (يُرسل فقط إذا لم يكن هناك أمر RCON)
     if (keystrokeText && !command) {
       const finalKeystroke = replacePlaceholders(
         keystrokeText,
@@ -1515,7 +1520,7 @@ async function executeAction(
         "",
       );
       console.log(
-        `⌨️ [KEYSTROKE] eventId=${eventId}, keys="${finalKeystroke}"`,
+        `⌨️ [KEYSTROKE] eventId=${eventId}, iteration=${i+1}, keys="${finalKeystroke}"`,
       );
       const agentSocket = state.userLocalAgents.get(userId.toString());
       if (agentSocket && agentSocket.connected) {
@@ -1533,7 +1538,7 @@ async function executeAction(
     // أوامر RCON
     if (command && command.trim()) {
       console.log(
-        `📟 [RCON] eventId=${eventId}, command="${command.substring(0, 50)}..."`,
+        `📟 [RCON] eventId=${eventId}, iteration=${i+1}, command="${command.substring(0, 50)}..."`,
       );
       const lines = command
         .split(/\r?\n/)
