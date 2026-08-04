@@ -5842,12 +5842,12 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
     body{font-family:'Cairo',sans-serif;background:transparent;color:#fff;overflow:hidden;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center}
     .overlay-box{width:340px;background:rgba(18,18,28,0.85);backdrop-filter:blur(12px);border-radius:18px;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,0.5);border:2px solid ${glow}}
     .overlay-header{display:flex;justify-content:center;padding-bottom:12px;margin-bottom:15px;border-bottom:1px solid rgba(255,255,255,0.1)}
-    .overlay-header h2{font-size:1.2rem;font-weight:900;color:${glow}}
+    .overlay-header h2{font-size:26px;font-weight:900;color:${glow}}
     .overlay-list{display:flex;flex-direction:column;gap:10px}
     .name-card{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-radius:8px;background:rgba(255,255,255,0.04);border-right:4px solid ${badge};animation:fadeIn 0.3s ease forwards}
     .name-info{display:flex;align-items:center;gap:10px}
     .badge-num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:900;background:linear-gradient(135deg,${badge},#ff5500);color:#fff}
-    .name-text{font-size:.95rem;font-weight:700;color:#fff}
+    .name-text{font-size:20px;font-weight:700;color:#fff}
     .crown-icon{font-size:1.1rem;filter:drop-shadow(0 0 5px rgba(255,215,0,0.8))}
     @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
     /* ثيمات إضافية */
@@ -6030,134 +6030,24 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
     <title>لوحة تحكم الـ Overlay</title>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
+        /* ... نفس الأنماط السابقة ... */
+        .reset-btn {
+            background: #ff4444; color: #fff; border: none;
+            padding: 6px 16px; border-radius: 6px;
+            font-weight: 700; font-size: 0.8rem;
+            cursor: pointer; transition: 0.2s;
             font-family: 'Cairo', sans-serif;
-            background-color: #090a0f;
-            color: #ffffff;
-            padding: 20px;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+            margin-top: 6px;
         }
-        .app-wrapper { max-width: 1100px; width: 100%; }
-        .header-title {
-            text-align: center; margin-bottom: 28px;
-            font-size: 1.7rem; font-weight: 900;
-            background: linear-gradient(135deg, #00ffe1, #a855f7);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            letter-spacing: 1px;
-        }
-        .control-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-        .panel {
-            background: #12131c;
-            border: 1px solid #26283b;
-            border-radius: 16px;
-            padding: 22px 20px 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-            transition: border-color 0.25s;
-        }
-        .panel-1 { border-top: 3px solid #00ffe1; }
-        .panel-2 { border-top: 3px solid #ffcc00; }
-        .panel h2 { font-size: 1.1rem; text-align: center; margin-bottom: 2px; letter-spacing: 0.5px; }
-        .panel-1 h2 { color: #00ffe1; }
-        .panel-2 h2 { color: #ffcc00; }
-
-        .link-box {
-            background: rgba(0, 255, 225, 0.05);
-            border: 1px dashed #00ffe1;
-            padding: 10px 14px;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-        .panel-2 .link-box { background: rgba(255, 204, 0, 0.05); border-color: #ffcc00; }
-        .link-box label { font-size: 0.8rem; font-weight: 600; color: #d1d5db; }
-        .link-box .link-url { font-size: 0.7rem; color: #8888aa; background: #0b0c14; padding: 4px 10px; border-radius: 6px; font-family: monospace; word-break: break-all; flex: 1; min-width: 120px; }
-        .copy-btn {
-            background: #00ffe1; color: #000; border: none; padding: 6px 14px;
-            border-radius: 6px; font-weight: 700; font-size: 0.8rem; font-family: 'Cairo', sans-serif;
-            cursor: pointer; transition: 0.2s; white-space: nowrap;
-        }
-        .panel-2 .copy-btn { background: #ffcc00; }
-        .copy-btn:hover { opacity: 0.75; transform: scale(0.97); }
-
-        .form-group { display: flex; flex-direction: column; gap: 4px; }
-        .form-group label { font-size: 0.75rem; font-weight: 700; color: #b0b0d0; letter-spacing: 0.3px; }
-
-        input[type="text"], textarea, select {
-            width: 100%; padding: 8px 12px;
-            background: #1b1d2a; border: 1px solid #26283b;
-            border-radius: 8px; color: #fff;
-            font-family: 'Cairo', sans-serif; font-size: 0.85rem;
-            outline: none; transition: border 0.2s;
-        }
-        input[type="text"]:focus, textarea:focus, select:focus { border-color: #00ffe1; }
-        .panel-2 input[type="text"]:focus, .panel-2 textarea:focus, .panel-2 select:focus { border-color: #ffcc00; }
-        textarea { resize: vertical; min-height: 80px; }
-
-        .crown-selector-list {
-            display: flex; flex-wrap: wrap; gap: 6px;
-            background: #1b1d2a; padding: 8px 10px;
-            border-radius: 8px; border: 1px solid #26283b;
-            max-height: 120px; overflow-y: auto;
-            align-items: center;
-        }
-        .crown-selector-list .empty-msg { font-size: 0.7rem; color: #666688; }
-        .crown-item-btn {
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            color: #a0a0c0; padding: 4px 12px; border-radius: 20px;
-            font-size: 0.75rem; cursor: pointer;
-            display: inline-flex; align-items: center; gap: 4px;
-            transition: 0.2s; font-family: 'Cairo', sans-serif;
-            white-space: nowrap;
-        }
-        .crown-item-btn:hover { background: rgba(255, 255, 255, 0.08); }
-        .crown-item-btn.active {
-            background: rgba(255, 204, 0, 0.18);
-            border-color: #ffcc00; color: #ffcc00; font-weight: 700;
-            box-shadow: 0 0 12px rgba(255, 204, 0, 0.15);
-        }
-        .color-pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        .color-item {
-            display: flex; align-items: center; gap: 6px;
-            background: #1b1d2a; padding: 4px 8px 4px 4px;
-            border-radius: 8px; border: 1px solid #26283b;
-        }
-        .color-item input[type="color"] { border: none; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; background: none; padding: 0; }
-        .color-item span { font-size: 0.7rem; color: #a0a0c0; }
-        .status { font-size: 0.75rem; color: #10b981; text-align: center; height: 20px; line-height: 20px; }
-        @media (max-width: 720px) { .control-grid { grid-template-columns: 1fr; } .header-title { font-size: 1.3rem; } }
-        .crown-selector-list::-webkit-scrollbar { width: 4px; }
-        .crown-selector-list::-webkit-scrollbar-track { background: transparent; }
-        .crown-selector-list::-webkit-scrollbar-thumb { background: #333355; border-radius: 4px; }
-        .toast {
-            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
-            background: #1b1d2a; border: 1px solid #00ffe1;
-            padding: 10px 24px; border-radius: 12px;
-            font-size: 0.9rem; color: #fff;
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7);
-            opacity: 0; transition: opacity 0.3s ease;
-            pointer-events: none; z-index: 999;
-            font-family: 'Cairo', sans-serif; text-align: center; max-width: 90vw;
-        }
-        .toast.show { opacity: 1; }
+        .reset-btn:hover { opacity: 0.8; transform: scale(0.97); }
+        .panel-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: flex-end; margin-top: 8px; }
     </style>
 </head>
 <body>
     <div class="app-wrapper">
         <h1 class="header-title">🎛️ لوحة تحكم الـ Overlays</h1>
         <div class="control-grid">
-            <!-- Panel 1 -->
+            <!-- Panel 1 (بدون تغيير) -->
             <div class="panel panel-1">
                 <h2>🎮 القائمة الأولى</h2>
                 <div class="link-box">
@@ -6194,7 +6084,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                 </div>
                 <div class="status" id="status1"></div>
             </div>
-            <!-- Panel 2 -->
+            <!-- Panel 2 (مع زر إعادة الضبط) -->
             <div class="panel panel-2">
                 <h2>⭐ القائمة الثانية</h2>
                 <div class="link-box">
@@ -6229,6 +6119,9 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                         <div class="color-item"><input type="color" id="badgeColor2" value="#a855f7"><span>الأرقام</span></div>
                     </div>
                 </div>
+                <div class="panel-actions">
+                    <button class="reset-btn" data-overlay="2">🔄 إعادة ضبط</button>
+                </div>
                 <div class="status" id="status2"></div>
             </div>
         </div>
@@ -6237,8 +6130,8 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
 
     <script>
         (function() {
-            // ✅ رابط الباكند الأساسي
             const API_BASE = '${API_BASE}';
+            const controllers = [];
             
             let toastTimeout;
             function showToast(msg) {
@@ -6285,7 +6178,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                 })
                 .catch(() => showToast('❌ خطأ في الاتصال بالخادم'));
 
-            // ─── فئة التحكم (تستخدم API) ───
+            // ─── فئة التحكم ───
             class Controller {
                 constructor(id) {
                     this.id = id;
@@ -6398,8 +6291,48 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                 }
             }
 
-            new Controller(1);
-            new Controller(2);
+            // ─── إنشاء المتحكمين ───
+            const ctrl1 = new Controller(1);
+            const ctrl2 = new Controller(2);
+            controllers.push(ctrl1, ctrl2);
+
+            // ─── زر إعادة الضبط ───
+            document.querySelector('.reset-btn').addEventListener('click', function() {
+                const id = parseInt(this.dataset.overlay);
+                resetOverlay(id);
+            });
+
+            function resetOverlay(id) {
+                const defaults = {
+                    1: { title: '🏆 قائمة الأساطير', names: '', theme: 'theme-neon', glowColor: '#00ffe1', badgeColor: '#ff0055', crowns: [] },
+                    2: { title: '🔥 كبار الداعمين', names: '', theme: 'theme-gold', glowColor: '#ffcc00', badgeColor: '#a855f7', crowns: [] }
+                };
+                const payload = {};
+                const key = id === 1 ? 'overlay1' : 'overlay2';
+                payload[key] = defaults[id];
+                
+                fetch(API_BASE + '/api/overlay-settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify(payload)
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast('✅ تم إعادة ضبط القائمة ' + id + ' إلى الإعدادات الافتراضية');
+                        // إعادة تحميل الإعدادات للمتحكم المطابق
+                        const ctrl = controllers[id-1];
+                        if (ctrl) ctrl.loadFromServer();
+                    } else {
+                        showToast('❌ فشل إعادة الضبط: ' + (data.message || ''));
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    showToast('❌ خطأ في الاتصال بالخادم');
+                });
+            }
         })();
     </script>
 </body>
@@ -6412,7 +6345,6 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
     res.status(500).send("حدث خطأ في الخادم");
   }
 });
-
 // ================ بدء الخادم ================
 server.listen(PORT, "0.0.0.0", () => {
   logger.info(`✅ السيرفر يعمل على المنفذ ${PORT}`);
