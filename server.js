@@ -5708,6 +5708,569 @@ app.post("/api/agent/exchange-binding", async (req, res) => {
   }
 });
 
+// ========== نظام الـ Overlay الديناميكي ==========
+const overlaySettingsSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+  overlay1: {
+    title:    { type: String, default: '🏆 قائمة الأساطير' },
+    names:    { type: String, default: '' },
+    theme:    { type: String, default: 'theme-neon' },
+    glowColor:{ type: String, default: '#00ffe1' },
+    badgeColor:{ type: String, default: '#ff0055' },
+    crowns:   { type: [Number], default: [] }
+  },
+  overlay2: {
+    title:    { type: String, default: '🔥 كبار الداعمين' },
+    names:    { type: String, default: '' },
+    theme:    { type: String, default: 'theme-gold' },
+    glowColor:{ type: String, default: '#ffcc00' },
+    badgeColor:{ type: String, default: '#a855f7' },
+    crowns:   { type: [Number], default: [] }
+  }
+});
+const OverlaySettings = mongoose.model('OverlaySettings', overlaySettingsSchema);
+
+// API
+app.get('/api/overlay-settings', authenticateToken, async (req, res) => {
+  try {
+    let settings = await OverlaySettings.findOne({ userId: req.user.id });
+    if (!settings) {
+      settings = new OverlaySettings({ userId: req.user.id });
+      await settings.save();
+    }
+    res.json({ success: true, settings });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post('/api/overlay-settings', authenticateToken, async (req, res) => {
+  try {
+    const { overlay1, overlay2 } = req.body;
+    let settings = await OverlaySettings.findOne({ userId: req.user.id });
+    if (!settings) {
+      settings = new OverlaySettings({ userId: req.user.id });
+    }
+    if (overlay1) Object.assign(settings.overlay1, overlay1);
+    if (overlay2) Object.assign(settings.overlay2, overlay2);
+    await settings.save();
+    res.json({ success: true, settings });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// المسار الديناميكي
+app.get('/overlay/:token/:overlayId', async (req, res) => {
+  try {
+    const { token, overlayId } = req.params;
+    if (overlayId !== '1' && overlayId !== '2') return res.status(404).send('غير موجود');
+
+    const user = await User.findOne({ screenToken: token });
+    if (!user) return res.status(404).send('رمز غير صالح');
+
+    let settings = await OverlaySettings.findOne({ userId: user._id });
+    if (!settings) {
+      settings = new OverlaySettings({ userId: user._id });
+      await settings.save();
+    }
+
+    const overlay = overlayId === '1' ? settings.overlay1 : settings.overlay2;
+    const title = overlay.title || (overlayId === '1' ? '🏆 قائمة الأساطير' : '🔥 كبار الداعمين');
+    const names = overlay.names || '';
+    const theme = overlay.theme || (overlayId === '1' ? 'theme-neon' : 'theme-gold');
+    const glow = overlay.glowColor || (overlayId === '1' ? '#00ffe1' : '#ffcc00');
+    const badge = overlay.badgeColor || (overlayId === '1' ? '#ff0055' : '#a855f7');
+    const crowns = overlay.crowns || [];
+
+    function escape(text) {
+      if (!text) return '';
+      return text.replace(/[&<>"]/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[m]));
+    }
+
+    function nameListHTML() {
+      const items = names.split('\n').filter(n => n.trim() !== '');
+      if (!items.length) return '<div style="color:#888;text-align:center;padding:10px;">لا توجد أسماء</div>';
+      const crownSet = new Set(crowns);
+      return items.map((n, i) => `
+        <div class="name-card">
+          <div class="name-info">
+            <div class="badge-num">${i+1}</div>
+            <span class="name-text">${escape(n.trim())}</span>
+          </div>
+          ${crownSet.has(i) ? '<span class="crown-icon">👑</span>' : ''}
+        </div>
+      `).join('');
+    }
+
+    const html = `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>Overlay ${overlayId}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Cairo',sans-serif;background:transparent;color:#fff;overflow:hidden;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center}
+    .overlay-box{width:340px;background:rgba(18,18,28,0.85);backdrop-filter:blur(12px);border-radius:18px;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,0.5);border:2px solid ${glow}}
+    .overlay-header{display:flex;justify-content:center;padding-bottom:12px;margin-bottom:15px;border-bottom:1px solid rgba(255,255,255,0.1)}
+    .overlay-header h2{font-size:1.2rem;font-weight:900;color:${glow}}
+    .overlay-list{display:flex;flex-direction:column;gap:10px}
+    .name-card{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-radius:8px;background:rgba(255,255,255,0.04);border-right:4px solid ${badge};animation:fadeIn 0.3s ease forwards}
+    .name-info{display:flex;align-items:center;gap:10px}
+    .badge-num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:900;background:linear-gradient(135deg,${badge},#ff5500);color:#fff}
+    .name-text{font-size:.95rem;font-weight:700;color:#fff}
+    .crown-icon{font-size:1.1rem;filter:drop-shadow(0 0 5px rgba(255,215,0,0.8))}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+    /* ثيمات إضافية */
+    .theme-gold .overlay-box{border-color:#ffcc00;background:rgba(20,16,8,0.9)}
+    .theme-gold .overlay-header h2{color:#ffcc00}
+    .theme-gold .name-card{background:rgba(255,204,0,0.08);border-color:#ffcc00}
+    .theme-gold .badge-num{background:linear-gradient(135deg,#ffcc00,#ff8800);color:#000}
+    .theme-purple .overlay-box{border-color:#a855f7;background:rgba(20,10,30,0.9)}
+    .theme-purple .overlay-header h2{color:#d8b4fe}
+    .theme-purple .name-card{background:rgba(168,85,247,0.1);border-color:#ec4899}
+    .theme-purple .badge-num{background:linear-gradient(135deg,#ec4899,#a855f7);color:#fff}
+  </style>
+</head>
+<body>
+  <div class="overlay-box ${theme}">
+    <div class="overlay-header"><h2>${escape(title)}</h2></div>
+    <div class="overlay-list">${nameListHTML()}</div>
+  </div>
+</body>
+</html>`;
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (err) {
+    console.error('Overlay error:', err);
+    res.status(500).send('خطأ في الخادم');
+  }
+});
+
+// لوحة التحكم (تأكد من وجود ملف dashboard.html في مجلد public)
+app.get('/dashboard', authenticateToken, async (req, res) => {
+  const filePath = path.join(__dirname, 'public', 'dashboard.html');
+  
+  // محاولة إرسال الملف إذا كان موجوداً
+  if (fs.existsSync(filePath)) {
+    return res.sendFile(filePath);
+  }
+
+  // ─── إذا لم يكن الملف موجوداً، نولّد صفحة ديناميكية ───
+  try {
+    // جلب بيانات المستخدم والإعدادات (اختياري لعرضها)
+    const user = await User.findById(req.user.id);
+    const settings = await OverlaySettings.findOne({ userId: req.user.id });
+    
+    // نمرر data إلى القالب (يمكن استخدامها داخل HTML)
+    const userData = {
+      email: user.email,
+      plan: user.plan,
+      screenToken: user.screenToken,
+    };
+
+    // توليد HTML للوحة التحكم (مضمّن هنا بدلاً من ملف)
+    const html = `
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <title>لوحة تحكم الـ Overlay</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Cairo', sans-serif;
+      background-color: #090a0f;
+      color: #ffffff;
+      padding: 20px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .app-wrapper { max-width: 1100px; width: 100%; }
+    .header-title {
+      text-align: center; margin-bottom: 28px;
+      font-size: 1.7rem; font-weight: 900;
+      background: linear-gradient(135deg, #00ffe1, #a855f7);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .control-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+    }
+    .panel {
+      background: #12131c; border: 1px solid #26283b;
+      border-radius: 16px; padding: 22px 20px;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    .panel-1 { border-top: 3px solid #00ffe1; }
+    .panel-2 { border-top: 3px solid #ffcc00; }
+    .panel h2 { font-size: 1.1rem; text-align: center; }
+    .panel-1 h2 { color: #00ffe1; }
+    .panel-2 h2 { color: #ffcc00; }
+
+    .link-box {
+      background: rgba(0, 255, 225, 0.05);
+      border: 1px dashed #00ffe1;
+      padding: 10px 14px;
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 10px;
+    }
+    .panel-2 .link-box { border-color: #ffcc00; background: rgba(255,204,0,0.05); }
+    .link-box label { font-size: 0.8rem; font-weight: 600; color: #d1d5db; }
+    .link-url { font-size: 0.7rem; color: #8888aa; background: #0b0c14; padding: 4px 10px; border-radius: 6px; font-family: monospace; word-break: break-all; flex: 1; min-width: 120px; }
+    .copy-btn {
+      background: #00ffe1; color: #000; border: none; padding: 6px 14px;
+      border-radius: 6px; font-weight: 700; font-size: 0.8rem; cursor: pointer;
+      transition: 0.2s; font-family: 'Cairo', sans-serif;
+    }
+    .panel-2 .copy-btn { background: #ffcc00; }
+    .copy-btn:hover { opacity: 0.75; transform: scale(0.97); }
+
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-group label { font-size: 0.75rem; font-weight: 700; color: #b0b0d0; }
+
+    input[type="text"], textarea, select {
+      width: 100%; padding: 8px 12px;
+      background: #1b1d2a; border: 1px solid #26283b;
+      border-radius: 8px; color: #fff;
+      font-family: 'Cairo', sans-serif; font-size: 0.85rem;
+      outline: none;
+    }
+    textarea { resize: vertical; min-height: 80px; }
+
+    .crown-selector-list {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      background: #1b1d2a; padding: 8px 10px;
+      border-radius: 8px; border: 1px solid #26283b;
+      max-height: 120px; overflow-y: auto;
+      align-items: center;
+    }
+    .crown-item-btn {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: #a0a0c0; padding: 4px 12px; border-radius: 20px;
+      font-size: 0.75rem; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 4px;
+      transition: 0.2s; font-family: 'Cairo', sans-serif;
+      white-space: nowrap;
+    }
+    .crown-item-btn.active {
+      background: rgba(255,204,0,0.18);
+      border-color: #ffcc00; color: #ffcc00; font-weight: 700;
+      box-shadow: 0 0 12px rgba(255,204,0,0.15);
+    }
+
+    .color-pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .color-item {
+      display: flex; align-items: center; gap: 6px;
+      background: #1b1d2a; padding: 4px 8px 4px 4px;
+      border-radius: 8px; border: 1px solid #26283b;
+    }
+    .color-item input[type="color"] {
+      border: none; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; background: none; padding: 0;
+    }
+    .color-item span { font-size: 0.7rem; color: #a0a0c0; }
+
+    .status { font-size: 0.75rem; color: #10b981; text-align: center; height: 20px; line-height: 20px; }
+
+    @media (max-width: 720px) { .control-grid { grid-template-columns: 1fr; } }
+
+    .toast {
+      position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+      background: #1b1d2a; border: 1px solid #00ffe1;
+      padding: 10px 24px; border-radius: 12px; font-size: 0.9rem; color: #fff;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.7);
+      opacity: 0; transition: opacity 0.3s ease; pointer-events: none;
+      z-index: 999; font-family: 'Cairo', sans-serif; text-align: center;
+      max-width: 90vw;
+    }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<div class="app-wrapper">
+    <h1 class="header-title">🎛️ لوحة تحكم الـ Overlays</h1>
+
+    <div class="control-grid">
+
+        <!-- Panel 1 -->
+        <div class="panel panel-1">
+            <h2>🎮 القائمة الأولى</h2>
+            <div class="link-box">
+                <label>🔗 رابط OBS:</label>
+                <span class="link-url" id="linkDisplay1">تحميل...</span>
+                <button class="copy-btn" data-overlay="1">📋 نسخ الرابط</button>
+            </div>
+            <div class="form-group">
+                <label>العنوان</label>
+                <input type="text" id="titleInput1" value="🏆 قائمة الأساطير">
+            </div>
+            <div class="form-group">
+                <label>الأسماء (كل اسم في سطر)</label>
+                <textarea id="namesInput1" placeholder="اكتب الأسماء..."></textarea>
+            </div>
+            <div class="form-group">
+                <label>تحديد التاج 👑</label>
+                <div class="crown-selector-list" id="crownList1"></div>
+            </div>
+            <div class="form-group">
+                <label>الثيم</label>
+                <select id="themeSelect1">
+                    <option value="theme-neon">⚡ نيون سايبر</option>
+                    <option value="theme-gold">👑 VIP ذهبي</option>
+                    <option value="theme-purple">💜 بنفسجي</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>الألوان</label>
+                <div class="color-pickers">
+                    <div class="color-item"><input type="color" id="glowColor1" value="#00ffe1"><span>التوهج</span></div>
+                    <div class="color-item"><input type="color" id="badgeColor1" value="#ff0055"><span>الأرقام</span></div>
+                </div>
+            </div>
+            <div class="status" id="status1"></div>
+        </div>
+
+        <!-- Panel 2 -->
+        <div class="panel panel-2">
+            <h2>⭐ القائمة الثانية</h2>
+            <div class="link-box">
+                <label>🔗 رابط OBS:</label>
+                <span class="link-url" id="linkDisplay2">تحميل...</span>
+                <button class="copy-btn" data-overlay="2">📋 نسخ الرابط</button>
+            </div>
+            <div class="form-group">
+                <label>العنوان</label>
+                <input type="text" id="titleInput2" value="🔥 كبار الداعمين">
+            </div>
+            <div class="form-group">
+                <label>الأسماء (كل اسم في سطر)</label>
+                <textarea id="namesInput2" placeholder="اكتب الأسماء..."></textarea>
+            </div>
+            <div class="form-group">
+                <label>تحديد التاج 👑</label>
+                <div class="crown-selector-list" id="crownList2"></div>
+            </div>
+            <div class="form-group">
+                <label>الثيم</label>
+                <select id="themeSelect2">
+                    <option value="theme-gold">👑 VIP ذهبي</option>
+                    <option value="theme-neon">⚡ نيون سايبر</option>
+                    <option value="theme-purple">💜 بنفسجي</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>الألوان</label>
+                <div class="color-pickers">
+                    <div class="color-item"><input type="color" id="glowColor2" value="#ffcc00"><span>التوهج</span></div>
+                    <div class="color-item"><input type="color" id="badgeColor2" value="#a855f7"><span>الأرقام</span></div>
+                </div>
+            </div>
+            <div class="status" id="status2"></div>
+        </div>
+
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+    (function() {
+        // ─── عرض رسالة منبثقة ───
+        let toastTimeout;
+        function showToast(msg) {
+            const el = document.getElementById('toast');
+            el.textContent = msg;
+            el.classList.add('show');
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => el.classList.remove('show'), 3000);
+        }
+
+        // ─── جلب رمز المستخدم (screenToken) لبناء الرابط ───
+        let screenToken = '';
+        fetch('/api/user/screen-token', { credentials: 'include' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    screenToken = data.token;
+                    const base = window.location.origin;
+                    document.getElementById('linkDisplay1').textContent = \`\${base}/overlay/\${screenToken}/1\`;
+                    document.getElementById('linkDisplay2').textContent = \`\${base}/overlay/\${screenToken}/2\`;
+                } else {
+                    showToast('❌ فشل في جلب رمز الشاشة، تأكد من تسجيل الدخول');
+                }
+            })
+            .catch(() => showToast('❌ خطأ في الاتصال بالخادم'));
+
+        // ─── نسخ الرابط ───
+        document.querySelectorAll('.copy-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const id = this.dataset.overlay;
+                const linkEl = document.getElementById(\`linkDisplay\${id}\`);
+                if (!linkEl) return;
+                const url = linkEl.textContent;
+                navigator.clipboard.writeText(url).then(() => {
+                    showToast(\`✅ تم نسخ الرابط!\\n\${url}\`);
+                }).catch(() => {
+                    const dummy = document.createElement('input');
+                    dummy.value = url;
+                    document.body.appendChild(dummy);
+                    dummy.select();
+                    document.execCommand('copy');
+                    dummy.remove();
+                    showToast(\`✅ تم النسخ (احتياطي):\\n\${url}\`);
+                });
+            });
+        });
+
+        // ─── فئة التحكم في كل Overlay ───
+        class OverlayController {
+            constructor(id) {
+                this.id = id;
+                this.crownedIndices = new Set();
+                this.titleInput = document.getElementById(\`titleInput\${id}\`);
+                this.namesInput = document.getElementById(\`namesInput\${id}\`);
+                this.themeSelect = document.getElementById(\`themeSelect\${id}\`);
+                this.glowColor = document.getElementById(\`glowColor\${id}\`);
+                this.badgeColor = document.getElementById(\`badgeColor\${id}\`);
+                this.crownList = document.getElementById(\`crownList\${id}\`);
+                this.status = document.getElementById(\`status\${id}\`);
+                this._saveTimer = null;
+                this.init();
+            }
+
+            async init() {
+                await this.loadFromServer();
+                this.bindEvents();
+                this.updateCrownsUI();
+            }
+
+            // ─── تحميل من الخادم ───
+            async loadFromServer() {
+                try {
+                    const res = await fetch('/api/overlay-settings', { credentials: 'include' });
+                    const data = await res.json();
+                    if (!data.success) throw new Error(data.message);
+                    const settings = data.settings;
+                    const overlay = this.id === 1 ? settings.overlay1 : settings.overlay2;
+                    this.titleInput.value = overlay.title || '';
+                    this.namesInput.value = overlay.names || '';
+                    this.themeSelect.value = overlay.theme || 'theme-neon';
+                    this.glowColor.value = overlay.glowColor || '#00ffe1';
+                    this.badgeColor.value = overlay.badgeColor || '#ff0055';
+                    this.crownedIndices = new Set(overlay.crowns || []);
+                    this.updateCrownsUI();
+                    this.status.textContent = '✓ تم التحميل';
+                } catch (err) {
+                    console.error('❌ فشل تحميل الإعدادات:', err);
+                    this.status.textContent = '⚠️ فشل التحميل، استخدم الإعدادات المحلية';
+                }
+            }
+
+            // ─── حفظ إلى الخادم ───
+            async saveToServer() {
+                try {
+                    const payload = {
+                        [this.id === 1 ? 'overlay1' : 'overlay2']: {
+                            title: this.titleInput.value,
+                            names: this.namesInput.value,
+                            theme: this.themeSelect.value,
+                            glowColor: this.glowColor.value,
+                            badgeColor: this.badgeColor.value,
+                            crowns: Array.from(this.crownedIndices)
+                        }
+                    };
+                    const res = await fetch('/api/overlay-settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await res.json();
+                    if (!data.success) throw new Error(data.message);
+                    this.status.textContent = '✓ تم الحفظ';
+                    clearTimeout(this._statusTimer);
+                    this._statusTimer = setTimeout(() => { this.status.textContent = ''; }, 1500);
+                } catch (err) {
+                    console.error('❌ فشل الحفظ:', err);
+                    this.status.textContent = '⚠️ فشل الحفظ';
+                }
+            }
+
+            // ─── تبديل التاج ───
+            toggleCrown(idx) {
+                if (this.crownedIndices.has(idx)) {
+                    this.crownedIndices.delete(idx);
+                } else {
+                    this.crownedIndices.add(idx);
+                }
+                this.updateCrownsUI();
+                this.saveToServer();
+            }
+
+            // ─── تحديث واجهة الأزرار ───
+            updateCrownsUI() {
+                const names = this.namesInput.value.split('\\n').filter(s => s.trim() !== '');
+                this.crownList.innerHTML = '';
+                if (names.length === 0) {
+                    const msg = document.createElement('span');
+                    msg.className = 'empty-msg';
+                    msg.textContent = 'لا توجد أسماء — أضف أسماء في الحقل أعلاه';
+                    msg.style.cssText = 'font-size:0.7rem; color:#666688;';
+                    this.crownList.appendChild(msg);
+                    return;
+                }
+                names.forEach((name, idx) => {
+                    const btn = document.createElement('button');
+                    const isCrowned = this.crownedIndices.has(idx);
+                    btn.className = \`crown-item-btn \${isCrowned ? 'active' : ''}\`;
+                    btn.textContent = \`\${isCrowned ? '👑' : '⚪'} \${name.trim()}\`;
+                    btn.addEventListener('click', () => this.toggleCrown(idx));
+                    this.crownList.appendChild(btn);
+                });
+            }
+
+            // ─── ربط الأحداث ───
+            bindEvents() {
+                const saveable = [
+                    this.titleInput,
+                    this.themeSelect,
+                    this.glowColor,
+                    this.badgeColor,
+                ];
+                saveable.forEach(el => {
+                    el.addEventListener('input', () => this.saveToServer());
+                    el.addEventListener('change', () => this.saveToServer());
+                });
+                this.namesInput.addEventListener('input', () => {
+                    this.updateCrownsUI();
+                    this.saveToServer();
+                });
+            }
+        }
+
+        // ─── إنشاء الكائنات ───
+        new OverlayController(1);
+        new OverlayController(2);
+    })();
+</script>
+</body>
+</html>
+    `;
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (err) {
+    logger.error('❌ خطأ في توليد لوحة التحكم:', err.message);
+    res.status(500).send('حدث خطأ في الخادم');
+  }
+});
 // ================ بدء الخادم ================
 server.listen(PORT, "0.0.0.0", () => {
   logger.info(`✅ السيرفر يعمل على المنفذ ${PORT}`);
