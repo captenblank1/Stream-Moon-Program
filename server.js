@@ -5840,7 +5840,7 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'Cairo',sans-serif;background:transparent;color:#fff;overflow:hidden;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center}
-    .overlay-box{width:340px;background:rgba(18,18,28,0.85);backdrop-filter:blur(12px);border-radius:18px;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,0.5);border:2px solid ${glow}}
+    .overlay-box{width:285px;background:rgba(18,18,28,0.5);backdrop-filter:blur(12px);border-radius:18px;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,0.5);border:2px solid ${glow}}
     .overlay-header{display:flex;justify-content:center;padding-bottom:12px;margin-bottom:15px;border-bottom:1px solid rgba(255,255,255,0.1)}
     .overlay-header h2{font-size:26px;font-weight:900;color:${glow}}
     .overlay-list{display:flex;flex-direction:column;gap:10px}
