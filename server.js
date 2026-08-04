@@ -5881,405 +5881,390 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
     const user = await User.findById(req.user.id);
     const settings = await OverlaySettings.findOne({ userId: req.user.id });
 
-    // ✅ تحديد رابط الباكند الأساسي
     const API_BASE =
       process.env.API_BASE || `${req.protocol}://${req.get("host")}`;
 
-    const html = `
-<!DOCTYPE html>
+    const html = `<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="UTF-8">
-  <title>لوحة تحكم الـ Overlay</title>
-  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'Cairo', sans-serif;
-      background-color: #090a0f;
-      color: #ffffff;
-      padding: 20px;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-    .app-wrapper { max-width: 1100px; width: 100%; }
-    .header-title {
-      text-align: center; margin-bottom: 28px;
-      font-size: 1.7rem; font-weight: 900;
-      background: linear-gradient(135deg, #00ffe1, #a855f7);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-    }
-    .control-grid {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
-    }
-    .panel {
-      background: #12131c; border: 1px solid #26283b;
-      border-radius: 16px; padding: 22px 20px;
-      display: flex; flex-direction: column; gap: 14px;
-    }
-    .panel-1 { border-top: 3px solid #00ffe1; }
-    .panel-2 { border-top: 3px solid #ffcc00; }
-    .panel h2 { font-size: 1.1rem; text-align: center; }
-    .panel-1 h2 { color: #00ffe1; }
-    .panel-2 h2 { color: #ffcc00; }
+    <meta charset="UTF-8">
+    <title>لوحة تحكم الـ Overlay</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Cairo', sans-serif;
+            background-color: #090a0f;
+            color: #ffffff;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .app-wrapper { max-width: 1100px; width: 100%; }
+        .header-title {
+            text-align: center; margin-bottom: 28px;
+            font-size: 1.7rem; font-weight: 900;
+            background: linear-gradient(135deg, #00ffe1, #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 1px;
+        }
+        .control-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+        .panel {
+            background: #12131c;
+            border: 1px solid #26283b;
+            border-radius: 16px;
+            padding: 22px 20px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            transition: border-color 0.25s;
+        }
+        .panel-1 { border-top: 3px solid #00ffe1; }
+        .panel-2 { border-top: 3px solid #ffcc00; }
+        .panel h2 { font-size: 1.1rem; text-align: center; margin-bottom: 2px; letter-spacing: 0.5px; }
+        .panel-1 h2 { color: #00ffe1; }
+        .panel-2 h2 { color: #ffcc00; }
 
-    .link-box {
-      background: rgba(0, 255, 225, 0.05);
-      border: 1px dashed #00ffe1;
-      padding: 10px 14px;
-      border-radius: 10px;
-      display: flex; align-items: center; justify-content: space-between;
-      flex-wrap: wrap; gap: 10px;
-    }
-    .panel-2 .link-box { border-color: #ffcc00; background: rgba(255,204,0,0.05); }
-    .link-box label { font-size: 0.8rem; font-weight: 600; color: #d1d5db; }
-    .link-url { font-size: 0.7rem; color: #8888aa; background: #0b0c14; padding: 4px 10px; border-radius: 6px; font-family: monospace; word-break: break-all; flex: 1; min-width: 120px; }
-    .copy-btn {
-      background: #00ffe1; color: #000; border: none; padding: 6px 14px;
-      border-radius: 6px; font-weight: 700; font-size: 0.8rem; cursor: pointer;
-      transition: 0.2s; font-family: 'Cairo', sans-serif;
-    }
-    .panel-2 .copy-btn { background: #ffcc00; }
-    .copy-btn:hover { opacity: 0.75; transform: scale(0.97); }
+        .link-box {
+            background: rgba(0, 255, 225, 0.05);
+            border: 1px dashed #00ffe1;
+            padding: 10px 14px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .panel-2 .link-box { background: rgba(255, 204, 0, 0.05); border-color: #ffcc00; }
+        .link-box label { font-size: 0.8rem; font-weight: 600; color: #d1d5db; }
+        .link-box .link-url { font-size: 0.7rem; color: #8888aa; background: #0b0c14; padding: 4px 10px; border-radius: 6px; font-family: monospace; word-break: break-all; flex: 1; min-width: 120px; }
+        .copy-btn {
+            background: #00ffe1; color: #000; border: none; padding: 6px 14px;
+            border-radius: 6px; font-weight: 700; font-size: 0.8rem; font-family: 'Cairo', sans-serif;
+            cursor: pointer; transition: 0.2s; white-space: nowrap;
+        }
+        .panel-2 .copy-btn { background: #ffcc00; }
+        .copy-btn:hover { opacity: 0.75; transform: scale(0.97); }
 
-    .form-group { display: flex; flex-direction: column; gap: 4px; }
-    .form-group label { font-size: 0.75rem; font-weight: 700; color: #b0b0d0; }
+        .form-group { display: flex; flex-direction: column; gap: 4px; }
+        .form-group label { font-size: 0.75rem; font-weight: 700; color: #b0b0d0; letter-spacing: 0.3px; }
 
-    input[type="text"], textarea, select {
-      width: 100%; padding: 8px 12px;
-      background: #1b1d2a; border: 1px solid #26283b;
-      border-radius: 8px; color: #fff;
-      font-family: 'Cairo', sans-serif; font-size: 0.85rem;
-      outline: none;
-    }
-    textarea { resize: vertical; min-height: 80px; }
+        input[type="text"], textarea, select {
+            width: 100%; padding: 8px 12px;
+            background: #1b1d2a; border: 1px solid #26283b;
+            border-radius: 8px; color: #fff;
+            font-family: 'Cairo', sans-serif; font-size: 0.85rem;
+            outline: none; transition: border 0.2s;
+        }
+        input[type="text"]:focus, textarea:focus, select:focus { border-color: #00ffe1; }
+        .panel-2 input[type="text"]:focus, .panel-2 textarea:focus, .panel-2 select:focus { border-color: #ffcc00; }
+        textarea { resize: vertical; min-height: 80px; }
 
-    .crown-selector-list {
-      display: flex; flex-wrap: wrap; gap: 6px;
-      background: #1b1d2a; padding: 8px 10px;
-      border-radius: 8px; border: 1px solid #26283b;
-      max-height: 120px; overflow-y: auto;
-      align-items: center;
-    }
-    .crown-item-btn {
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.08);
-      color: #a0a0c0; padding: 4px 12px; border-radius: 20px;
-      font-size: 0.75rem; cursor: pointer;
-      display: inline-flex; align-items: center; gap: 4px;
-      transition: 0.2s; font-family: 'Cairo', sans-serif;
-      white-space: nowrap;
-    }
-    .crown-item-btn.active {
-      background: rgba(255,204,0,0.18);
-      border-color: #ffcc00; color: #ffcc00; font-weight: 700;
-      box-shadow: 0 0 12px rgba(255,204,0,0.15);
-    }
-
-    .color-pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .color-item {
-      display: flex; align-items: center; gap: 6px;
-      background: #1b1d2a; padding: 4px 8px 4px 4px;
-      border-radius: 8px; border: 1px solid #26283b;
-    }
-    .color-item input[type="color"] {
-      border: none; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; background: none; padding: 0;
-    }
-    .color-item span { font-size: 0.7rem; color: #a0a0c0; }
-
-    .status { font-size: 0.75rem; color: #10b981; text-align: center; height: 20px; line-height: 20px; }
-
-    @media (max-width: 720px) { .control-grid { grid-template-columns: 1fr; } }
-
-    .toast {
-      position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
-      background: #1b1d2a; border: 1px solid #00ffe1;
-      padding: 10px 24px; border-radius: 12px; font-size: 0.9rem; color: #fff;
-      box-shadow: 0 8px 30px rgba(0,0,0,0.7);
-      opacity: 0; transition: opacity 0.3s ease; pointer-events: none;
-      z-index: 999; font-family: 'Cairo', sans-serif; text-align: center;
-      max-width: 90vw;
-    }
-    .toast.show { opacity: 1; }
-  </style>
+        .crown-selector-list {
+            display: flex; flex-wrap: wrap; gap: 6px;
+            background: #1b1d2a; padding: 8px 10px;
+            border-radius: 8px; border: 1px solid #26283b;
+            max-height: 120px; overflow-y: auto;
+            align-items: center;
+        }
+        .crown-selector-list .empty-msg { font-size: 0.7rem; color: #666688; }
+        .crown-item-btn {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: #a0a0c0; padding: 4px 12px; border-radius: 20px;
+            font-size: 0.75rem; cursor: pointer;
+            display: inline-flex; align-items: center; gap: 4px;
+            transition: 0.2s; font-family: 'Cairo', sans-serif;
+            white-space: nowrap;
+        }
+        .crown-item-btn:hover { background: rgba(255, 255, 255, 0.08); }
+        .crown-item-btn.active {
+            background: rgba(255, 204, 0, 0.18);
+            border-color: #ffcc00; color: #ffcc00; font-weight: 700;
+            box-shadow: 0 0 12px rgba(255, 204, 0, 0.15);
+        }
+        .color-pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .color-item {
+            display: flex; align-items: center; gap: 6px;
+            background: #1b1d2a; padding: 4px 8px 4px 4px;
+            border-radius: 8px; border: 1px solid #26283b;
+        }
+        .color-item input[type="color"] { border: none; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; background: none; padding: 0; }
+        .color-item span { font-size: 0.7rem; color: #a0a0c0; }
+        .status { font-size: 0.75rem; color: #10b981; text-align: center; height: 20px; line-height: 20px; }
+        @media (max-width: 720px) { .control-grid { grid-template-columns: 1fr; } .header-title { font-size: 1.3rem; } }
+        .crown-selector-list::-webkit-scrollbar { width: 4px; }
+        .crown-selector-list::-webkit-scrollbar-track { background: transparent; }
+        .crown-selector-list::-webkit-scrollbar-thumb { background: #333355; border-radius: 4px; }
+        .toast {
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+            background: #1b1d2a; border: 1px solid #00ffe1;
+            padding: 10px 24px; border-radius: 12px;
+            font-size: 0.9rem; color: #fff;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7);
+            opacity: 0; transition: opacity 0.3s ease;
+            pointer-events: none; z-index: 999;
+            font-family: 'Cairo', sans-serif; text-align: center; max-width: 90vw;
+        }
+        .toast.show { opacity: 1; }
+    </style>
 </head>
 <body>
-
-<div class="app-wrapper">
-    <h1 class="header-title">🎛️ لوحة تحكم الـ Overlays</h1>
-
-    <div class="control-grid">
-
-        <!-- Panel 1 -->
-        <div class="panel panel-1">
-            <h2>🎮 القائمة الأولى</h2>
-            <div class="link-box">
-                <label>🔗 رابط OBS:</label>
-                <span class="link-url" id="linkDisplay1">تحميل...</span>
-                <button class="copy-btn" data-overlay="1">📋 نسخ الرابط</button>
-            </div>
-            <div class="form-group">
-                <label>العنوان</label>
-                <input type="text" id="titleInput1" value="🏆 قائمة الأساطير">
-            </div>
-            <div class="form-group">
-                <label>الأسماء (كل اسم في سطر)</label>
-                <textarea id="namesInput1" placeholder="اكتب الأسماء..."></textarea>
-            </div>
-            <div class="form-group">
-                <label>تحديد التاج 👑</label>
-                <div class="crown-selector-list" id="crownList1"></div>
-            </div>
-            <div class="form-group">
-                <label>الثيم</label>
-                <select id="themeSelect1">
-                    <option value="theme-neon">⚡ نيون سايبر</option>
-                    <option value="theme-gold">👑 VIP ذهبي</option>
-                    <option value="theme-purple">💜 بنفسجي</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>الألوان</label>
-                <div class="color-pickers">
-                    <div class="color-item"><input type="color" id="glowColor1" value="#00ffe1"><span>التوهج</span></div>
-                    <div class="color-item"><input type="color" id="badgeColor1" value="#ff0055"><span>الأرقام</span></div>
+    <div class="app-wrapper">
+        <h1 class="header-title">🎛️ لوحة تحكم الـ Overlays</h1>
+        <div class="control-grid">
+            <!-- Panel 1 -->
+            <div class="panel panel-1">
+                <h2>🎮 القائمة الأولى</h2>
+                <div class="link-box">
+                    <label>🔗 رابط OBS:</label>
+                    <span class="link-url" id="linkDisplay1">تحميل...</span>
+                    <button class="copy-btn" data-overlay="1">📋 نسخ الرابط</button>
                 </div>
-            </div>
-            <div class="status" id="status1"></div>
-        </div>
-
-        <!-- Panel 2 -->
-        <div class="panel panel-2">
-            <h2>⭐ القائمة الثانية</h2>
-            <div class="link-box">
-                <label>🔗 رابط OBS:</label>
-                <span class="link-url" id="linkDisplay2">تحميل...</span>
-                <button class="copy-btn" data-overlay="2">📋 نسخ الرابط</button>
-            </div>
-            <div class="form-group">
-                <label>العنوان</label>
-                <input type="text" id="titleInput2" value="🔥 كبار الداعمين">
-            </div>
-            <div class="form-group">
-                <label>الأسماء (كل اسم في سطر)</label>
-                <textarea id="namesInput2" placeholder="اكتب الأسماء..."></textarea>
-            </div>
-            <div class="form-group">
-                <label>تحديد التاج 👑</label>
-                <div class="crown-selector-list" id="crownList2"></div>
-            </div>
-            <div class="form-group">
-                <label>الثيم</label>
-                <select id="themeSelect2">
-                    <option value="theme-gold">👑 VIP ذهبي</option>
-                    <option value="theme-neon">⚡ نيون سايبر</option>
-                    <option value="theme-purple">💜 بنفسجي</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>الألوان</label>
-                <div class="color-pickers">
-                    <div class="color-item"><input type="color" id="glowColor2" value="#ffcc00"><span>التوهج</span></div>
-                    <div class="color-item"><input type="color" id="badgeColor2" value="#a855f7"><span>الأرقام</span></div>
+                <div class="form-group">
+                    <label>العنوان</label>
+                    <input type="text" id="titleInput1" value="🏆 قائمة الأساطير">
                 </div>
+                <div class="form-group">
+                    <label>الأسماء (كل اسم في سطر)</label>
+                    <textarea id="namesInput1" placeholder="اكتب الأسماء..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>تحديد التاج 👑</label>
+                    <div class="crown-selector-list" id="crownList1"></div>
+                </div>
+                <div class="form-group">
+                    <label>الثيم</label>
+                    <select id="themeSelect1">
+                        <option value="theme-neon">⚡ نيون سايبر</option>
+                        <option value="theme-gold">👑 VIP ذهبي</option>
+                        <option value="theme-purple">💜 بنفسجي</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>الألوان</label>
+                    <div class="color-pickers">
+                        <div class="color-item"><input type="color" id="glowColor1" value="#00ffe1"><span>التوهج</span></div>
+                        <div class="color-item"><input type="color" id="badgeColor1" value="#ff0055"><span>الأرقام</span></div>
+                    </div>
+                </div>
+                <div class="status" id="status1"></div>
             </div>
-            <div class="status" id="status2"></div>
+            <!-- Panel 2 -->
+            <div class="panel panel-2">
+                <h2>⭐ القائمة الثانية</h2>
+                <div class="link-box">
+                    <label>🔗 رابط OBS:</label>
+                    <span class="link-url" id="linkDisplay2">تحميل...</span>
+                    <button class="copy-btn" data-overlay="2">📋 نسخ الرابط</button>
+                </div>
+                <div class="form-group">
+                    <label>العنوان</label>
+                    <input type="text" id="titleInput2" value="🔥 كبار الداعمين">
+                </div>
+                <div class="form-group">
+                    <label>الأسماء (كل اسم في سطر)</label>
+                    <textarea id="namesInput2" placeholder="اكتب الأسماء..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>تحديد التاج 👑</label>
+                    <div class="crown-selector-list" id="crownList2"></div>
+                </div>
+                <div class="form-group">
+                    <label>الثيم</label>
+                    <select id="themeSelect2">
+                        <option value="theme-gold">👑 VIP ذهبي</option>
+                        <option value="theme-neon">⚡ نيون سايبر</option>
+                        <option value="theme-purple">💜 بنفسجي</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>الألوان</label>
+                    <div class="color-pickers">
+                        <div class="color-item"><input type="color" id="glowColor2" value="#ffcc00"><span>التوهج</span></div>
+                        <div class="color-item"><input type="color" id="badgeColor2" value="#a855f7"><span>الأرقام</span></div>
+                    </div>
+                </div>
+                <div class="status" id="status2"></div>
+            </div>
         </div>
-
     </div>
-</div>
+    <div class="toast" id="toast"></div>
 
-<div class="toast" id="toast"></div>
+    <script>
+        (function() {
+            // ✅ رابط الباكند الأساسي
+            const API_BASE = '${API_BASE}';
+            
+            let toastTimeout;
+            function showToast(msg) {
+                const el = document.getElementById('toast');
+                el.textContent = msg;
+                el.classList.add('show');
+                clearTimeout(toastTimeout);
+                toastTimeout = setTimeout(() => el.classList.remove('show'), 3000);
+            }
 
-<script>
-    (function() {
-        // ✅ تحديد الرابط الأساسي للباكند (يُمرر من السيرفر)
-        const API_BASE = '${API_BASE}';
-
-        let toastTimeout;
-        function showToast(msg) {
-            const el = document.getElementById('toast');
-            el.textContent = msg;
-            el.classList.add('show');
-            clearTimeout(toastTimeout);
-            toastTimeout = setTimeout(() => el.classList.remove('show'), 3000);
-        }
-
-        // ─── جلب رمز المستخدم (screenToken) لبناء الرابط ───
-        let screenToken = '';
-        fetch(API_BASE + '/api/user/screen-token', { credentials: 'include' })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    screenToken = data.token;
-                    // ✅ التعديل: استخدم API_BASE بدلاً من window.location.origin
-                    document.getElementById('linkDisplay1').textContent = API_BASE + '/overlay/' + screenToken + '/1';
-                    document.getElementById('linkDisplay2').textContent = API_BASE + '/overlay/' + screenToken + '/2';
-                } else {
-                    showToast('❌ فشل في جلب رمز الشاشة، تأكد من تسجيل الدخول');
-                }
-            })
-            .catch(() => showToast('❌ خطأ في الاتصال بالخادم'));
-
-        // ─── نسخ الرابط ───
-        document.querySelectorAll('.copy-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const id = this.dataset.overlay;
-                const linkEl = document.getElementById('linkDisplay' + id);
-                if (!linkEl) return;
-                const url = linkEl.textContent;
-                navigator.clipboard.writeText(url).then(() => {
-                    showToast('✅ تم نسخ الرابط!\\n' + url);
-                }).catch(() => {
-                    const dummy = document.createElement('input');
-                    dummy.value = url;
-                    document.body.appendChild(dummy);
-                    dummy.select();
-                    document.execCommand('copy');
-                    dummy.remove();
-                    showToast('✅ تم النسخ (احتياطي):\\n' + url);
+            // ─── نسخ الرابط ───
+            document.querySelectorAll('.copy-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const id = this.dataset.overlay;
+                    const linkEl = document.getElementById('linkDisplay' + id);
+                    if (!linkEl) return;
+                    const url = linkEl.textContent;
+                    navigator.clipboard.writeText(url).then(() => {
+                        showToast('✅ تم نسخ الرابط!\\n' + url);
+                    }).catch(() => {
+                        const dummy = document.createElement('input');
+                        dummy.value = url;
+                        document.body.appendChild(dummy);
+                        dummy.select();
+                        document.execCommand('copy');
+                        dummy.remove();
+                        showToast('✅ تم النسخ (احتياطي):\\n' + url);
+                    });
                 });
             });
-        });
 
-        // ─── فئة التحكم في كل Overlay ───
-        class OverlayController {
-            constructor(id) {
-                this.id = id;
-                this.crownedIndices = new Set();
-                this.titleInput = document.getElementById('titleInput' + id);
-                this.namesInput = document.getElementById('namesInput' + id);
-                this.themeSelect = document.getElementById('themeSelect' + id);
-                this.glowColor = document.getElementById('glowColor' + id);
-                this.badgeColor = document.getElementById('badgeColor' + id);
-                this.crownList = document.getElementById('crownList' + id);
-                this.status = document.getElementById('status' + id);
-                this._saveTimer = null;
-                this.init();
-            }
+            // ─── جلب رمز المستخدم ───
+            let screenToken = '';
+            fetch(API_BASE + '/api/user/screen-token', { credentials: 'include' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        screenToken = data.token;
+                        document.getElementById('linkDisplay1').textContent = API_BASE + '/overlay/' + screenToken + '/1';
+                        document.getElementById('linkDisplay2').textContent = API_BASE + '/overlay/' + screenToken + '/2';
+                    } else {
+                        showToast('❌ فشل في جلب رمز الشاشة، تأكد من تسجيل الدخول');
+                    }
+                })
+                .catch(() => showToast('❌ خطأ في الاتصال بالخادم'));
 
-            async init() {
-                await this.loadFromServer();
-                this.bindEvents();
-                this.updateCrownsUI();
-            }
-
-            // ─── تحميل من الخادم ───
-            async loadFromServer() {
-                try {
-                    const res = await fetch(API_BASE + '/api/overlay-settings', { credentials: 'include' });
-                    if (!res.ok) throw new Error(await res.text());
-                    const data = await res.json();
-                    if (!data.success) throw new Error(data.message);
-                    const settings = data.settings;
-                    const overlay = this.id === 1 ? settings.overlay1 : settings.overlay2;
-                    this.titleInput.value = overlay.title || '';
-                    this.namesInput.value = overlay.names || '';
-                    this.themeSelect.value = overlay.theme || 'theme-neon';
-                    this.glowColor.value = overlay.glowColor || '#00ffe1';
-                    this.badgeColor.value = overlay.badgeColor || '#ff0055';
-                    this.crownedIndices = new Set(overlay.crowns || []);
-                    this.updateCrownsUI();
-                    this.status.textContent = '✓ تم التحميل';
-                } catch (err) {
-                    console.error('❌ فشل تحميل الإعدادات:', err);
-                    this.status.textContent = '⚠️ فشل التحميل، استخدم الإعدادات المحلية';
+            // ─── فئة التحكم (تستخدم API) ───
+            class Controller {
+                constructor(id) {
+                    this.id = id;
+                    this.crownedIndices = new Set();
+                    this.titleInput = document.getElementById('titleInput' + id);
+                    this.namesInput = document.getElementById('namesInput' + id);
+                    this.themeSelect = document.getElementById('themeSelect' + id);
+                    this.glowColor = document.getElementById('glowColor' + id);
+                    this.badgeColor = document.getElementById('badgeColor' + id);
+                    this.crownList = document.getElementById('crownList' + id);
+                    this.status = document.getElementById('status' + id);
+                    this.init();
                 }
-            }
 
-            // ─── حفظ إلى الخادم ───
-            async saveToServer() {
-                try {
-                    const payload = {};
-                    const key = this.id === 1 ? 'overlay1' : 'overlay2';
-                    payload[key] = {
-                        title: this.titleInput.value,
-                        names: this.namesInput.value,
-                        theme: this.themeSelect.value,
-                        glowColor: this.glowColor.value,
-                        badgeColor: this.badgeColor.value,
-                        crowns: Array.from(this.crownedIndices)
-                    };
-                    const res = await fetch(API_BASE + '/api/overlay-settings', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        credentials: 'include',
-                        body: JSON.stringify(payload)
-                    });
-                    if (!res.ok) throw new Error(await res.text());
-                    const data = await res.json();
-                    if (!data.success) throw new Error(data.message);
-                    this.status.textContent = '✓ تم الحفظ';
-                    clearTimeout(this._statusTimer);
-                    this._statusTimer = setTimeout(() => { this.status.textContent = ''; }, 1500);
-                } catch (err) {
-                    console.error('❌ فشل الحفظ:', err);
-                    this.status.textContent = '⚠️ فشل الحفظ';
+                async init() {
+                    await this.loadFromServer();
+                    this.bindEvents();
+                    this.renderCrowns();
                 }
-            }
 
-            // ─── تبديل التاج ───
-            toggleCrown(idx) {
-                if (this.crownedIndices.has(idx)) {
-                    this.crownedIndices.delete(idx);
-                } else {
-                    this.crownedIndices.add(idx);
+                async loadFromServer() {
+                    try {
+                        const res = await fetch(API_BASE + '/api/overlay-settings', { credentials: 'include' });
+                        if (!res.ok) throw new Error(await res.text());
+                        const data = await res.json();
+                        if (!data.success) throw new Error(data.message);
+                        const settings = data.settings;
+                        const overlay = this.id === 1 ? settings.overlay1 : settings.overlay2;
+                        this.titleInput.value = overlay.title || '';
+                        this.namesInput.value = overlay.names || '';
+                        this.themeSelect.value = overlay.theme || (this.id === 1 ? 'theme-neon' : 'theme-gold');
+                        this.glowColor.value = overlay.glowColor || (this.id === 1 ? '#00ffe1' : '#ffcc00');
+                        this.badgeColor.value = overlay.badgeColor || (this.id === 1 ? '#ff0055' : '#a855f7');
+                        this.crownedIndices = new Set(overlay.crowns || []);
+                        this.renderCrowns();
+                        this.status.textContent = '✓ تم التحميل';
+                    } catch (err) {
+                        console.error('❌ فشل تحميل الإعدادات:', err);
+                        this.status.textContent = '⚠️ فشل التحميل، استخدم الإعدادات المحلية';
+                    }
                 }
-                this.updateCrownsUI();
-                this.saveToServer();
-            }
 
-            // ─── تحديث واجهة الأزرار ───
-            updateCrownsUI() {
-                const names = this.namesInput.value.split('\\n').filter(s => s.trim() !== '');
-                this.crownList.innerHTML = '';
-                if (names.length === 0) {
-                    const msg = document.createElement('span');
-                    msg.className = 'empty-msg';
-                    msg.textContent = 'لا توجد أسماء — أضف أسماء في الحقل أعلاه';
-                    msg.style.cssText = 'font-size:0.7rem; color:#666688;';
-                    this.crownList.appendChild(msg);
-                    return;
+                async saveToServer() {
+                    try {
+                        const payload = {};
+                        const key = this.id === 1 ? 'overlay1' : 'overlay2';
+                        payload[key] = {
+                            title: this.titleInput.value,
+                            names: this.namesInput.value,
+                            theme: this.themeSelect.value,
+                            glowColor: this.glowColor.value,
+                            badgeColor: this.badgeColor.value,
+                            crowns: Array.from(this.crownedIndices)
+                        };
+                        const res = await fetch(API_BASE + '/api/overlay-settings', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include',
+                            body: JSON.stringify(payload)
+                        });
+                        if (!res.ok) throw new Error(await res.text());
+                        const data = await res.json();
+                        if (!data.success) throw new Error(data.message);
+                        this.status.textContent = '✓ تم الحفظ';
+                        clearTimeout(this._statusTimer);
+                        this._statusTimer = setTimeout(() => { this.status.textContent = ''; }, 1500);
+                    } catch (err) {
+                        console.error('❌ فشل الحفظ:', err);
+                        this.status.textContent = '⚠️ فشل الحفظ';
+                    }
                 }
-                names.forEach((name, idx) => {
-                    const btn = document.createElement('button');
-                    const isCrowned = this.crownedIndices.has(idx);
-                    btn.className = 'crown-item-btn ' + (isCrowned ? 'active' : '');
-                    btn.textContent = (isCrowned ? '👑' : '⚪') + ' ' + name.trim();
-                    btn.addEventListener('click', () => this.toggleCrown(idx));
-                    this.crownList.appendChild(btn);
-                });
-            }
 
-            // ─── ربط الأحداث ───
-            bindEvents() {
-                const saveable = [
-                    this.titleInput,
-                    this.themeSelect,
-                    this.glowColor,
-                    this.badgeColor,
-                ];
-                saveable.forEach(el => {
-                    el.addEventListener('input', () => this.saveToServer());
-                    el.addEventListener('change', () => this.saveToServer());
-                });
-                this.namesInput.addEventListener('input', () => {
-                    this.updateCrownsUI();
+                toggleCrown(idx) {
+                    if (this.crownedIndices.has(idx)) this.crownedIndices.delete(idx);
+                    else this.crownedIndices.add(idx);
+                    this.renderCrowns();
                     this.saveToServer();
-                });
-            }
-        }
+                }
 
-        // ─── إنشاء الكائنات ───
-        new OverlayController(1);
-        new OverlayController(2);
-    })();
-</script>
+                renderCrowns() {
+                    const names = this.namesInput.value.split('\\n').filter(s => s.trim() !== '');
+                    this.crownList.innerHTML = '';
+                    if (names.length === 0) {
+                        const msg = document.createElement('span');
+                        msg.className = 'empty-msg';
+                        msg.textContent = 'لا توجد أسماء — أضف أسماء في الحقل أعلاه';
+                        this.crownList.appendChild(msg);
+                        return;
+                    }
+                    names.forEach((name, idx) => {
+                        const btn = document.createElement('button');
+                        const isCrowned = this.crownedIndices.has(idx);
+                        btn.className = 'crown-item-btn ' + (isCrowned ? 'active' : '');
+                        btn.textContent = (isCrowned ? '👑' : '⚪') + ' ' + name.trim();
+                        btn.addEventListener('click', () => this.toggleCrown(idx));
+                        this.crownList.appendChild(btn);
+                    });
+                }
+
+                bindEvents() {
+                    const saveable = [this.titleInput, this.themeSelect, this.glowColor, this.badgeColor];
+                    saveable.forEach(el => {
+                        el.addEventListener('input', () => this.saveToServer());
+                        el.addEventListener('change', () => this.saveToServer());
+                    });
+                    this.namesInput.addEventListener('input', () => {
+                        this.renderCrowns();
+                        this.saveToServer();
+                    });
+                }
+            }
+
+            new Controller(1);
+            new Controller(2);
+        })();
+    </script>
 </body>
-</html>
-    `;
+</html>`;
 
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(html);
@@ -6288,6 +6273,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
     res.status(500).send("حدث خطأ في الخادم");
   }
 });
+
 // ================ بدء الخادم ================
 server.listen(PORT, "0.0.0.0", () => {
   logger.info(`✅ السيرفر يعمل على المنفذ ${PORT}`);
