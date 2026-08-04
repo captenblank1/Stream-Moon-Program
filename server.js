@@ -6340,7 +6340,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                         this.badgeColor.value = overlay.badgeColor || (this.id === 1 ? '#ff0055' : '#a855f7');
                         this.crownedIndices = new Set(overlay.crowns || []);
                         this.renderCrowns();
-                        this.status.textContent = '✓ تم التحميل';
+                        this.status.textContent = '';
                     } catch (err) {
                         console.error('❌ فشل تحميل الإعدادات:', err);
                         this.status.textContent = '⚠️ فشل التحميل، استخدم الإعدادات المحلية';
