@@ -1349,9 +1349,8 @@ async function executeAction(
   userId,
   data = null,
   source = "auto",
-  eventId = null, // معرف فريد للحدث للتتبع
+  eventId = null,
 ) {
-  // سجل بداية التنفيذ مع eventId إن وجد
   console.log(
     `⚡ [EXECUTE] eventId=${eventId || "manual"}, cmd=${
       cmdObj.name || cmdObj._id
@@ -1413,7 +1412,7 @@ async function executeAction(
     }
   }
 
-  // oncePerLive (باستخدام Map دائم)
+  // oncePerLive
   if (oncePerLive && _id && userId) {
     const key = `${userId}:${String(_id)}`;
     if (state.oncePerLiveMap.has(key)) {
@@ -1425,7 +1424,13 @@ async function executeAction(
     state.oncePerLiveMap.set(key, true);
   }
 
-  // تشغيل الصوت فوراً
+  // ========== 1. التأخير أولاً ==========
+  if (delayBefore > 0) {
+    console.log(`⏳ تأخير ${delayBefore} مللي قبل التنفيذ...`);
+    await new Promise((resolve) => setTimeout(resolve, delayBefore));
+  }
+
+  // ========== 2. تشغيل الصوت (مرة واحدة فقط) ==========
   if (playSound && audio) {
     const giftId = cmdObj.giftId || cmdObj._id || "default";
     const sendToUser = source === "manual";
@@ -1439,12 +1444,7 @@ async function executeAction(
     );
   }
 
-  // التأخير
-  if (delayBefore > 0) {
-    await new Promise((resolve) => setTimeout(resolve, delayBefore));
-  }
-
-  // تشغيل الفيديو
+  // ========== 3. تشغيل الفيديو والتراكب (مرة واحدة فقط) ==========
   if (playVideo && video && userId) {
     let videoUrl = video;
     try {
@@ -1478,7 +1478,6 @@ async function executeAction(
     }
   }
 
-  // التراكب
   if (cmdObj.showOverlay && userId) {
     const overlayPayload = {
       username: realName,
@@ -1500,13 +1499,17 @@ async function executeAction(
     }
   }
 
-  // تنفيذ الأوامر والكيستروك والويبهوك
-  for (let i = 0; i < repeat; i++) {
+  // ========== 4. حلقة التكرار (للكيستروك، RCON، ويب هوك فقط) ==========
+  // نضمن أن repeat لا يقل عن 1 لتنفيذ الأوامر على الأقل مرة واحدة
+  const finalRepeat = Math.max(1, repeat);
+  console.log(`🔄 [EXECUTE] finalRepeat = ${finalRepeat} (original repeat = ${repeat})`);
+
+  for (let i = 0; i < finalRepeat; i++) {
     if (i > 0 && interval > 0) {
       await new Promise((r) => setTimeout(r, interval));
     }
 
-    // الكيستروك: يُرسل فقط إذا لم يكن هناك أمر RCON (command فارغ)
+    // الكيستروك
     if (keystrokeText && !command) {
       const finalKeystroke = replacePlaceholders(
         keystrokeText,
@@ -1515,7 +1518,7 @@ async function executeAction(
         "",
       );
       console.log(
-        `⌨️ [KEYSTROKE] eventId=${eventId}, keys="${finalKeystroke}"`,
+        `⌨️ [KEYSTROKE] eventId=${eventId}, iteration=${i+1}, keys="${finalKeystroke}"`,
       );
       const agentSocket = state.userLocalAgents.get(userId.toString());
       if (agentSocket && agentSocket.connected) {
@@ -1533,7 +1536,7 @@ async function executeAction(
     // أوامر RCON
     if (command && command.trim()) {
       console.log(
-        `📟 [RCON] eventId=${eventId}, command="${command.substring(0, 50)}..."`,
+        `📟 [RCON] eventId=${eventId}, iteration=${i+1}, command="${command.substring(0, 50)}..."`,
       );
       const lines = command
         .split(/\r?\n/)
@@ -1578,14 +1581,13 @@ async function executeAction(
       }
     }
 
-    // داخل executeAction، قبل sendWebhook
+    // ويب هوك
     if (webhookUrl && webhookUrl.trim()) {
-      // استبدال المتغيرات في الرابط
       let processedWebhookUrl = replacePlaceholders(
         webhookUrl,
-        realName, // nickname
-        triggerUser, // username
-        "", // rconPlayer (غير مستخدم هنا)
+        realName,
+        triggerUser,
+        "",
       );
 
       const webhookData = {
