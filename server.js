@@ -6014,6 +6014,7 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
     res.status(500).send("خطأ في الخادم");
   }
 });
+
 app.get("/dashboard", authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -6135,6 +6136,15 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
         .color-item input[type="color"] { border: none; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; background: none; padding: 0; }
         .color-item span { font-size: 0.7rem; color: #a0a0c0; }
         .status { font-size: 0.75rem; color: #10b981; text-align: center; height: 20px; line-height: 20px; }
+        .panel-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: flex-end; margin-top: 6px; }
+        .reset-btn {
+            background: #ff4444; color: #fff; border: none;
+            padding: 6px 16px; border-radius: 6px;
+            font-weight: 700; font-size: 0.8rem;
+            cursor: pointer; transition: 0.2s;
+            font-family: 'Cairo', sans-serif;
+        }
+        .reset-btn:hover { opacity: 0.8; transform: scale(0.97); }
         @media (max-width: 720px) { .control-grid { grid-template-columns: 1fr; } .header-title { font-size: 1.3rem; } }
         .crown-selector-list::-webkit-scrollbar { width: 4px; }
         .crown-selector-list::-webkit-scrollbar-track { background: transparent; }
@@ -6193,7 +6203,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                 </div>
                 <div class="status" id="status1"></div>
             </div>
-            <!-- Panel 2 -->
+            <!-- Panel 2 (مع زر إعادة الضبط) -->
             <div class="panel panel-2">
                 <h2>⭐ القائمة الثانية</h2>
                 <div class="link-box">
@@ -6228,6 +6238,9 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                         <div class="color-item"><input type="color" id="badgeColor2" value="#a855f7"><span>الأرقام</span></div>
                     </div>
                 </div>
+                <div class="panel-actions">
+                    <button class="reset-btn" data-overlay="2">🔄 إعادة ضبط</button>
+                </div>
                 <div class="status" id="status2"></div>
             </div>
         </div>
@@ -6236,8 +6249,8 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
 
     <script>
         (function() {
-            // ✅ رابط الباكند الأساسي
             const API_BASE = '${API_BASE}';
+            const controllers = [];
             
             let toastTimeout;
             function showToast(msg) {
@@ -6284,7 +6297,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                 })
                 .catch(() => showToast('❌ خطأ في الاتصال بالخادم'));
 
-            // ─── فئة التحكم (تستخدم API) ───
+            // ─── فئة التحكم ───
             class Controller {
                 constructor(id) {
                     this.id = id;
@@ -6397,8 +6410,48 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                 }
             }
 
-            new Controller(1);
-            new Controller(2);
+            // ─── إنشاء المتحكمين ───
+            const ctrl1 = new Controller(1);
+            const ctrl2 = new Controller(2);
+            controllers.push(ctrl1, ctrl2);
+
+            // ─── زر إعادة الضبط ───
+            document.querySelector('.reset-btn').addEventListener('click', function() {
+                const id = parseInt(this.dataset.overlay);
+                resetOverlay(id);
+            });
+
+            function resetOverlay(id) {
+                const defaults = {
+                    1: { title: '🏆 قائمة الأساطير', names: '', theme: 'theme-neon', glowColor: '#00ffe1', badgeColor: '#ff0055', crowns: [] },
+                    2: { title: '🔥 كبار الداعمين', names: '', theme: 'theme-gold', glowColor: '#ffcc00', badgeColor: '#a855f7', crowns: [] }
+                };
+                const payload = {};
+                const key = id === 1 ? 'overlay1' : 'overlay2';
+                payload[key] = defaults[id];
+                
+                fetch(API_BASE + '/api/overlay-settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify(payload)
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast('✅ تم إعادة ضبط القائمة ' + id + ' إلى الإعدادات الافتراضية');
+                        // إعادة تحميل الإعدادات للمتحكم المطابق
+                        const ctrl = controllers[id-1];
+                        if (ctrl) ctrl.loadFromServer();
+                    } else {
+                        showToast('❌ فشل إعادة الضبط: ' + (data.message || ''));
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    showToast('❌ خطأ في الاتصال بالخادم');
+                });
+            }
         })();
     </script>
 </body>
