@@ -5760,6 +5760,14 @@ app.post("/api/overlay-settings", authenticateToken, async (req, res) => {
     if (overlay1) Object.assign(settings.overlay1, overlay1);
     if (overlay2) Object.assign(settings.overlay2, overlay2);
     await settings.save();
+
+    // 🔔 بث التحديث إلى جميع شاشات هذا المستخدم
+    const userId = req.user.id;
+    io.to(`screen-${userId}`).emit("overlay-updated", {
+      overlay1: settings.overlay1,
+      overlay2: settings.overlay2,
+    });
+
     res.json({ success: true, settings });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -5803,11 +5811,11 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
       );
     }
 
-    function nameListHTML() {
-      const items = names.split("\n").filter((n) => n.trim() !== "");
+    function nameListHTML(namesArr, crownsArr) {
+      const items = namesArr.split("\n").filter((n) => n.trim() !== "");
       if (!items.length)
         return '<div style="color:#888;text-align:center;padding:10px;">لا توجد أسماء</div>';
-      const crownSet = new Set(crowns);
+      const crownSet = new Set(crownsArr);
       return items
         .map(
           (n, i) => `
@@ -5856,8 +5864,128 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
 <body>
   <div class="overlay-box ${theme}">
     <div class="overlay-header"><h2>${escape(title)}</h2></div>
-    <div class="overlay-list">${nameListHTML()}</div>
+    <div class="overlay-list">${nameListHTML(names, crowns)}</div>
   </div>
+
+  <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
+  <script>
+    (function() {
+      // الإعدادات الأولية
+      const initialSettings = {
+        title: ${JSON.stringify(title)},
+        names: ${JSON.stringify(names)},
+        theme: ${JSON.stringify(theme)},
+        glow: ${JSON.stringify(glow)},
+        badge: ${JSON.stringify(badge)},
+        crowns: ${JSON.stringify(crowns)}
+      };
+
+      let currentSettings = JSON.parse(JSON.stringify(initialSettings));
+
+      // دالة لتحديث الواجهة
+      function updateOverlay(settings) {
+        // تحديث العنوان
+        const titleEl = document.querySelector('.overlay-header h2');
+        if (titleEl) titleEl.textContent = settings.title;
+
+        // تحديث قائمة الأسماء
+        const list = document.querySelector('.overlay-list');
+        if (!list) return;
+        const items = settings.names.split('\\n').filter(s => s.trim() !== '');
+        const crownSet = new Set(settings.crowns);
+        let html = '';
+        if (items.length === 0) {
+          html = '<div style="color:#888;text-align:center;padding:10px;">لا توجد أسماء</div>';
+        } else {
+          items.forEach((name, i) => {
+            html += \`
+              <div class="name-card">
+                <div class="name-info">
+                  <div class="badge-num">\${i+1}</div>
+                  <span class="name-text">\${escapeHtml(name.trim())}</span>
+                </div>
+                \${crownSet.has(i) ? '<span class="crown-icon">👑</span>' : ''}
+              </div>
+            \`;
+          });
+        }
+        list.innerHTML = html;
+
+        // تحديث الثيم
+        const box = document.querySelector('.overlay-box');
+        if (box) {
+          // إزالة جميع الثيمات السابقة
+          box.className = box.className.split(' ').filter(c => !c.startsWith('theme-')).join(' ');
+          box.classList.add(settings.theme);
+          box.style.borderColor = settings.glow;
+        }
+
+        // تحديث لون العنوان
+        const titleEl2 = document.querySelector('.overlay-header h2');
+        if (titleEl2) titleEl2.style.color = settings.glow;
+
+        // تحديث ألوان البادج والحدود
+        document.querySelectorAll('.badge-num').forEach(el => {
+          el.style.background = \`linear-gradient(135deg, \${settings.badge}, #ff5500)\`;
+        });
+        document.querySelectorAll('.name-card').forEach(el => {
+          el.style.borderColor = settings.badge;
+        });
+
+        // تخزين الإعدادات الحالية
+        currentSettings = settings;
+      }
+
+      // دالة escapeHtml
+      function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>"]/g, function(m) {
+          if (m === '&') return '&amp;';
+          if (m === '<') return '&lt;';
+          if (m === '>') return '&gt;';
+          if (m === '"') return '&quot;';
+          return m;
+        });
+      }
+
+      // الاتصال بـ Socket.IO
+      const socket = io(window.location.origin, {
+        query: { token: ${JSON.stringify(token)} },
+        transports: ['websocket', 'polling']
+      });
+
+      socket.on('connect', function() {
+        console.log('✅ Overlay socket connected');
+      });
+
+      // استماع حدث تحديث الإعدادات
+      socket.on('overlay-updated', function(newSettings) {
+        console.log('🔄 استلام تحديث الإعدادات:', newSettings);
+        // دمج الإعدادات الجديدة مع الإعدادات الحالية (لضمان وجود جميع الحقول)
+        const merged = Object.assign({}, currentSettings, newSettings);
+        updateOverlay(merged);
+      });
+
+      // الاستماع لأحداث الصوت والفيديو والتراكب (موجودة بالفعل في الـ script الأصلي)
+      // لكننا نحتاج إلى الاحتفاظ بها، لذا سنضيفها هنا أيضاً
+      socket.on('play-sound', (payload) => {
+        // تنفيذ تشغيل الصوت (يمكنك نسخ الكود من الـ script الأصلي)
+        console.log('🔊 play-sound', payload);
+      });
+
+      socket.on('gift-video', (data) => {
+        console.log('🎬 gift-video', data);
+      });
+
+      socket.on('show-overlay', (data) => {
+        console.log('📢 show-overlay', data);
+      });
+
+      socket.on('connect_error', (err) => console.warn('socket connect_error', err));
+
+      // يمكنك إضافة أحداث أخرى هنا
+    })();
+  </script>
 </body>
 </html>`;
 
