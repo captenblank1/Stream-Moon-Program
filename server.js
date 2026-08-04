@@ -5869,29 +5869,21 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
   }
 });
 
-// لوحة التحكم (تأكد من وجود ملف dashboard.html في مجلد public)
 app.get("/dashboard", authenticateToken, async (req, res) => {
   const filePath = path.join(__dirname, "public", "dashboard.html");
 
-  // محاولة إرسال الملف إذا كان موجوداً
   if (fs.existsSync(filePath)) {
     return res.sendFile(filePath);
   }
 
-  // ─── إذا لم يكن الملف موجوداً، نولّد صفحة ديناميكية ───
   try {
-    // جلب بيانات المستخدم والإعدادات (اختياري لعرضها)
     const user = await User.findById(req.user.id);
     const settings = await OverlaySettings.findOne({ userId: req.user.id });
 
-    // نمرر data إلى القالب (يمكن استخدامها داخل HTML)
-    const userData = {
-      email: user.email,
-      plan: user.plan,
-      screenToken: user.screenToken,
-    };
+    // ✅ [التعديل الجديد] تحديد رابط الباكند الأساسي
+    const API_BASE =
+      process.env.API_BASE || `${req.protocol}://${req.get("host")}`;
 
-    // توليد HTML للوحة التحكم (مضمّن هنا بدلاً من ملف)
     const html = `
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -6102,7 +6094,9 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
 
 <script>
     (function() {
-        // ─── عرض رسالة منبثقة ───
+        // ✅ [التعديل الجديد] تحديد الرابط الأساسي للباكند
+        const API_BASE = '${API_BASE}';
+
         let toastTimeout;
         function showToast(msg) {
             const el = document.getElementById('toast');
@@ -6114,7 +6108,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
 
         // ─── جلب رمز المستخدم (screenToken) لبناء الرابط ───
         let screenToken = '';
-        fetch('/api/user/screen-token', { credentials: 'include' })
+        fetch(API_BASE + '/api/user/screen-token', { credentials: 'include' })
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
@@ -6174,7 +6168,8 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
             // ─── تحميل من الخادم ───
             async loadFromServer() {
                 try {
-                    const res = await fetch('/api/overlay-settings', { credentials: 'include' });
+                    const res = await fetch(API_BASE + '/api/overlay-settings', { credentials: 'include' });
+                    if (!res.ok) throw new Error(await res.text());
                     const data = await res.json();
                     if (!data.success) throw new Error(data.message);
                     const settings = data.settings;
@@ -6206,12 +6201,13 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                             crowns: Array.from(this.crownedIndices)
                         }
                     };
-                    const res = await fetch('/api/overlay-settings', {
+                    const res = await fetch(API_BASE + '/api/overlay-settings', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         credentials: 'include',
                         body: JSON.stringify(payload)
                     });
+                    if (!res.ok) throw new Error(await res.text());
                     const data = await res.json();
                     if (!data.success) throw new Error(data.message);
                     this.status.textContent = '✓ تم الحفظ';
@@ -6291,6 +6287,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
     res.status(500).send("حدث خطأ في الخادم");
   }
 });
+
 // ================ بدء الخادم ================
 server.listen(PORT, "0.0.0.0", () => {
   logger.info(`✅ السيرفر يعمل على المنفذ ${PORT}`);
