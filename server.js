@@ -5386,12 +5386,10 @@ app.post(
       }
       // لا يمكن إزالة صلاحية المدير عن نفسه (اختياري ولكن مفيد)
       if (user._id.toString() === req.user.id) {
-        return res
-          .status(403)
-          .json({
-            success: false,
-            message: "لا يمكنك إزالة صلاحية المدير عن نفسك",
-          });
+        return res.status(403).json({
+          success: false,
+          message: "لا يمكنك إزالة صلاحية المدير عن نفسك",
+        });
       }
       user.role = "user";
       await user.save();
@@ -5710,28 +5708,36 @@ app.post("/api/agent/exchange-binding", async (req, res) => {
 
 // ========== نظام الـ Overlay الديناميكي ==========
 const overlaySettingsSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
+    unique: true,
+  },
   overlay1: {
-    title:    { type: String, default: '🏆 قائمة الأساطير' },
-    names:    { type: String, default: '' },
-    theme:    { type: String, default: 'theme-neon' },
-    glowColor:{ type: String, default: '#00ffe1' },
-    badgeColor:{ type: String, default: '#ff0055' },
-    crowns:   { type: [Number], default: [] }
+    title: { type: String, default: "🏆 قائمة الأساطير" },
+    names: { type: String, default: "" },
+    theme: { type: String, default: "theme-neon" },
+    glowColor: { type: String, default: "#00ffe1" },
+    badgeColor: { type: String, default: "#ff0055" },
+    crowns: { type: [Number], default: [] },
   },
   overlay2: {
-    title:    { type: String, default: '🔥 كبار الداعمين' },
-    names:    { type: String, default: '' },
-    theme:    { type: String, default: 'theme-gold' },
-    glowColor:{ type: String, default: '#ffcc00' },
-    badgeColor:{ type: String, default: '#a855f7' },
-    crowns:   { type: [Number], default: [] }
-  }
+    title: { type: String, default: "🔥 كبار الداعمين" },
+    names: { type: String, default: "" },
+    theme: { type: String, default: "theme-gold" },
+    glowColor: { type: String, default: "#ffcc00" },
+    badgeColor: { type: String, default: "#a855f7" },
+    crowns: { type: [Number], default: [] },
+  },
 });
-const OverlaySettings = mongoose.model('OverlaySettings', overlaySettingsSchema);
+const OverlaySettings = mongoose.model(
+  "OverlaySettings",
+  overlaySettingsSchema,
+);
 
 // API
-app.get('/api/overlay-settings', authenticateToken, async (req, res) => {
+app.get("/api/overlay-settings", authenticateToken, async (req, res) => {
   try {
     let settings = await OverlaySettings.findOne({ userId: req.user.id });
     if (!settings) {
@@ -5744,7 +5750,7 @@ app.get('/api/overlay-settings', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/api/overlay-settings', authenticateToken, async (req, res) => {
+app.post("/api/overlay-settings", authenticateToken, async (req, res) => {
   try {
     const { overlay1, overlay2 } = req.body;
     let settings = await OverlaySettings.findOne({ userId: req.user.id });
@@ -5761,13 +5767,14 @@ app.post('/api/overlay-settings', authenticateToken, async (req, res) => {
 });
 
 // المسار الديناميكي
-app.get('/overlay/:token/:overlayId', async (req, res) => {
+app.get("/overlay/:token/:overlayId", async (req, res) => {
   try {
     const { token, overlayId } = req.params;
-    if (overlayId !== '1' && overlayId !== '2') return res.status(404).send('غير موجود');
+    if (overlayId !== "1" && overlayId !== "2")
+      return res.status(404).send("غير موجود");
 
     const user = await User.findOne({ screenToken: token });
-    if (!user) return res.status(404).send('رمز غير صالح');
+    if (!user) return res.status(404).send("رمز غير صالح");
 
     let settings = await OverlaySettings.findOne({ userId: user._id });
     if (!settings) {
@@ -5775,32 +5782,45 @@ app.get('/overlay/:token/:overlayId', async (req, res) => {
       await settings.save();
     }
 
-    const overlay = overlayId === '1' ? settings.overlay1 : settings.overlay2;
-    const title = overlay.title || (overlayId === '1' ? '🏆 قائمة الأساطير' : '🔥 كبار الداعمين');
-    const names = overlay.names || '';
-    const theme = overlay.theme || (overlayId === '1' ? 'theme-neon' : 'theme-gold');
-    const glow = overlay.glowColor || (overlayId === '1' ? '#00ffe1' : '#ffcc00');
-    const badge = overlay.badgeColor || (overlayId === '1' ? '#ff0055' : '#a855f7');
+    const overlay = overlayId === "1" ? settings.overlay1 : settings.overlay2;
+    const title =
+      overlay.title ||
+      (overlayId === "1" ? "🏆 قائمة الأساطير" : "🔥 كبار الداعمين");
+    const names = overlay.names || "";
+    const theme =
+      overlay.theme || (overlayId === "1" ? "theme-neon" : "theme-gold");
+    const glow =
+      overlay.glowColor || (overlayId === "1" ? "#00ffe1" : "#ffcc00");
+    const badge =
+      overlay.badgeColor || (overlayId === "1" ? "#ff0055" : "#a855f7");
     const crowns = overlay.crowns || [];
 
     function escape(text) {
-      if (!text) return '';
-      return text.replace(/[&<>"]/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[m]));
+      if (!text) return "";
+      return text.replace(
+        /[&<>"]/g,
+        (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[m],
+      );
     }
 
     function nameListHTML() {
-      const items = names.split('\n').filter(n => n.trim() !== '');
-      if (!items.length) return '<div style="color:#888;text-align:center;padding:10px;">لا توجد أسماء</div>';
+      const items = names.split("\n").filter((n) => n.trim() !== "");
+      if (!items.length)
+        return '<div style="color:#888;text-align:center;padding:10px;">لا توجد أسماء</div>';
       const crownSet = new Set(crowns);
-      return items.map((n, i) => `
+      return items
+        .map(
+          (n, i) => `
         <div class="name-card">
           <div class="name-info">
-            <div class="badge-num">${i+1}</div>
+            <div class="badge-num">${i + 1}</div>
             <span class="name-text">${escape(n.trim())}</span>
           </div>
-          ${crownSet.has(i) ? '<span class="crown-icon">👑</span>' : ''}
+          ${crownSet.has(i) ? '<span class="crown-icon">👑</span>' : ""}
         </div>
-      `).join('');
+      `,
+        )
+        .join("");
     }
 
     const html = `<!DOCTYPE html>
@@ -5841,18 +5861,18 @@ app.get('/overlay/:token/:overlayId', async (req, res) => {
 </body>
 </html>`;
 
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(html);
   } catch (err) {
-    console.error('Overlay error:', err);
-    res.status(500).send('خطأ في الخادم');
+    console.error("Overlay error:", err);
+    res.status(500).send("خطأ في الخادم");
   }
 });
 
 // لوحة التحكم (تأكد من وجود ملف dashboard.html في مجلد public)
-app.get('/dashboard', authenticateToken, async (req, res) => {
-  const filePath = path.join(__dirname, 'public', 'dashboard.html');
-  
+app.get("/dashboard", authenticateToken, async (req, res) => {
+  const filePath = path.join(__dirname, "public", "dashboard.html");
+
   // محاولة إرسال الملف إذا كان موجوداً
   if (fs.existsSync(filePath)) {
     return res.sendFile(filePath);
@@ -5863,7 +5883,7 @@ app.get('/dashboard', authenticateToken, async (req, res) => {
     // جلب بيانات المستخدم والإعدادات (اختياري لعرضها)
     const user = await User.findById(req.user.id);
     const settings = await OverlaySettings.findOne({ userId: req.user.id });
-    
+
     // نمرر data إلى القالب (يمكن استخدامها داخل HTML)
     const userData = {
       email: user.email,
@@ -6264,11 +6284,11 @@ app.get('/dashboard', authenticateToken, async (req, res) => {
 </html>
     `;
 
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(html);
   } catch (err) {
-    logger.error('❌ خطأ في توليد لوحة التحكم:', err.message);
-    res.status(500).send('حدث خطأ في الخادم');
+    logger.error("❌ خطأ في توليد لوحة التحكم:", err.message);
+    res.status(500).send("حدث خطأ في الخادم");
   }
 });
 // ================ بدء الخادم ================
