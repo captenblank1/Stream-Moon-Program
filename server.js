@@ -5872,6 +5872,7 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
 app.get("/dashboard", authenticateToken, async (req, res) => {
   const filePath = path.join(__dirname, "public", "dashboard.html");
 
+  // إذا كان الملف موجوداً، أرسله (للتوافق مع الإصدارات القديمة)
   if (fs.existsSync(filePath)) {
     return res.sendFile(filePath);
   }
@@ -5880,7 +5881,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
     const user = await User.findById(req.user.id);
     const settings = await OverlaySettings.findOne({ userId: req.user.id });
 
-    // ✅ [التعديل الجديد] تحديد رابط الباكند الأساسي
+    // ✅ تحديد رابط الباكند الأساسي
     const API_BASE =
       process.env.API_BASE || `${req.protocol}://${req.get("host")}`;
 
@@ -6094,7 +6095,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
 
 <script>
     (function() {
-        // ✅ [التعديل الجديد] تحديد الرابط الأساسي للباكند
+        // ✅ تحديد الرابط الأساسي للباكند (يُمرر من السيرفر)
         const API_BASE = '${API_BASE}';
 
         let toastTimeout;
@@ -6113,9 +6114,9 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
             .then(data => {
                 if (data.success) {
                     screenToken = data.token;
-                    const base = window.location.origin;
-                    document.getElementById('linkDisplay1').textContent = \`\${base}/overlay/\${screenToken}/1\`;
-                    document.getElementById('linkDisplay2').textContent = \`\${base}/overlay/\${screenToken}/2\`;
+                    // ✅ التعديل: استخدم API_BASE بدلاً من window.location.origin
+                    document.getElementById('linkDisplay1').textContent = API_BASE + '/overlay/' + screenToken + '/1';
+                    document.getElementById('linkDisplay2').textContent = API_BASE + '/overlay/' + screenToken + '/2';
                 } else {
                     showToast('❌ فشل في جلب رمز الشاشة، تأكد من تسجيل الدخول');
                 }
@@ -6126,11 +6127,11 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
         document.querySelectorAll('.copy-btn').forEach(btn => {
             btn.addEventListener('click', function() {
                 const id = this.dataset.overlay;
-                const linkEl = document.getElementById(\`linkDisplay\${id}\`);
+                const linkEl = document.getElementById('linkDisplay' + id);
                 if (!linkEl) return;
                 const url = linkEl.textContent;
                 navigator.clipboard.writeText(url).then(() => {
-                    showToast(\`✅ تم نسخ الرابط!\\n\${url}\`);
+                    showToast('✅ تم نسخ الرابط!\\n' + url);
                 }).catch(() => {
                     const dummy = document.createElement('input');
                     dummy.value = url;
@@ -6138,7 +6139,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                     dummy.select();
                     document.execCommand('copy');
                     dummy.remove();
-                    showToast(\`✅ تم النسخ (احتياطي):\\n\${url}\`);
+                    showToast('✅ تم النسخ (احتياطي):\\n' + url);
                 });
             });
         });
@@ -6148,13 +6149,13 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
             constructor(id) {
                 this.id = id;
                 this.crownedIndices = new Set();
-                this.titleInput = document.getElementById(\`titleInput\${id}\`);
-                this.namesInput = document.getElementById(\`namesInput\${id}\`);
-                this.themeSelect = document.getElementById(\`themeSelect\${id}\`);
-                this.glowColor = document.getElementById(\`glowColor\${id}\`);
-                this.badgeColor = document.getElementById(\`badgeColor\${id}\`);
-                this.crownList = document.getElementById(\`crownList\${id}\`);
-                this.status = document.getElementById(\`status\${id}\`);
+                this.titleInput = document.getElementById('titleInput' + id);
+                this.namesInput = document.getElementById('namesInput' + id);
+                this.themeSelect = document.getElementById('themeSelect' + id);
+                this.glowColor = document.getElementById('glowColor' + id);
+                this.badgeColor = document.getElementById('badgeColor' + id);
+                this.crownList = document.getElementById('crownList' + id);
+                this.status = document.getElementById('status' + id);
                 this._saveTimer = null;
                 this.init();
             }
@@ -6191,15 +6192,15 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
             // ─── حفظ إلى الخادم ───
             async saveToServer() {
                 try {
-                    const payload = {
-                        [this.id === 1 ? 'overlay1' : 'overlay2']: {
-                            title: this.titleInput.value,
-                            names: this.namesInput.value,
-                            theme: this.themeSelect.value,
-                            glowColor: this.glowColor.value,
-                            badgeColor: this.badgeColor.value,
-                            crowns: Array.from(this.crownedIndices)
-                        }
+                    const payload = {};
+                    const key = this.id === 1 ? 'overlay1' : 'overlay2';
+                    payload[key] = {
+                        title: this.titleInput.value,
+                        names: this.namesInput.value,
+                        theme: this.themeSelect.value,
+                        glowColor: this.glowColor.value,
+                        badgeColor: this.badgeColor.value,
+                        crowns: Array.from(this.crownedIndices)
                     };
                     const res = await fetch(API_BASE + '/api/overlay-settings', {
                         method: 'POST',
@@ -6245,8 +6246,8 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                 names.forEach((name, idx) => {
                     const btn = document.createElement('button');
                     const isCrowned = this.crownedIndices.has(idx);
-                    btn.className = \`crown-item-btn \${isCrowned ? 'active' : ''}\`;
-                    btn.textContent = \`\${isCrowned ? '👑' : '⚪'} \${name.trim()}\`;
+                    btn.className = 'crown-item-btn ' + (isCrowned ? 'active' : '');
+                    btn.textContent = (isCrowned ? '👑' : '⚪') + ' ' + name.trim();
                     btn.addEventListener('click', () => this.toggleCrown(idx));
                     this.crownList.appendChild(btn);
                 });
@@ -6287,7 +6288,6 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
     res.status(500).send("حدث خطأ في الخادم");
   }
 });
-
 // ================ بدء الخادم ================
 server.listen(PORT, "0.0.0.0", () => {
   logger.info(`✅ السيرفر يعمل على المنفذ ${PORT}`);
