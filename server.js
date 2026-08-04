@@ -5959,12 +5959,29 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
       });
 
       // استماع حدث تحديث الإعدادات
-      socket.on('overlay-updated', function(newSettings) {
-        console.log('🔄 استلام تحديث الإعدادات:', newSettings);
-        // دمج الإعدادات الجديدة مع الإعدادات الحالية (لضمان وجود جميع الحقول)
-        const merged = Object.assign({}, currentSettings, newSettings);
-        updateOverlay(merged);
-      });
+socket.on('overlay-updated', function(newSettings) {
+  console.log('🔄 استلام تحديث الإعدادات:', newSettings);
+  
+  // تحديد أي من overlay1 أو overlay2 بناءً على رقم الشاشة
+  const overlayKey = overlayId === '1' ? 'overlay1' : 'overlay2';
+  const overlayData = newSettings[overlayKey];
+  
+  if (overlayData) {
+    // تحويل أسماء الحقول لتتوافق مع currentSettings و updateOverlay
+    const adapted = {
+      title: overlayData.title,
+      names: overlayData.names,
+      theme: overlayData.theme,
+      glow: overlayData.glowColor,      // glowColor ← glow
+      badge: overlayData.badgeColor,    // badgeColor ← badge
+      crowns: overlayData.crowns
+    };
+    
+    // دمج مع الإعدادات الحالية (الحفاظ على القيم غير المُرسلة)
+    const merged = Object.assign({}, currentSettings, adapted);
+    updateOverlay(merged);
+  }
+});
 
       // الاستماع لأحداث الصوت والفيديو والتراكب (موجودة بالفعل في الـ script الأصلي)
       // لكننا نحتاج إلى الاحتفاظ بها، لذا سنضيفها هنا أيضاً
