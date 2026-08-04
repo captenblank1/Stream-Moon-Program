@@ -6136,15 +6136,19 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
         .color-item input[type="color"] { border: none; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; background: none; padding: 0; }
         .color-item span { font-size: 0.7rem; color: #a0a0c0; }
         .status { font-size: 0.75rem; color: #10b981; text-align: center; height: 20px; line-height: 20px; }
-        .panel-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: flex-end; margin-top: 6px; }
+        .panel-actions { display: flex; justify-content: center; margin-top: 8px; }
         .reset-btn {
             background: #ff4444; color: #fff; border: none;
-            padding: 6px 16px; border-radius: 6px;
-            font-weight: 700; font-size: 0.8rem;
-            cursor: pointer; transition: 0.2s;
+            padding: 8px 24px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: 0.2s;
             font-family: 'Cairo', sans-serif;
+            box-shadow: 0 2px 8px rgba(255,68,68,0.3);
         }
-        .reset-btn:hover { opacity: 0.8; transform: scale(0.97); }
+        .reset-btn:hover { opacity: 0.85; transform: scale(0.98); }
         @media (max-width: 720px) { .control-grid { grid-template-columns: 1fr; } .header-title { font-size: 1.3rem; } }
         .crown-selector-list::-webkit-scrollbar { width: 4px; }
         .crown-selector-list::-webkit-scrollbar-track { background: transparent; }
@@ -6166,7 +6170,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
     <div class="app-wrapper">
         <h1 class="header-title">🎛️ لوحة تحكم الـ Overlays</h1>
         <div class="control-grid">
-            <!-- Panel 1 -->
+            <!-- Panel 1 (مع زر إعادة الضبط) -->
             <div class="panel panel-1">
                 <h2>🎮 القائمة الأولى</h2>
                 <div class="link-box">
@@ -6200,6 +6204,9 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                         <div class="color-item"><input type="color" id="glowColor1" value="#00ffe1"><span>التوهج</span></div>
                         <div class="color-item"><input type="color" id="badgeColor1" value="#ff0055"><span>الأرقام</span></div>
                     </div>
+                </div>
+                <div class="panel-actions">
+                    <button class="reset-btn" data-overlay="1">Reset 🔄</button>
                 </div>
                 <div class="status" id="status1"></div>
             </div>
@@ -6239,7 +6246,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                     </div>
                 </div>
                 <div class="panel-actions">
-                    <button class="reset-btn" data-overlay="2">🔄 إعادة ضبط</button>
+                    <button class="reset-btn" data-overlay="2">Reset 🔄</button>
                 </div>
                 <div class="status" id="status2"></div>
             </div>
@@ -6415,10 +6422,12 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
             const ctrl2 = new Controller(2);
             controllers.push(ctrl1, ctrl2);
 
-            // ─── زر إعادة الضبط ───
-            document.querySelector('.reset-btn').addEventListener('click', function() {
-                const id = parseInt(this.dataset.overlay);
-                resetOverlay(id);
+            // ─── ربط أزرار إعادة الضبط (كلاهما) ───
+            document.querySelectorAll('.reset-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const id = parseInt(this.dataset.overlay);
+                    resetOverlay(id);
+                });
             });
 
             function resetOverlay(id) {
