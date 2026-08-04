@@ -5933,6 +5933,10 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
           el.style.borderColor = settings.badge;
         });
 
+        // تحديث حجم الخط للعنوان والأسماء (يمكن إضافة حجم ثابت)
+        // لكننا نفضل تركه كما هو في الـ CSS الافتراضي (لأننا استخدمنا px)
+        // لذلك لا حاجة لتعديله هنا.
+
         // تخزين الإعدادات الحالية
         currentSettings = settings;
       }
@@ -5985,9 +5989,7 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
       });
 
       // الاستماع لأحداث الصوت والفيديو والتراكب (موجودة بالفعل في الـ script الأصلي)
-      // لكننا نحتاج إلى الاحتفاظ بها، لذا سنضيفها هنا أيضاً
       socket.on('play-sound', (payload) => {
-        // تنفيذ تشغيل الصوت (يمكنك نسخ الكود من الـ script الأصلي)
         console.log('🔊 play-sound', payload);
       });
 
@@ -6000,8 +6002,6 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
       });
 
       socket.on('connect_error', (err) => console.warn('socket connect_error', err));
-
-      // يمكنك إضافة أحداث أخرى هنا
     })();
   </script>
 </body>
@@ -6014,7 +6014,6 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
     res.status(500).send("خطأ في الخادم");
   }
 });
-
 app.get("/dashboard", authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -6030,24 +6029,134 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
     <title>لوحة تحكم الـ Overlay</title>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
     <style>
-        /* ... نفس الأنماط السابقة ... */
-        .reset-btn {
-            background: #ff4444; color: #fff; border: none;
-            padding: 6px 16px; border-radius: 6px;
-            font-weight: 700; font-size: 0.8rem;
-            cursor: pointer; transition: 0.2s;
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
             font-family: 'Cairo', sans-serif;
-            margin-top: 6px;
+            background-color: #090a0f;
+            color: #ffffff;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
-        .reset-btn:hover { opacity: 0.8; transform: scale(0.97); }
-        .panel-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: flex-end; margin-top: 8px; }
+        .app-wrapper { max-width: 1100px; width: 100%; }
+        .header-title {
+            text-align: center; margin-bottom: 28px;
+            font-size: 1.7rem; font-weight: 900;
+            background: linear-gradient(135deg, #00ffe1, #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 1px;
+        }
+        .control-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+        .panel {
+            background: #12131c;
+            border: 1px solid #26283b;
+            border-radius: 16px;
+            padding: 22px 20px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            transition: border-color 0.25s;
+        }
+        .panel-1 { border-top: 3px solid #00ffe1; }
+        .panel-2 { border-top: 3px solid #ffcc00; }
+        .panel h2 { font-size: 1.1rem; text-align: center; margin-bottom: 2px; letter-spacing: 0.5px; }
+        .panel-1 h2 { color: #00ffe1; }
+        .panel-2 h2 { color: #ffcc00; }
+
+        .link-box {
+            background: rgba(0, 255, 225, 0.05);
+            border: 1px dashed #00ffe1;
+            padding: 10px 14px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .panel-2 .link-box { background: rgba(255, 204, 0, 0.05); border-color: #ffcc00; }
+        .link-box label { font-size: 0.8rem; font-weight: 600; color: #d1d5db; }
+        .link-box .link-url { font-size: 0.7rem; color: #8888aa; background: #0b0c14; padding: 4px 10px; border-radius: 6px; font-family: monospace; word-break: break-all; flex: 1; min-width: 120px; }
+        .copy-btn {
+            background: #00ffe1; color: #000; border: none; padding: 6px 14px;
+            border-radius: 6px; font-weight: 700; font-size: 0.8rem; font-family: 'Cairo', sans-serif;
+            cursor: pointer; transition: 0.2s; white-space: nowrap;
+        }
+        .panel-2 .copy-btn { background: #ffcc00; }
+        .copy-btn:hover { opacity: 0.75; transform: scale(0.97); }
+
+        .form-group { display: flex; flex-direction: column; gap: 4px; }
+        .form-group label { font-size: 0.75rem; font-weight: 700; color: #b0b0d0; letter-spacing: 0.3px; }
+
+        input[type="text"], textarea, select {
+            width: 100%; padding: 8px 12px;
+            background: #1b1d2a; border: 1px solid #26283b;
+            border-radius: 8px; color: #fff;
+            font-family: 'Cairo', sans-serif; font-size: 0.85rem;
+            outline: none; transition: border 0.2s;
+        }
+        input[type="text"]:focus, textarea:focus, select:focus { border-color: #00ffe1; }
+        .panel-2 input[type="text"]:focus, .panel-2 textarea:focus, .panel-2 select:focus { border-color: #ffcc00; }
+        textarea { resize: vertical; min-height: 80px; }
+
+        .crown-selector-list {
+            display: flex; flex-wrap: wrap; gap: 6px;
+            background: #1b1d2a; padding: 8px 10px;
+            border-radius: 8px; border: 1px solid #26283b;
+            max-height: 120px; overflow-y: auto;
+            align-items: center;
+        }
+        .crown-selector-list .empty-msg { font-size: 0.7rem; color: #666688; }
+        .crown-item-btn {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: #a0a0c0; padding: 4px 12px; border-radius: 20px;
+            font-size: 0.75rem; cursor: pointer;
+            display: inline-flex; align-items: center; gap: 4px;
+            transition: 0.2s; font-family: 'Cairo', sans-serif;
+            white-space: nowrap;
+        }
+        .crown-item-btn:hover { background: rgba(255, 255, 255, 0.08); }
+        .crown-item-btn.active {
+            background: rgba(255, 204, 0, 0.18);
+            border-color: #ffcc00; color: #ffcc00; font-weight: 700;
+            box-shadow: 0 0 12px rgba(255, 204, 0, 0.15);
+        }
+        .color-pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .color-item {
+            display: flex; align-items: center; gap: 6px;
+            background: #1b1d2a; padding: 4px 8px 4px 4px;
+            border-radius: 8px; border: 1px solid #26283b;
+        }
+        .color-item input[type="color"] { border: none; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; background: none; padding: 0; }
+        .color-item span { font-size: 0.7rem; color: #a0a0c0; }
+        .status { font-size: 0.75rem; color: #10b981; text-align: center; height: 20px; line-height: 20px; }
+        @media (max-width: 720px) { .control-grid { grid-template-columns: 1fr; } .header-title { font-size: 1.3rem; } }
+        .crown-selector-list::-webkit-scrollbar { width: 4px; }
+        .crown-selector-list::-webkit-scrollbar-track { background: transparent; }
+        .crown-selector-list::-webkit-scrollbar-thumb { background: #333355; border-radius: 4px; }
+        .toast {
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+            background: #1b1d2a; border: 1px solid #00ffe1;
+            padding: 10px 24px; border-radius: 12px;
+            font-size: 0.9rem; color: #fff;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7);
+            opacity: 0; transition: opacity 0.3s ease;
+            pointer-events: none; z-index: 999;
+            font-family: 'Cairo', sans-serif; text-align: center; max-width: 90vw;
+        }
+        .toast.show { opacity: 1; }
     </style>
 </head>
 <body>
     <div class="app-wrapper">
         <h1 class="header-title">🎛️ لوحة تحكم الـ Overlays</h1>
         <div class="control-grid">
-            <!-- Panel 1 (بدون تغيير) -->
+            <!-- Panel 1 -->
             <div class="panel panel-1">
                 <h2>🎮 القائمة الأولى</h2>
                 <div class="link-box">
@@ -6084,7 +6193,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                 </div>
                 <div class="status" id="status1"></div>
             </div>
-            <!-- Panel 2 (مع زر إعادة الضبط) -->
+            <!-- Panel 2 -->
             <div class="panel panel-2">
                 <h2>⭐ القائمة الثانية</h2>
                 <div class="link-box">
@@ -6119,9 +6228,6 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                         <div class="color-item"><input type="color" id="badgeColor2" value="#a855f7"><span>الأرقام</span></div>
                     </div>
                 </div>
-                <div class="panel-actions">
-                    <button class="reset-btn" data-overlay="2">🔄 إعادة ضبط</button>
-                </div>
                 <div class="status" id="status2"></div>
             </div>
         </div>
@@ -6130,8 +6236,8 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
 
     <script>
         (function() {
+            // ✅ رابط الباكند الأساسي
             const API_BASE = '${API_BASE}';
-            const controllers = [];
             
             let toastTimeout;
             function showToast(msg) {
@@ -6178,7 +6284,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                 })
                 .catch(() => showToast('❌ خطأ في الاتصال بالخادم'));
 
-            // ─── فئة التحكم ───
+            // ─── فئة التحكم (تستخدم API) ───
             class Controller {
                 constructor(id) {
                     this.id = id;
@@ -6291,48 +6397,8 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                 }
             }
 
-            // ─── إنشاء المتحكمين ───
-            const ctrl1 = new Controller(1);
-            const ctrl2 = new Controller(2);
-            controllers.push(ctrl1, ctrl2);
-
-            // ─── زر إعادة الضبط ───
-            document.querySelector('.reset-btn').addEventListener('click', function() {
-                const id = parseInt(this.dataset.overlay);
-                resetOverlay(id);
-            });
-
-            function resetOverlay(id) {
-                const defaults = {
-                    1: { title: '🏆 قائمة الأساطير', names: '', theme: 'theme-neon', glowColor: '#00ffe1', badgeColor: '#ff0055', crowns: [] },
-                    2: { title: '🔥 كبار الداعمين', names: '', theme: 'theme-gold', glowColor: '#ffcc00', badgeColor: '#a855f7', crowns: [] }
-                };
-                const payload = {};
-                const key = id === 1 ? 'overlay1' : 'overlay2';
-                payload[key] = defaults[id];
-                
-                fetch(API_BASE + '/api/overlay-settings', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify(payload)
-                })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.success) {
-                        showToast('✅ تم إعادة ضبط القائمة ' + id + ' إلى الإعدادات الافتراضية');
-                        // إعادة تحميل الإعدادات للمتحكم المطابق
-                        const ctrl = controllers[id-1];
-                        if (ctrl) ctrl.loadFromServer();
-                    } else {
-                        showToast('❌ فشل إعادة الضبط: ' + (data.message || ''));
-                    }
-                })
-                .catch(err => {
-                    console.error(err);
-                    showToast('❌ خطأ في الاتصال بالخادم');
-                });
-            }
+            new Controller(1);
+            new Controller(2);
         })();
     </script>
 </body>
@@ -6345,6 +6411,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
     res.status(500).send("حدث خطأ في الخادم");
   }
 });
+
 // ================ بدء الخادم ================
 server.listen(PORT, "0.0.0.0", () => {
   logger.info(`✅ السيرفر يعمل على المنفذ ${PORT}`);
