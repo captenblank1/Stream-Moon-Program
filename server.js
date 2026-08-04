@@ -5870,13 +5870,6 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
 });
 
 app.get("/dashboard", authenticateToken, async (req, res) => {
-  const filePath = path.join(__dirname, "public", "dashboard.html");
-
-  // إذا كان الملف موجوداً، أرسله (للتوافق مع الإصدارات القديمة)
-  if (fs.existsSync(filePath)) {
-    return res.sendFile(filePath);
-  }
-
   try {
     const user = await User.findById(req.user.id);
     const settings = await OverlaySettings.findOne({ userId: req.user.id });
