@@ -1425,6 +1425,7 @@ async function executeAction(
     state.oncePerLiveMap.set(key, true);
   }
 
+  // ========== تشغيل الصوت والفيديو والتراكب (مرة واحدة فقط) ==========
   // تشغيل الصوت فوراً
   if (playSound && audio) {
     const giftId = cmdObj.giftId || cmdObj._id || "default";
@@ -1444,7 +1445,7 @@ async function executeAction(
     await new Promise((resolve) => setTimeout(resolve, delayBefore));
   }
 
-  // تشغيل الفيديو
+  // تشغيل الفيديو (مرة واحدة)
   if (playVideo && video && userId) {
     let videoUrl = video;
     try {
@@ -1478,7 +1479,7 @@ async function executeAction(
     }
   }
 
-  // التراكب
+  // التراكب (مرة واحدة)
   if (cmdObj.showOverlay && userId) {
     const overlayPayload = {
       username: realName,
@@ -1500,7 +1501,7 @@ async function executeAction(
     }
   }
 
-  // تنفيذ الأوامر والكيستروك والويبهوك
+  // ========== حلقة التكرار (للكيستروك، RCON، ويب هوك فقط) ==========
   for (let i = 0; i < repeat; i++) {
     if (i > 0 && interval > 0) {
       await new Promise((r) => setTimeout(r, interval));
@@ -1578,14 +1579,13 @@ async function executeAction(
       }
     }
 
-    // داخل executeAction، قبل sendWebhook
+    // ويب هوك
     if (webhookUrl && webhookUrl.trim()) {
-      // استبدال المتغيرات في الرابط
       let processedWebhookUrl = replacePlaceholders(
         webhookUrl,
-        realName, // nickname
-        triggerUser, // username
-        "", // rconPlayer (غير مستخدم هنا)
+        realName,
+        triggerUser,
+        "",
       );
 
       const webhookData = {
@@ -2259,11 +2259,6 @@ async function connectUser(userId, username) {
       if (delta > LIKE_MAX_DELTA) delta = LIKE_MAX_DELTA;
       console.log(`📊 [LIKE] delta=${delta}`);
 
-      // 2. (اختياري) يمكن إزالة الـ cooldown
-      // const likeKey = `like:${userId}:${sender}`;
-      // if (state.getTemp("interactionCooldown", likeKey)) return;
-      // state.setTemp("interactionCooldown", likeKey, true, 5);
-
       // 3. جلب الأوامر من الكاش
       const userProfile = await getUserSelectedProfile(userId);
       const commands = getInteractionCommandsForProfile(
@@ -2301,7 +2296,8 @@ async function connectUser(userId, username) {
         const keyUser = `${userId}:${String(cmd._id)}:${sender}`;
         let current = state.getTemp("likeCounters", keyUser) || 0;
         current += delta;
-        state.setTemp("likeCounters", keyUser, current, 3600);
+        // ✅ التعديل 1: خفض TTL إلى 300 ثانية (5 دقائق) بدلاً من 3600
+        state.setTemp("likeCounters", keyUser, current, 300);
 
         if (threshold <= 0) {
           await executeAction(
@@ -2315,21 +2311,24 @@ async function connectUser(userId, username) {
           continue;
         }
 
-        // ✅ التعديل: تنفيذ الأمر مرة واحدة فقط عند الوصول إلى العتبة
+        // ✅ التعديل 2: نحدد عدد مرات التنفيذ بناءً على عدد مرات تجاوز العتبة (بحد أقصى 3)
         if (current >= threshold) {
-          await executeAction(
-            addKeystrokeToCommand(cmd),
-            sender,
-            userId,
-            data,
-            "auto",
-            eventId,
+          const times = Math.floor(current / threshold);
+          const maxTimes = 3; // منع التكرار المفرط
+          const repeatTimes = Math.min(times, maxTimes);
+          const cmdObj = addKeystrokeToCommand(cmd);
+          cmdObj.repeat = Math.max(1, (cmdObj.repeat || 1) * repeatTimes);
+          await executeAction(cmdObj, sender, userId, data, "auto", eventId);
+          // خصم عدد العتبات التي تم تنفيذها
+          state.setTemp(
+            "likeCounters",
+            keyUser,
+            current - repeatTimes * threshold,
+            300,
           );
-          // خصم العتبة مرة واحدة فقط، وترك الباقي للعتبة التالية
-          state.setTemp("likeCounters", keyUser, current - threshold, 3600);
         } else {
           // تخزين العدد الحالي إذا لم يصل للعتبة
-          state.setTemp("likeCounters", keyUser, current, 3600);
+          state.setTemp("likeCounters", keyUser, current, 300);
         }
       }
     } catch (err) {
