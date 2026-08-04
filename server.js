@@ -1349,9 +1349,8 @@ async function executeAction(
   userId,
   data = null,
   source = "auto",
-  eventId = null, // معرف فريد للحدث للتتبع
+  eventId = null,
 ) {
-  // سجل بداية التنفيذ مع eventId إن وجد
   console.log(
     `⚡ [EXECUTE] eventId=${eventId || "manual"}, cmd=${
       cmdObj.name || cmdObj._id
@@ -1425,8 +1424,13 @@ async function executeAction(
     state.oncePerLiveMap.set(key, true);
   }
 
-  // ========== تشغيل الصوت والفيديو والتراكب (مرة واحدة فقط) ==========
-  // تشغيل الصوت فوراً
+  // ========== التأخير أولاً ==========
+  if (delayBefore > 0) {
+    console.log(`⏳ تأخير ${delayBefore} مللي قبل التنفيذ...`);
+    await new Promise((resolve) => setTimeout(resolve, delayBefore));
+  }
+
+  // ========== تشغيل الصوت (مرة واحدة) ==========
   if (playSound && audio) {
     const giftId = cmdObj.giftId || cmdObj._id || "default";
     const sendToUser = source === "manual";
@@ -1440,12 +1444,7 @@ async function executeAction(
     );
   }
 
-  // التأخير
-  if (delayBefore > 0) {
-    await new Promise((resolve) => setTimeout(resolve, delayBefore));
-  }
-
-  // تشغيل الفيديو (مرة واحدة)
+  // ========== تشغيل الفيديو (مرة واحدة) ==========
   if (playVideo && video && userId) {
     let videoUrl = video;
     try {
@@ -1479,7 +1478,7 @@ async function executeAction(
     }
   }
 
-  // التراكب (مرة واحدة)
+  // ========== التراكب (مرة واحدة) ==========
   if (cmdObj.showOverlay && userId) {
     const overlayPayload = {
       username: realName,
@@ -1507,7 +1506,7 @@ async function executeAction(
       await new Promise((r) => setTimeout(r, interval));
     }
 
-    // الكيستروك: يُرسل فقط إذا لم يكن هناك أمر RCON (command فارغ)
+    // الكيستروك
     if (keystrokeText && !command) {
       const finalKeystroke = replacePlaceholders(
         keystrokeText,
@@ -2259,6 +2258,11 @@ async function connectUser(userId, username) {
       if (delta > LIKE_MAX_DELTA) delta = LIKE_MAX_DELTA;
       console.log(`📊 [LIKE] delta=${delta}`);
 
+      // 2. (اختياري) يمكن إزالة الـ cooldown
+      // const likeKey = `like:${userId}:${sender}`;
+      // if (state.getTemp("interactionCooldown", likeKey)) return;
+      // state.setTemp("interactionCooldown", likeKey, true, 5);
+
       // 3. جلب الأوامر من الكاش
       const userProfile = await getUserSelectedProfile(userId);
       const commands = getInteractionCommandsForProfile(
@@ -2296,8 +2300,7 @@ async function connectUser(userId, username) {
         const keyUser = `${userId}:${String(cmd._id)}:${sender}`;
         let current = state.getTemp("likeCounters", keyUser) || 0;
         current += delta;
-        // ✅ التعديل 1: خفض TTL إلى 300 ثانية (5 دقائق) بدلاً من 3600
-        state.setTemp("likeCounters", keyUser, current, 300);
+        state.setTemp("likeCounters", keyUser, current, 3600);
 
         if (threshold <= 0) {
           await executeAction(
@@ -2311,24 +2314,21 @@ async function connectUser(userId, username) {
           continue;
         }
 
-        // ✅ التعديل 2: نحدد عدد مرات التنفيذ بناءً على عدد مرات تجاوز العتبة (بحد أقصى 3)
+        // ✅ التعديل: تنفيذ الأمر مرة واحدة فقط عند الوصول إلى العتبة
         if (current >= threshold) {
-          const times = Math.floor(current / threshold);
-          const maxTimes = 3; // منع التكرار المفرط
-          const repeatTimes = Math.min(times, maxTimes);
-          const cmdObj = addKeystrokeToCommand(cmd);
-          cmdObj.repeat = Math.max(1, (cmdObj.repeat || 1) * repeatTimes);
-          await executeAction(cmdObj, sender, userId, data, "auto", eventId);
-          // خصم عدد العتبات التي تم تنفيذها
-          state.setTemp(
-            "likeCounters",
-            keyUser,
-            current - repeatTimes * threshold,
-            300,
+          await executeAction(
+            addKeystrokeToCommand(cmd),
+            sender,
+            userId,
+            data,
+            "auto",
+            eventId,
           );
+          // خصم العتبة مرة واحدة فقط، وترك الباقي للعتبة التالية
+          state.setTemp("likeCounters", keyUser, current - threshold, 3600);
         } else {
           // تخزين العدد الحالي إذا لم يصل للعتبة
-          state.setTemp("likeCounters", keyUser, current, 300);
+          state.setTemp("likeCounters", keyUser, current, 3600);
         }
       }
     } catch (err) {
