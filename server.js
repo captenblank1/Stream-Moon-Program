@@ -6430,37 +6430,52 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                 });
             });
 
-            function resetOverlay(id) {
-                const defaults = {
-                    1: { title: '🏆 قائمة الأساطير', names: '', theme: 'theme-neon', glowColor: '#00ffe1', badgeColor: '#ff0055', crowns: [] },
-                    2: { title: '🔥 كبار الداعمين', names: '', theme: 'theme-gold', glowColor: '#ffcc00', badgeColor: '#a855f7', crowns: [] }
-                };
-                const payload = {};
-                const key = id === 1 ? 'overlay1' : 'overlay2';
-                payload[key] = defaults[id];
-                
-                fetch(API_BASE + '/api/overlay-settings', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify(payload)
-                })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.success) {
-                        showToast('✅ تم إعادة ضبط القائمة ' + id + ' إلى الإعدادات الافتراضية');
-                        // إعادة تحميل الإعدادات للمتحكم المطابق
-                        const ctrl = controllers[id-1];
-                        if (ctrl) ctrl.loadFromServer();
-                    } else {
-                        showToast('❌ فشل إعادة الضبط: ' + (data.message || ''));
-                    }
-                })
-                .catch(err => {
-                    console.error(err);
-                    showToast('❌ خطأ في الاتصال بالخادم');
-                });
+function resetOverlay(id) {
+    // 1. جلب الإعدادات الحالية أولاً
+    fetch(API_BASE + '/api/overlay-settings', { credentials: 'include' })
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success) throw new Error(data.message);
+            const settings = data.settings;
+            const key = id === 1 ? 'overlay1' : 'overlay2';
+            
+            // 2. نسخ الإعدادات الحالية مع تغيير الأسماء فقط إلى نص فارغ
+            const updatedOverlay = {
+                title: settings[key].title,
+                names: '',  // ← هذا هو التعديل الوحيد
+                theme: settings[key].theme,
+                glowColor: settings[key].glowColor,
+                badgeColor: settings[key].badgeColor,
+                crowns: settings[key].crowns || []
+            };
+            
+            // 3. إرسال التحديث إلى الخادم
+            const payload = {};
+            payload[key] = updatedOverlay;
+            
+            return fetch(API_BASE + '/api/overlay-settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify(payload)
+            });
+        })
+        .then(res => res.json())
+        .then(result => {
+            if (result.success) {
+                showToast('✅ تم مسح الأسماء من القائمة ' + id);
+                // إعادة تحميل الإعدادات للمتحكم المطابق
+                const ctrl = controllers[id-1];
+                if (ctrl) ctrl.loadFromServer();
+            } else {
+                showToast('❌ فشل مسح الأسماء: ' + (result.message || ''));
             }
+        })
+        .catch(err => {
+            console.error(err);
+            showToast('❌ خطأ في الاتصال بالخادم');
+        });
+}
         })();
     </script>
 </body>
