@@ -6871,10 +6871,34 @@ app.get("/wins-dashboard", authenticateToken, async (req, res) => {
     .dragon .l { color: #fbbf24; }
     .dragon .line-overlay { background: #dc2626; }
 
-    .toxic { background: rgba(10,25,10,0.95); border: 2px solid #84cc16; box-shadow: 0 0 15px rgba(132,204,22,0.5); }
-    .toxic .w { color: #a3e635; text-shadow: 0 0 8px #a3e635; }
-    .toxic .l { color: #f43f5e; }
-    .toxic .line-overlay { background: #84cc16; }
+/* ===== تعديل شكل الصندوق ===== */
+.toxic {
+  background: rgba(10, 25, 10, 0.95);
+  border: 2px solid #84cc16;
+  box-shadow: 0 0 15px rgba(132, 204, 22, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  width: fit-content;      /* ← العرض حسب المحتوى */
+  margin: 0 auto;          /* ← توسيط الصندوق في الصفحة */
+  padding: 12px 28px;      /* ← حشوة مناسبة */
+}
+
+.toxic .w {
+  color: #a3e635;
+  text-shadow: 0 0 8px #a3e635;
+}
+
+.toxic .l {
+  color: #f43f5e;
+}
+
+.toxic .line-overlay {
+  background: #84cc16;
+  width: 2px;
+  height: 24px;
+}
 
     .mouse { background: rgba(15,15,25,0.95); border: 2px solid #a855f7; border-radius: 40px 40px 30px 30px; box-shadow: 0 0 15px rgba(168,85,247,0.4); position: relative; }
     .mouse::before { content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 2px; height: 12px; background: #a855f7; }
