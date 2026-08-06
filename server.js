@@ -5534,29 +5534,58 @@ io.on("connection", (socket) => {
     logger.info(`📱 عميل Socket.IO بدون userId: ${socket.id}`);
   }
 
-// استقبال طلب الإعدادات من صفحة العرض
-socket.on('get-wins-settings', async (token) => {
-  try {
-    const user = await User.findOne({ screenToken: token });
-    if (!user) return;
-    let settings = await WinsOverlay.findOne({ userId: user._id });
-    if (!settings) {
-      settings = new WinsOverlay({ userId: user._id });
-      await settings.save();
-    }
-    socket.emit('wins-initial', settings);
-  } catch (err) {
-    logger.error('❌ خطأ في جلب إعدادات العداد عبر Socket:', err.message);
-  }
-});
+  // استقبال طلب الإعدادات من صفحة العرض (Wins Overlay)
+  socket.on("get-wins-settings", async (token) => {
+    try {
+      const user = await User.findOne({ screenToken: token });
+      if (!user) return;
+      // ✅ انضم إلى غرفة التحديثات الخاصة بهذا المستخدم
+      socket.join(`wins-${user._id}`);
+      console.log(`🟢 Wins client joined room: wins-${user._id}`);
 
-// الانضمام إلى غرفة التحديثات (للاستماع للتغييرات)
-socket.on('join-wins-room', (userId) => {
-  if (userId) {
-    socket.join(`wins-${userId}`);
-    console.log(`🟢 Wins client joined room: wins-${userId}`);
-  }
-});
+      let settings = await WinsOverlay.findOne({ userId: user._id });
+      if (!settings) {
+        settings = new WinsOverlay({ userId: user._id });
+        await settings.save();
+      }
+      socket.emit("wins-initial", settings);
+    } catch (err) {
+      logger.error("❌ خطأ في جلب إعدادات العداد عبر Socket:", err.message);
+    }
+  });
+
+  // الانضمام إلى غرفة التحديثات (للاستماع للتغييرات) - Wins Overlay
+  socket.on("join-wins-room", (userId) => {
+    if (userId) {
+      socket.join(`wins-${userId}`);
+      console.log(`🟢 Wins client joined room: wins-${userId}`);
+    }
+  });
+
+  // ===== ✅ تم إضافة المعالج الجديد لـ Overlay الأسماء هنا =====
+  socket.on("get-overlay-settings", async (token) => {
+    try {
+      const user = await User.findOne({ screenToken: token });
+      if (!user) {
+        logger.warn(`⚠️ توكن غير صالح للـ Overlay: ${token}`);
+        return;
+      }
+      let settings = await OverlaySettings.findOne({ userId: user._id });
+      if (!settings) {
+        settings = new OverlaySettings({ userId: user._id });
+        await settings.save();
+      }
+      socket.emit("overlay-initial", {
+        overlay1: settings.overlay1,
+        overlay2: settings.overlay2,
+      });
+      logger.info(
+        `📤 تم إرسال الإعدادات الأولية للـ Overlay للمستخدم ${user._id}`,
+      );
+    } catch (err) {
+      logger.error("❌ خطأ في جلب إعدادات الـ Overlay:", err.message);
+    }
+  });
 
   socket.on("join-room", ({ room }) => {
     if (room && typeof room === "string") {
@@ -5738,8 +5767,6 @@ app.post("/api/agent/exchange-binding", async (req, res) => {
   }
 });
 
-
-
 // ========== Schema لإعدادات العداد (Wins Overlay) ==========
 const winsOverlaySchema = new mongoose.Schema({
   userId: {
@@ -5753,7 +5780,7 @@ const winsOverlaySchema = new mongoose.Schema({
   winLabel: { type: String, default: "WIN" },
   lossLabel: { type: String, default: "LOSE" },
   theme: { type: String, default: "pscontroller" },
-  width: { type: Number, default: 285 },  // ← أضف هذا
+  width: { type: Number, default: 285 }, // ← أضف هذا
 });
 const WinsOverlay = mongoose.model("WinsOverlay", winsOverlaySchema);
 
@@ -5786,8 +5813,9 @@ app.post("/api/wins-settings", authenticateToken, async (req, res) => {
     if (winLabel !== undefined) settings.winLabel = winLabel || "WIN";
     if (lossLabel !== undefined) settings.lossLabel = lossLabel || "LOSE";
     if (theme !== undefined) settings.theme = theme || "pscontroller";
-    if (width !== undefined) settings.width = Math.max(100, Math.min(600, width)) || 285; // ← أضف هذا
-    
+    if (width !== undefined)
+      settings.width = Math.max(100, Math.min(600, width)) || 285; // ← أضف هذا
+
     await settings.save();
     io.to(`wins-${req.user.id}`).emit("wins-updated", settings);
     res.json({ success: true, settings });
@@ -6932,21 +6960,21 @@ app.get("/wins-dashboard", authenticateToken, async (req, res) => {
       <div>
         <label style="font-size:0.85rem;color:#a0a0c0;display:block;margin-bottom:2px;">🎨 اختر الشكل:</label>
         <select id="themeSelect">
-          <option value="pscontroller" ${settings.theme === 'pscontroller' ? 'selected' : ''}>🎮 إطار دراع بلايستيشن</option>
-          <option value="headset" ${settings.theme === 'headset' ? 'selected' : ''}>🎧 إطار سماعة جيمنج</option>
-          <option value="shield" ${settings.theme === 'shield' ? 'selected' : ''}>🛡️ إطار درع الحرب</option>
-          <option value="cyber" ${settings.theme === 'cyber' ? 'selected' : ''}>⚡ جيمنج نيون</option>
-          <option value="dragon" ${settings.theme === 'dragon' ? 'selected' : ''}>🐉 التنين الأحمر</option>
-          <option value="toxic" ${settings.theme === 'toxic' ? 'selected' : ''}>☣️ سام نيون</option>
-          <option value="mouse" ${settings.theme === 'mouse' ? 'selected' : ''}>🖱️ إطار ماوس جيمنج</option>
-          <option value="royale" ${settings.theme === 'royale' ? 'selected' : ''}>👑 فخامة VIP</option>
-          <option value="fireice" ${settings.theme === 'fireice' ? 'selected' : ''}>🔥 نار وثلج</option>
-          <option value="arcade" ${settings.theme === 'arcade' ? 'selected' : ''}>👾 ريترو أركيد</option>
-          <option value="kitty" ${settings.theme === 'kitty' ? 'selected' : ''}>🐱 إطار القطة كيتي</option>
-          <option value="bunny" ${settings.theme === 'bunny' ? 'selected' : ''}>🐰 إطار الأرنب</option>
-          <option value="magicstar" ${settings.theme === 'magicstar' ? 'selected' : ''}>✨ النجمة السحرية</option>
-          <option value="purpleneon" ${settings.theme === 'purpleneon' ? 'selected' : ''}>🔮 بنفسجي تويتش</option>
-          <option value="minimal" ${settings.theme === 'minimal' ? 'selected' : ''}>✨ مينيمال بسيط</option>
+          <option value="pscontroller" ${settings.theme === "pscontroller" ? "selected" : ""}>🎮 إطار دراع بلايستيشن</option>
+          <option value="headset" ${settings.theme === "headset" ? "selected" : ""}>🎧 إطار سماعة جيمنج</option>
+          <option value="shield" ${settings.theme === "shield" ? "selected" : ""}>🛡️ إطار درع الحرب</option>
+          <option value="cyber" ${settings.theme === "cyber" ? "selected" : ""}>⚡ جيمنج نيون</option>
+          <option value="dragon" ${settings.theme === "dragon" ? "selected" : ""}>🐉 التنين الأحمر</option>
+          <option value="toxic" ${settings.theme === "toxic" ? "selected" : ""}>☣️ سام نيون</option>
+          <option value="mouse" ${settings.theme === "mouse" ? "selected" : ""}>🖱️ إطار ماوس جيمنج</option>
+          <option value="royale" ${settings.theme === "royale" ? "selected" : ""}>👑 فخامة VIP</option>
+          <option value="fireice" ${settings.theme === "fireice" ? "selected" : ""}>🔥 نار وثلج</option>
+          <option value="arcade" ${settings.theme === "arcade" ? "selected" : ""}>👾 ريترو أركيد</option>
+          <option value="kitty" ${settings.theme === "kitty" ? "selected" : ""}>🐱 إطار القطة كيتي</option>
+          <option value="bunny" ${settings.theme === "bunny" ? "selected" : ""}>🐰 إطار الأرنب</option>
+          <option value="magicstar" ${settings.theme === "magicstar" ? "selected" : ""}>✨ النجمة السحرية</option>
+          <option value="purpleneon" ${settings.theme === "purpleneon" ? "selected" : ""}>🔮 بنفسجي تويتش</option>
+          <option value="minimal" ${settings.theme === "minimal" ? "selected" : ""}>✨ مينيمال بسيط</option>
         </select>
       </div>
       <div>
@@ -6957,8 +6985,8 @@ app.get("/wins-dashboard", authenticateToken, async (req, res) => {
     </div>
     <div class="preview-box-container">
       <span class="preview-title">👁️ معاينة حية (Live Preview)</span>
-      <div class="box-overlay ${settings.theme || 'pscontroller'}" id="previewBox">
-        <div class="kitty-bow" id="kittyBow" style="display:${settings.theme === 'kitty' ? 'block' : 'none'}">🎀</div>
+      <div class="box-overlay ${settings.theme || "pscontroller"}" id="previewBox">
+        <div class="kitty-bow" id="kittyBow" style="display:${settings.theme === "kitty" ? "block" : "none"}">🎀</div>
         <div class="item-overlay w">
           <span class="lbl" id="prevWLabel">${settings.winLabel}</span>
           <span id="prevWNum">${settings.wins}</span>
@@ -7132,7 +7160,7 @@ app.get("/wins-overlay/:token", async (req, res) => {
     /* جميع الثيمات (نفسها المذكورة سابقاً) */
     /* اختصاراً، ضع نفس الـ CSS الخاص بالثيمات من لوحة التحكم هنا */
     /* ... (يمكنك نسخ الـ CSS من لوحة التحكم) ... */
-    ${/* لضمان التصحيح، سأكرر الثيمات المهمة */ ''}
+    ${/* لضمان التصحيح، سأكرر الثيمات المهمة */ ""}
     .pscontroller { background: rgba(18,24,38,0.95); border: 3px solid #3b82f6; border-radius: 40px 40px 20px 20px; box-shadow: 0 0 20px rgba(59,130,246,0.5); padding: 16px 36px; position: relative; }
     .pscontroller::before { content: "🎮"; position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-size: 1.2rem; background: #3b82f6; border-radius: 50%; padding: 2px 6px; }
     .pscontroller .w { color: #60a5fa; font-family: "Orbitron", sans-serif; }
