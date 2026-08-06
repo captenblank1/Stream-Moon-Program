@@ -2260,14 +2260,14 @@ async function connectUser(userId, username) {
       const sender = normalizeUser(getSenderFromEvent(data));
       console.log(`❤️ [LIKE] eventId=${eventId}, sender=${sender}`);
 
-      // 1. استخدم العدد الجديد مباشرة
+      // 1. استخرج عدد اللايكات الجديد (delta)
       let delta = data.count || data.likeCount || data.like_count || 0;
       delta = parseInt(String(delta).replace(/\D/g, ""), 10) || 0;
       if (delta <= 0) return;
       if (delta > LIKE_MAX_DELTA) delta = LIKE_MAX_DELTA;
       console.log(`📊 [LIKE] delta=${delta}`);
 
-      // 2. (اختياري) يمكن إزالة الـ cooldown
+      // 2. (اختياري) يمكن إزالة الـ cooldown أو تركه حسب الحاجة
       // const likeKey = `like:${userId}:${sender}`;
       // if (state.getTemp("interactionCooldown", likeKey)) return;
       // state.setTemp("interactionCooldown", likeKey, true, 5);
@@ -2304,14 +2304,12 @@ async function connectUser(userId, username) {
           continue;
         }
 
-        // threshold logic
+        // threshold logic (بعد التعديل)
         const threshold = parseInt(cmd.threshold || 0, 10) || 0;
         const keyUser = `${userId}:${String(cmd._id)}:${sender}`;
-        let current = state.getTemp("likeCounters", keyUser) || 0;
-        current += delta;
-        state.setTemp("likeCounters", keyUser, current, 3600);
 
         if (threshold <= 0) {
+          // بدون عتبة: تنفيذ الأمر مرة واحدة لكل حدث
           await executeAction(
             addKeystrokeToCommand(cmd),
             sender,
@@ -2323,8 +2321,12 @@ async function connectUser(userId, username) {
           continue;
         }
 
-        // ✅ التعديل: تنفيذ الأمر مرة واحدة فقط عند الوصول إلى العتبة
-        if (current >= threshold) {
+        // ==== التعديل الجديد ====
+        let current = state.getTemp("likeCounters", keyUser) || 0;
+        current += delta;
+
+        // تنفيذ الأمر لكل مضاعف من العتبة
+        while (current >= threshold) {
           await executeAction(
             addKeystrokeToCommand(cmd),
             sender,
@@ -2333,12 +2335,11 @@ async function connectUser(userId, username) {
             "auto",
             eventId,
           );
-          // خصم العتبة مرة واحدة فقط، وترك الباقي للعتبة التالية
-          state.setTemp("likeCounters", keyUser, current - threshold, 3600);
-        } else {
-          // تخزين العدد الحالي إذا لم يصل للعتبة
-          state.setTemp("likeCounters", keyUser, current, 3600);
+          current -= threshold;
         }
+
+        // حفظ الباقي (أقل من العتبة) للجلسة الحالية
+        state.setTemp("likeCounters", keyUser, current, 3600);
       }
     } catch (err) {
       logger.error("❌ LIKE handler error:", err.message);
