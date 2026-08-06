@@ -7154,8 +7154,6 @@ app.get("/wins-overlay/:token", async (req, res) => {
     const user = await User.findOne({ screenToken: token });
     if (!user) return res.status(404).send("رمز غير صالح");
 
-    const userId = user._id.toString();
-
     const html = `<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -7173,32 +7171,33 @@ app.get("/wins-overlay/:token", async (req, res) => {
       min-height: 100vh;
       font-family: "Cairo", sans-serif;
     }
-.box-overlay {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  width: fit-content;   /* العرض حسب المحتوى */
-  margin: 0 auto;       /* توسيط الصندوق في الصفحة */
-  padding: 12px 28px;
-  border-radius: 50px;
-  position: relative;
-  transition: all 0.3s ease;
-}
 
-.box-overlay * {
-  font-size: 1.4rem !important;
-}
+    /* ===== القاعدة الأساسية للصندوق ===== */
+    .box-overlay {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      width: fit-content;
+      margin: 0 auto;
+      padding: 8px 20px;        /* ← متوسط */
+      border-radius: 50px;
+      position: relative;
+      transition: all 0.3s ease;
+    }
 
-.item-overlay {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 1.4rem;
-  font-weight: 900;
-}
+    /* ===== حجم خط متوسط ===== */
+    .box-overlay * {
+      font-size: 1.1rem !important;   /* ← متوسط */
+    }
+
+    .item-overlay {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 900;
+    }
     .lbl {
-      font-size: 1.4rem;
       font-weight: 900;
     }
     .line-overlay {
@@ -7206,12 +7205,13 @@ app.get("/wins-overlay/:token", async (req, res) => {
       height: 24px;
     }
 
+    /* ===== جميع الثيمات (نفسها) ===== */
     .pscontroller {
       background: rgba(18,24,38,0.95);
       border: 3px solid #3b82f6;
       border-radius: 40px 40px 20px 20px;
       box-shadow: 0 0 20px rgba(59,130,246,0.5);
-      padding: 16px 36px;
+      padding: 12px 28px;
     }
     .pscontroller::before {
       content: "🎮";
@@ -7283,17 +7283,10 @@ app.get("/wins-overlay/:token", async (req, res) => {
       background: rgba(10,25,10,0.95);
       border: 2px solid #84cc16;
       box-shadow: 0 0 15px rgba(132,204,22,0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 16px;
-      width: fit-content;
-      margin: 0 auto;
-      padding: 12px 28px;
     }
     .toxic .w { color: #a3e635; text-shadow: 0 0 8px #a3e635; }
     .toxic .l { color: #f43f5e; }
-    .toxic .line-overlay { background: #84cc16; width: 2px; height: 24px; }
+    .toxic .line-overlay { background: #84cc16; }
 
     .mouse {
       background: rgba(15,15,25,0.95);
@@ -7468,7 +7461,7 @@ app.get("/wins-overlay/:token", async (req, res) => {
       const box = document.getElementById('previewBox');
       box.className = 'box-overlay ' + (settings.theme || 'pscontroller');
       box.style.width = (settings.width || 285) + 'px';
-      
+
       const bow = document.getElementById('kittyBow');
       bow.style.display = settings.theme === 'kitty' ? 'block' : 'none';
     }
