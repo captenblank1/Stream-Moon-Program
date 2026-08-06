@@ -5857,7 +5857,7 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
     const crowns = overlay.crowns || [];
     const maxHeight = overlay.maxHeight || 500;
     const maxNames = overlay.maxNames || 10;
-    const width = overlay.width || 285; // ← العرض الافتراضي
+    const width = overlay.width || 285;
 
     function escape(text) {
       if (!text) return "";
@@ -5899,7 +5899,7 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'Cairo',sans-serif;background:transparent;color:#fff;overflow:hidden;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center}
     .overlay-box{
-      width:${width}px;             /* ← العرض الديناميكي من الإعدادات */
+      width:${width}px;
       height:${maxHeight}px;
       background:rgba(18,18,28,0.5);
       backdrop-filter:blur(12px);
@@ -5928,11 +5928,14 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
       overflow-y:auto;
       padding-right:5px;
       scroll-behavior: smooth;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
     }
-    .overlay-list::-webkit-scrollbar { width: 4px; }
-    .overlay-list::-webkit-scrollbar-track { background: transparent; }
-    .overlay-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
-
+    .overlay-list::-webkit-scrollbar {
+      display: none;
+      width: 0;
+      background: transparent;
+    }
     .name-card{
       display:flex;
       align-items:center;
@@ -6005,11 +6008,9 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
       }
 
       function updateOverlay(settings) {
-        // تحديث العنوان
         const titleEl = document.querySelector('.overlay-header h2');
         if (titleEl) titleEl.textContent = settings.title;
 
-        // تحديث قائمة الأسماء
         const list = document.getElementById('overlayList');
         if (!list) return;
         const items = settings.names.split('\\n').filter(s => s.trim() !== '');
@@ -6034,11 +6035,8 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
           });
         }
         list.innerHTML = html;
-
-        // التمرير إلى الأسفل
         list.scrollTop = list.scrollHeight;
 
-        // تحديث الثيم والعرض والارتفاع
         const box = document.querySelector('.overlay-box');
         if (box) {
           box.className = box.className.split(' ').filter(c => !c.startsWith('theme-')).join(' ');
@@ -6048,11 +6046,9 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
           box.style.width = (settings.width || 285) + 'px';
         }
 
-        // تحديث لون العنوان
         const titleEl2 = document.querySelector('.overlay-header h2');
         if (titleEl2) titleEl2.style.color = settings.glow;
 
-        // تحديث ألوان البادج والحدود
         document.querySelectorAll('.badge-num').forEach(el => {
           el.style.background = \`linear-gradient(135deg, \${settings.badge}, #ff5500)\`;
         });
@@ -6091,7 +6087,6 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
         }
       });
 
-      // عند تحميل الصفحة، تمرير القائمة إلى الأسفل
       window.addEventListener('load', function() {
         const list = document.getElementById('overlayList');
         if (list) {
