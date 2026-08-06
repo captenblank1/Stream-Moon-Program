@@ -3997,6 +3997,7 @@ app.post(
           success: false,
           message: "لا يمكنك تنفيذ أمر من بروفايل غير مصرح به",
         });
+
       const count = Math.max(1, parseInt(req.body?.count || 1, 10) || 1);
       const timesToRun = Math.min(count, 10);
       const requestedScreen = req.body?.screen
@@ -4012,40 +4013,7 @@ app.post(
           ? cmdObj.command
           : cmdObj.combo || "";
 
-      // ✅ التعديل: لا نرسل كيستروك إلا إذا كان command فارغاً
-      const shouldSendKeystroke = keystrokeText && !cmdObj.command;
-      const agentSocket = state.userLocalAgents.get(req.user.id);
-
-      if (shouldSendKeystroke) {
-        // فقط كيستروك (command فارغ)
-        if (agentSocket && agentSocket.connected) {
-          for (let t = 0; t < timesToRun; t++) {
-            agentSocket.emit("execute-keys", {
-              command: keystrokeText,
-              repeat: configuredRepeat,
-              interval: cmdObj.interval || 500,
-              combo: cmdObj.combo,
-            });
-            if (t < timesToRun - 1 && cmdObj.interval > 0)
-              await new Promise((r) => setTimeout(r, cmdObj.interval));
-          }
-        } else if (keySenderReady) {
-          for (let t = 0; t < timesToRun; t++) {
-            await executeNativeKeystroke(
-              keystrokeText,
-              configuredRepeat,
-              cmdObj.interval || 500,
-            );
-            if (t < timesToRun - 1 && cmdObj.interval > 0)
-              await new Promise((r) => setTimeout(r, cmdObj.interval));
-          }
-        } else {
-          // لا يوجد طريقة لتنفيذ الكيستروك
-          console.warn("لا يوجد عميل محلي ولا node-key-sender متاح");
-        }
-      }
-
-      // تنفيذ الإجراء (RCON/webhook/audio/video) بغض النظر عن الكيستروك
+      // ✅ تنفيذ الإجراء عبر executeAction فقط (بدون إرسال مباشر)
       for (let t = 0; t < timesToRun; t++) {
         const one = {
           ...cmdObj,
@@ -4058,6 +4026,7 @@ app.post(
         if (t < timesToRun - 1 && cmdObj.interval > 0)
           await new Promise((r) => setTimeout(r, cmdObj.interval));
       }
+
       res.json({ success: true, message: "تم التنفيذ", count: timesToRun });
     } catch (err) {
       logger.error("❌ خطأ في تنفيذ أمر الهدية:", err.message);
@@ -4331,6 +4300,7 @@ app.post(
           success: false,
           message: "لا يمكنك تنفيذ أمر من بروفايل غير مصرح به",
         });
+
       const count = Math.max(1, parseInt(req.body?.count || 1, 10) || 1);
       const timesToRun = Math.min(count, 10);
       const requestedScreen = req.body?.screen
@@ -4346,49 +4316,20 @@ app.post(
           ? cmdObj.command
           : cmdObj.combo || "";
 
-      // ✅ التعديل: لا نرسل كيستروك إلا إذا كان command فارغاً
-      const shouldSendKeystroke = keystrokeText && !cmdObj.command;
-      const agentSocket = state.userLocalAgents.get(req.user.id);
-
-      if (shouldSendKeystroke) {
-        // فقط كيستروك (command فارغ)
-        if (agentSocket && agentSocket.connected) {
-          for (let t = 0; t < timesToRun; t++) {
-            agentSocket.emit("execute-keys", {
-              command: keystrokeText,
-              repeat: configuredRepeat,
-              interval: cmdObj.interval || 500,
-              combo: cmdObj.combo,
-            });
-            if (t < timesToRun - 1 && cmdObj.interval > 0)
-              await new Promise((r) => setTimeout(r, cmdObj.interval));
-          }
-        } else if (keySenderReady) {
-          for (let t = 0; t < timesToRun; t++) {
-            await executeNativeKeystroke(
-              keystrokeText,
-              configuredRepeat,
-              cmdObj.interval || 500,
-            );
-            if (t < timesToRun - 1 && cmdObj.interval > 0)
-              await new Promise((r) => setTimeout(r, cmdObj.interval));
-          }
-        } else {
-          console.warn("لا يوجد عميل محلي ولا node-key-sender متاح");
-        }
-      }
-
-      // تنفيذ الإجراء (RCON/webhook/audio/video) بغض النظر عن الكيستروك
+      // ✅ تنفيذ الإجراء عبر executeAction فقط (بدون إرسال مباشر)
       for (let t = 0; t < timesToRun; t++) {
         const one = {
           ...cmdObj,
           repeat: configuredRepeat,
           screen: requestedScreen || cmdObj.screen || 1,
+          keystrokeText,
+          combo: cmdObj.combo,
         };
         await executeAction(one, "StreamMoon", req.user.id, null, "manual");
         if (t < timesToRun - 1 && cmdObj.interval > 0)
           await new Promise((r) => setTimeout(r, cmdObj.interval));
       }
+
       res.json({ success: true, message: "تم التنفيذ", count: timesToRun });
     } catch (err) {
       logger.error("❌ خطأ في تنفيذ أمر التفاعل:", err.message);
