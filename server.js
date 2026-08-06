@@ -1589,9 +1589,10 @@ async function executeAction(
     // ========== معالجة الويبهوك ==========
     if (webhookUrl && webhookUrl.trim()) {
       // تقسيم النص إلى أسطر
-      const webhookLines = webhookUrl.split(/\r?\n/)
-        .map(l => l.trim())
-        .filter(l => l.length > 0);
+      const webhookLines = webhookUrl
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
 
       // دالة تنفيذ الويبهوك لهذا التكرار (i)
       const executeWebhooksForIteration = () => {
@@ -1630,7 +1631,7 @@ async function executeAction(
               webhookLine,
               realName,
               triggerUser,
-              ""
+              "",
             );
 
             // جدولة إرسال الويبهوك بعد التأخير التراكمي
@@ -1659,7 +1660,7 @@ async function executeAction(
             webhookLines[0],
             realName,
             triggerUser,
-            ""
+            "",
           );
           const webhookData = {
             name: name || "",
