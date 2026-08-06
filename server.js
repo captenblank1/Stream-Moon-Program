@@ -1498,7 +1498,7 @@ async function executeAction(
         cmdObj.overlayText &&
         cmdObj.overlayText.trim() !== ""
       ) {
-        const overlayId = cmdObj.screen === 2 ? 2 : 1; // أو استخدم خاصية منفصلة
+        const overlayId = cmdObj.screen === 2 ? 2 : 1;
         await addNameToOverlay(userId, overlayId, realName || triggerUser);
       }
     } else {
@@ -1586,29 +1586,99 @@ async function executeAction(
       }
     }
 
-    // داخل executeAction، قبل sendWebhook
+    // ========== معالجة الويبهوك ==========
     if (webhookUrl && webhookUrl.trim()) {
-      // استبدال المتغيرات في الرابط
-      let processedWebhookUrl = replacePlaceholders(
-        webhookUrl,
-        realName, // nickname
-        triggerUser, // username
-        "", // rconPlayer (غير مستخدم هنا)
-      );
+      // تقسيم النص إلى أسطر
+      const webhookLines = webhookUrl.split(/\r?\n/)
+        .map(l => l.trim())
+        .filter(l => l.length > 0);
 
-      const webhookData = {
-        name: name || "",
-        user: triggerUser,
-        displayName: realName,
-        type: cmdObj.type || "keyboard",
-        timestamp: new Date().toISOString(),
-        profile: cmdObj.profile || 1,
-        event: "webhook_execution",
-        repeat: 1,
-        interval: 0,
-        iteration: i + 1,
+      // دالة تنفيذ الويبهوك لهذا التكرار (i)
+      const executeWebhooksForIteration = () => {
+        if (webhookLines.length > 1) {
+          // تجميع المجموعات (مع دعم OR)
+          const groups = [];
+          let currentGroup = [];
+          for (const line of webhookLines) {
+            if (line.toLowerCase() === "or") {
+              if (currentGroup.length) {
+                groups.push(currentGroup);
+                currentGroup = [];
+              }
+            } else {
+              currentGroup.push(line);
+            }
+          }
+          if (currentGroup.length) groups.push(currentGroup);
+
+          // اختيار مجموعة عشوائية (إذا كان هناك OR)
+          const selectedGroup = groups.length
+            ? groups[Math.floor(Math.random() * groups.length)]
+            : [];
+
+          let cumulativeDelay = 0;
+          for (const webhookLine of selectedGroup) {
+            // معالجة delay (القيمة بالمللي ثانية)
+            if (webhookLine.toLowerCase().startsWith("delay ")) {
+              const ms = parseFloat(webhookLine.split(/\s+/)[1]);
+              if (!isNaN(ms)) cumulativeDelay += ms;
+              continue;
+            }
+
+            // استبدال المتغيرات في الرابط
+            let processedUrl = replacePlaceholders(
+              webhookLine,
+              realName,
+              triggerUser,
+              ""
+            );
+
+            // جدولة إرسال الويبهوك بعد التأخير التراكمي
+            setTimeout(() => {
+              const webhookData = {
+                name: name || "",
+                user: triggerUser,
+                displayName: realName,
+                type: cmdObj.type || "keyboard",
+                timestamp: new Date().toISOString(),
+                profile: cmdObj.profile || 1,
+                event: "webhook_execution",
+                repeat: 1,
+                interval: 0,
+                iteration: i + 1,
+              };
+              sendWebhook(processedUrl, webhookData, userId);
+            }, cumulativeDelay);
+
+            // إضافة تأخير افتراضي بين الأسطر (اختياري)
+            cumulativeDelay += DEFAULT_COMMAND_DELAY_MS;
+          }
+        } else {
+          // سطر واحد فقط
+          let processedUrl = replacePlaceholders(
+            webhookLines[0],
+            realName,
+            triggerUser,
+            ""
+          );
+          const webhookData = {
+            name: name || "",
+            user: triggerUser,
+            displayName: realName,
+            type: cmdObj.type || "keyboard",
+            timestamp: new Date().toISOString(),
+            profile: cmdObj.profile || 1,
+            event: "webhook_execution",
+            repeat: 1,
+            interval: 0,
+            iteration: i + 1,
+          };
+          sendWebhook(processedUrl, webhookData, userId);
+        }
       };
-      await sendWebhook(processedWebhookUrl, webhookData, userId);
+
+      // تنفيذ الويبهوك لهذا التكرار
+      executeWebhooksForIteration();
     }
   }
 }
