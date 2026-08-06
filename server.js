@@ -1493,6 +1493,14 @@ async function executeAction(
 
     if (hasScreen) {
       io.to(screenRoom).emit("show-overlay", overlayPayload);
+      if (
+        cmdObj.showOverlay &&
+        cmdObj.overlayText &&
+        cmdObj.overlayText.trim() !== ""
+      ) {
+        const overlayId = cmdObj.screen === 2 ? 2 : 1; // أو استخدم خاصية منفصلة
+        await addNameToOverlay(userId, overlayId, realName || triggerUser);
+      }
     } else {
       console.log(
         `⚠️ لا توجد شاشة للمستخدم ${userId}، تم تجاهل التراكب (eventId=${eventId})`,
@@ -5736,6 +5744,24 @@ const OverlaySettings = mongoose.model(
   overlaySettingsSchema,
 );
 
+app.post("/api/overlay/add-name", authenticateToken, async (req, res) => {
+  try {
+    const { overlayId, name } = req.body;
+    if (!name || !name.trim())
+      return res.status(400).json({ success: false, message: "الاسم مطلوب" });
+    const id = parseInt(overlayId);
+    if (id !== 1 && id !== 2)
+      return res
+        .status(400)
+        .json({ success: false, message: "overlayId يجب أن يكون 1 أو 2" });
+    await addNameToOverlay(req.user.id, id, name.trim());
+    res.json({ success: true, message: "تم إضافة الاسم" });
+  } catch (err) {
+    logger.error("❌ خطأ في إضافة اسم للـ Overlay:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // API
 app.get("/api/overlay-settings", authenticateToken, async (req, res) => {
   try {
@@ -5811,24 +5837,50 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
       );
     }
 
-    function nameListHTML(namesArr, crownsArr) {
-      const items = namesArr.split("\n").filter((n) => n.trim() !== "");
-      if (!items.length)
+    function nameListHTML(namesStr, crownsArr) {
+      const items = namesStr.split("\n").filter((n) => n.trim() !== "");
+      // خذ آخر 10 عناصر فقط
+      const lastTen = items.slice(-10);
+      if (!lastTen.length)
         return '<div style="color:#888;text-align:center;padding:10px;">لا توجد أسماء</div>';
       const crownSet = new Set(crownsArr);
-      return items
-        .map(
-          (n, i) => `
-        <div class="name-card">
-          <div class="name-info">
-            <div class="badge-num">${i + 1}</div>
-            <span class="name-text">${escape(n.trim())}</span>
-          </div>
-          ${crownSet.has(i) ? '<span class="crown-icon">👑</span>' : ""}
+      return lastTen
+        .map((n, idx) => {
+          const originalIndex = items.length - lastTen.length + idx; // للحفاظ على التاج بناءً على الموقع الأصلي
+          return `
+      <div class="name-card">
+        <div class="name-info">
+          <div class="badge-num">${idx + 1}</div>
+          <span class="name-text">${escape(n.trim())}</span>
         </div>
-      `,
-        )
+        ${crownSet.has(originalIndex) ? '<span class="crown-icon">👑</span>' : ""}
+      </div>
+    `;
+        })
         .join("");
+    }
+
+    // ===== دالة إضافة اسم مع الاحتفاظ بآخر 10 أسماء =====
+    async function addNameToOverlay(userId, overlayId, newName) {
+      if (!newName || !newName.trim()) return;
+      const settings = await OverlaySettings.findOne({ userId });
+      if (!settings) return;
+      const key = overlayId === 1 ? "overlay1" : "overlay2";
+      const overlay = settings[key];
+      let names = overlay.names || "";
+      const lines = names.split("\n").filter((l) => l.trim() !== "");
+      lines.push(newName.trim());
+      // الاحتفاظ بآخر 10 فقط
+      const lastTen = lines.slice(-10);
+      overlay.names = lastTen.join("\n");
+      // يمكن الحفاظ على التاج أو إعادة حسابه (اختياري)
+      // إذا أردت إزالة التاج من الأسماء المحذوفة، يمكنك تعديل crowns هنا
+      await settings.save();
+      // بث التحديث لجميع شاشات هذا المستخدم
+      io.to(`screen-${userId}`).emit("overlay-updated", {
+        overlay1: settings.overlay1,
+        overlay2: settings.overlay2,
+      });
     }
 
     const html = `<!DOCTYPE html>
