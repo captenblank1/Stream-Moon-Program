@@ -7173,26 +7173,30 @@ app.get("/wins-overlay/:token", async (req, res) => {
       min-height: 100vh;
       font-family: "Cairo", sans-serif;
     }
-    .box-overlay {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      padding: 12px 28px;
-      border-radius: 50px;
-      position: relative;
-      transition: all 0.3s ease;
-      width: auto;
-    }
-    .box-overlay * {
-      font-size: 1.4rem !important;
-    }
-    .item-overlay {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 1.4rem;
-      font-weight: 900;
-    }
+.box-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  width: fit-content;   /* العرض حسب المحتوى */
+  margin: 0 auto;       /* توسيط الصندوق في الصفحة */
+  padding: 12px 28px;
+  border-radius: 50px;
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.box-overlay * {
+  font-size: 1.4rem !important;
+}
+
+.item-overlay {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 1.4rem;
+  font-weight: 900;
+}
     .lbl {
       font-size: 1.4rem;
       font-weight: 900;
