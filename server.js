@@ -5729,7 +5729,8 @@ const overlaySettingsSchema = new mongoose.Schema({
     glowColor: { type: String, default: "#00ffe1" },
     badgeColor: { type: String, default: "#ff0055" },
     crowns: { type: [Number], default: [] },
-    maxHeight: { type: Number, default: 500 }, // أقصى ارتفاع للـ overlay (بكسل)
+    maxHeight: { type: Number, default: 500 },
+    maxWidth: { type: Number, default: 285 }, // ← العرض الافتراضي // أقصى ارتفاع للـ overlay (بكسل)
     maxNames: { type: Number, default: 10 }, // أقصى عدد من الأسماء المعروضة
   },
   overlay2: {
@@ -5739,7 +5740,8 @@ const overlaySettingsSchema = new mongoose.Schema({
     glowColor: { type: String, default: "#ffcc00" },
     badgeColor: { type: String, default: "#a855f7" },
     crowns: { type: [Number], default: [] },
-    maxHeight: { type: Number, default: 500 }, // ← أضف هذا
+    maxHeight: { type: Number, default: 500 },
+    maxWidth: { type: Number, default: 285 }, // ← العرض الافتراضي // ← أضف هذا
     maxNames: { type: Number, default: 10 }, // ← أضف هذا
   },
 });
@@ -5853,8 +5855,9 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
     const badge =
       overlay.badgeColor || (overlayId === "1" ? "#ff0055" : "#a855f7");
     const crowns = overlay.crowns || [];
-    const maxHeight = overlay.maxHeight || 500; // أقصى ارتفاع
-    const maxNames = overlay.maxNames || 10; // أقصى عدد أسماء
+    const maxHeight = overlay.maxHeight || 500;
+    const maxNames = overlay.maxNames || 10;
+    const width = overlay.width || 285; // ← العرض الافتراضي
 
     function escape(text) {
       if (!text) return "";
@@ -5864,10 +5867,8 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
       );
     }
 
-    // دالة إنشاء قائمة الأسماء (تعرض آخر maxNames فقط)
     function nameListHTML(namesStr, crownsArr) {
       const items = namesStr.split("\n").filter((n) => n.trim() !== "");
-      // خذ آخر maxNames عنصر
       const lastItems = items.slice(-maxNames);
       if (!lastItems.length)
         return '<div style="color:#888;text-align:center;padding:10px;">لا توجد أسماء</div>';
@@ -5898,8 +5899,8 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'Cairo',sans-serif;background:transparent;color:#fff;overflow:hidden;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center}
     .overlay-box{
-      width:285px;
-      height:${maxHeight}px;          /* ← الارتفاع الديناميكي من الإعدادات */
+      width:${width}px;             /* ← العرض الديناميكي من الإعدادات */
+      height:${maxHeight}px;
       background:rgba(18,18,28,0.5);
       backdrop-filter:blur(12px);
       border-radius:18px;
@@ -5908,7 +5909,7 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
       border:2px solid ${glow};
       display:flex;
       flex-direction:column;
-      overflow:hidden;               /* منع السكرول خارج الصندوق */
+      overflow:hidden;
     }
     .overlay-header{
       flex-shrink:0;
@@ -5924,10 +5925,10 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
       display:flex;
       flex-direction:column;
       gap:10px;
-      overflow-y:auto;               /* سكرول عمودي في حالة تجاوز المحتوى */
+      overflow-y:auto;
       padding-right:5px;
+      scroll-behavior: smooth;
     }
-    /* تنسيق شريط التمرير (اختياري) */
     .overlay-list::-webkit-scrollbar { width: 4px; }
     .overlay-list::-webkit-scrollbar-track { background: transparent; }
     .overlay-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
@@ -5958,7 +5959,6 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
     .name-text{font-size:20px;font-weight:700;color:#fff}
     .crown-icon{font-size:1.1rem;filter:drop-shadow(0 0 5px rgba(255,215,0,0.8))}
     @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
-    /* ثيمات إضافية */
     .theme-gold .overlay-box{border-color:#ffcc00;background:rgba(20,16,8,0.9)}
     .theme-gold .overlay-header h2{color:#ffcc00}
     .theme-gold .name-card{background:rgba(255,204,0,0.08);border-color:#ffcc00}
@@ -5972,7 +5972,7 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
 <body>
   <div class="overlay-box ${theme}">
     <div class="overlay-header"><h2>${escape(title)}</h2></div>
-    <div class="overlay-list">${nameListHTML(names, crowns)}</div>
+    <div class="overlay-list" id="overlayList">${nameListHTML(names, crowns)}</div>
   </div>
 
   <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
@@ -5987,10 +5987,22 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
         badge: ${JSON.stringify(badge)},
         crowns: ${JSON.stringify(crowns)},
         maxHeight: ${maxHeight},
-        maxNames: ${maxNames}
+        maxNames: ${maxNames},
+        width: ${width}
       };
 
       let currentSettings = JSON.parse(JSON.stringify(initialSettings));
+
+      function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>"]/g, function(m) {
+          if (m === '&') return '&amp;';
+          if (m === '<') return '&lt;';
+          if (m === '>') return '&gt;';
+          if (m === '"') return '&quot;';
+          return m;
+        });
+      }
 
       function updateOverlay(settings) {
         // تحديث العنوان
@@ -5998,11 +6010,10 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
         if (titleEl) titleEl.textContent = settings.title;
 
         // تحديث قائمة الأسماء
-        const list = document.querySelector('.overlay-list');
+        const list = document.getElementById('overlayList');
         if (!list) return;
         const items = settings.names.split('\\n').filter(s => s.trim() !== '');
         const crownSet = new Set(settings.crowns);
-        // تطبيق maxNames محلياً
         const maxNames = settings.maxNames || 10;
         const lastItems = items.slice(-maxNames);
         let html = '';
@@ -6024,14 +6035,17 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
         }
         list.innerHTML = html;
 
-        // تحديث الثيم
+        // التمرير إلى الأسفل
+        list.scrollTop = list.scrollHeight;
+
+        // تحديث الثيم والعرض والارتفاع
         const box = document.querySelector('.overlay-box');
         if (box) {
           box.className = box.className.split(' ').filter(c => !c.startsWith('theme-')).join(' ');
           box.classList.add(settings.theme);
           box.style.borderColor = settings.glow;
-          // تحديث الارتفاع
           box.style.height = (settings.maxHeight || 500) + 'px';
+          box.style.width = (settings.width || 285) + 'px';
         }
 
         // تحديث لون العنوان
@@ -6047,17 +6061,6 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
         });
 
         currentSettings = settings;
-      }
-
-      function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/[&<>"]/g, function(m) {
-          if (m === '&') return '&amp;';
-          if (m === '<') return '&lt;';
-          if (m === '>') return '&gt;';
-          if (m === '"') return '&quot;';
-          return m;
-        });
       }
 
       const socket = io(window.location.origin, {
@@ -6080,10 +6083,19 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
             badge: overlayData.badgeColor,
             crowns: overlayData.crowns,
             maxHeight: overlayData.maxHeight,
-            maxNames: overlayData.maxNames
+            maxNames: overlayData.maxNames,
+            width: overlayData.width
           };
           const merged = Object.assign({}, currentSettings, adapted);
           updateOverlay(merged);
+        }
+      });
+
+      // عند تحميل الصفحة، تمرير القائمة إلى الأسفل
+      window.addEventListener('load', function() {
+        const list = document.getElementById('overlayList');
+        if (list) {
+          list.scrollTop = list.scrollHeight;
         }
       });
 
@@ -6298,10 +6310,14 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                         <div class="color-item"><input type="color" id="badgeColor1" value="#ff0055"><span>الأرقام</span></div>
                     </div>
                 </div>
-                <!-- الحقول الجديدة: الارتفاع وعدد الأسماء -->
+                <!-- الحقول الجديدة: العرض والارتفاع وعدد الأسماء -->
                 <div class="form-group">
                     <label>إعدادات العرض</label>
                     <div class="number-inputs">
+                        <div class="number-item">
+                            <label>العرض (px)</label>
+                            <input type="number" id="width1" value="285" min="100" max="600">
+                        </div>
                         <div class="number-item">
                             <label>الارتفاع (px)</label>
                             <input type="number" id="maxHeight1" value="500" min="200" max="1000">
@@ -6356,6 +6372,10 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                 <div class="form-group">
                     <label>إعدادات العرض</label>
                     <div class="number-inputs">
+                        <div class="number-item">
+                            <label>العرض (px)</label>
+                            <input type="number" id="width2" value="285" min="100" max="600">
+                        </div>
                         <div class="number-item">
                             <label>الارتفاع (px)</label>
                             <input type="number" id="maxHeight2" value="500" min="200" max="1000">
@@ -6436,6 +6456,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                     this.glowColor = document.getElementById('glowColor' + id);
                     this.badgeColor = document.getElementById('badgeColor' + id);
                     this.crownList = document.getElementById('crownList' + id);
+                    this.width = document.getElementById('width' + id);
                     this.maxHeight = document.getElementById('maxHeight' + id);
                     this.maxNames = document.getElementById('maxNames' + id);
                     this.status = document.getElementById('status' + id);
@@ -6461,6 +6482,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                         this.themeSelect.value = overlay.theme || (this.id === 1 ? 'theme-neon' : 'theme-gold');
                         this.glowColor.value = overlay.glowColor || (this.id === 1 ? '#00ffe1' : '#ffcc00');
                         this.badgeColor.value = overlay.badgeColor || (this.id === 1 ? '#ff0055' : '#a855f7');
+                        this.width.value = overlay.width || 285;
                         this.maxHeight.value = overlay.maxHeight || 500;
                         this.maxNames.value = overlay.maxNames || 10;
                         this.crownedIndices = new Set(overlay.crowns || []);
@@ -6483,6 +6505,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                             glowColor: this.glowColor.value,
                             badgeColor: this.badgeColor.value,
                             crowns: Array.from(this.crownedIndices),
+                            width: parseInt(this.width.value) || 285,
                             maxHeight: parseInt(this.maxHeight.value) || 500,
                             maxNames: parseInt(this.maxNames.value) || 10
                         };
@@ -6532,7 +6555,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                 }
 
                 bindEvents() {
-                    const saveable = [this.titleInput, this.themeSelect, this.glowColor, this.badgeColor, this.maxHeight, this.maxNames];
+                    const saveable = [this.titleInput, this.themeSelect, this.glowColor, this.badgeColor, this.width, this.maxHeight, this.maxNames];
                     saveable.forEach(el => {
                         el.addEventListener('input', () => this.saveToServer());
                         el.addEventListener('change', () => this.saveToServer());
@@ -6570,6 +6593,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                             glowColor: settings[key].glowColor,
                             badgeColor: settings[key].badgeColor,
                             crowns: settings[key].crowns || [],
+                            width: settings[key].width || 285,
                             maxHeight: settings[key].maxHeight || 500,
                             maxNames: settings[key].maxNames || 10
                         };
@@ -6609,6 +6633,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
     res.status(500).send("حدث خطأ في الخادم");
   }
 });
+
 // ================ بدء الخادم ================
 server.listen(PORT, "0.0.0.0", () => {
   logger.info(`✅ السيرفر يعمل على المنفذ ${PORT}`);
