@@ -7609,6 +7609,60 @@ app.get("/wins-overlay/:token", async (req, res) => {
   }
 });
 
+// ===== زيادة/نقصان العداد (للاستخدام عبر Agent) =====
+app.post("/api/wins/increment", authenticateToken, async (req, res) => {
+  try {
+    const { type } = req.body; // "wins" أو "losses"
+    if (!type || !["wins", "losses"].includes(type)) {
+      return res.status(400).json({ success: false, message: "نوع غير صالح" });
+    }
+    const userId = req.user.id;
+    let settings = await WinsOverlay.findOne({ userId });
+    if (!settings) {
+      settings = new WinsOverlay({ userId });
+      await settings.save();
+    }
+    if (type === "wins") {
+      settings.wins = (settings.wins || 0) + 1;
+    } else {
+      settings.losses = (settings.losses || 0) + 1;
+    }
+    await settings.save();
+    // بث التحديث لكل العملاء المتصلين
+    io.to(`wins-${userId}`).emit("wins-updated", settings);
+    res.json({ success: true, settings });
+  } catch (err) {
+    logger.error("❌ خطأ في زيادة العداد:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post("/api/wins/decrement", authenticateToken, async (req, res) => {
+  try {
+    const { type } = req.body;
+    if (!type || !["wins", "losses"].includes(type)) {
+      return res.status(400).json({ success: false, message: "نوع غير صالح" });
+    }
+    const userId = req.user.id;
+    let settings = await WinsOverlay.findOne({ userId });
+    if (!settings) {
+      settings = new WinsOverlay({ userId });
+      await settings.save();
+    }
+    if (type === "wins") {
+      settings.wins = Math.max(0, (settings.wins || 0) - 1);
+    } else {
+      settings.losses = Math.max(0, (settings.losses || 0) - 1);
+    }
+    await settings.save();
+    io.to(`wins-${userId}`).emit("wins-updated", settings);
+    res.json({ success: true, settings });
+  } catch (err) {
+    logger.error("❌ خطأ في نقصان العداد:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ================ بدء الخادم ================
 server.listen(PORT, "0.0.0.0", () => {
   logger.info(`✅ السيرفر يعمل على المنفذ ${PORT}`);
