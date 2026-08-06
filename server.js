@@ -7181,23 +7181,261 @@ app.get("/wins-overlay/:token", async (req, res) => {
       border-radius: 50px;
       position: relative;
       transition: all 0.3s ease;
-      width: auto; /* ← اجعل العرض مرناً */
+      width: auto;
     }
-    .item-overlay { display: flex; align-items: center; gap: 6px; font-size: 1.3rem; font-weight: 900; }
-    .lbl { font-size: 0.9rem; font-weight: 900; }
-    .line-overlay { width: 2px; height: 24px; }
-    /* جميع الثيمات (نفسها المذكورة سابقاً) */
-    /* اختصاراً، ضع نفس الـ CSS الخاص بالثيمات من لوحة التحكم هنا */
-    /* ... (يمكنك نسخ الـ CSS من لوحة التحكم) ... */
-    ${/* لضمان التصحيح، سأكرر الثيمات المهمة */ ""}
-    .pscontroller { background: rgba(18,24,38,0.95); border: 3px solid #3b82f6; border-radius: 40px 40px 20px 20px; box-shadow: 0 0 20px rgba(59,130,246,0.5); padding: 16px 36px; position: relative; }
-    .pscontroller::before { content: "🎮"; position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-size: 1.2rem; background: #3b82f6; border-radius: 50%; padding: 2px 6px; }
+    .box-overlay * {
+      font-size: 1.4rem !important;
+    }
+    .item-overlay {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 1.4rem;
+      font-weight: 900;
+    }
+    .lbl {
+      font-size: 1.4rem;
+      font-weight: 900;
+    }
+    .line-overlay {
+      width: 2px;
+      height: 24px;
+    }
+
+    .pscontroller {
+      background: rgba(18,24,38,0.95);
+      border: 3px solid #3b82f6;
+      border-radius: 40px 40px 20px 20px;
+      box-shadow: 0 0 20px rgba(59,130,246,0.5);
+      padding: 16px 36px;
+    }
+    .pscontroller::before {
+      content: "🎮";
+      position: absolute;
+      top: -16px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 1.2rem;
+      background: #3b82f6;
+      border-radius: 50%;
+      padding: 2px 6px;
+    }
     .pscontroller .w { color: #60a5fa; font-family: "Orbitron", sans-serif; }
     .pscontroller .l { color: #f43f5e; font-family: "Orbitron", sans-serif; }
     .pscontroller .line-overlay { background: rgba(255,255,255,0.2); }
-    /* باقي الثيمات ... */
-    /* (من الأفضل نسخها كاملة من لوحة التحكم) */
-    /* لكن للاختصار، سأكتفي بهذا المثال، يمكنك نسخ باقي الثيمات من الكود السابق */
+
+    .headset {
+      background: rgba(15,23,42,0.95);
+      border: 2px solid #10b981;
+      border-radius: 25px;
+      box-shadow: 0 0 15px rgba(16,185,129,0.4);
+      margin-top: 10px;
+    }
+    .headset::before {
+      content: "";
+      position: absolute;
+      top: -14px;
+      left: 15px;
+      right: 15px;
+      height: 14px;
+      border: 3px solid #10b981;
+      border-bottom: none;
+      border-radius: 20px 20px 0 0;
+    }
+    .headset .w { color: #34d399; }
+    .headset .l { color: #f87171; }
+    .headset .line-overlay { background: rgba(255,255,255,0.2); }
+
+    .shield {
+      background: rgba(20,20,30,0.95);
+      border: 3px solid #eab308;
+      border-radius: 10px 10px 40px 40px;
+      box-shadow: 0 0 15px rgba(234,179,8,0.4);
+    }
+    .shield .w { color: #facc15; font-family: "Orbitron", sans-serif; }
+    .shield .l { color: #ef4444; font-family: "Orbitron", sans-serif; }
+    .shield .line-overlay { background: #eab308; }
+
+    .cyber {
+      background: rgba(10,15,25,0.92);
+      border: 2px solid #00ffe1;
+      box-shadow: 0 0 15px rgba(0,255,225,0.4);
+    }
+    .cyber .w { color: #00ffe1; text-shadow: 0 0 8px rgba(0,255,225,0.6); }
+    .cyber .l { color: #ff0055; text-shadow: 0 0 8px rgba(255,0,85,0.6); }
+    .cyber .line-overlay { background: rgba(255,255,255,0.2); }
+
+    .dragon {
+      background: rgba(30,10,10,0.95);
+      border: 2px solid #dc2626;
+      box-shadow: 0 0 18px rgba(220,38,38,0.6);
+      border-radius: 15px 40px 15px 40px;
+    }
+    .dragon .w { color: #f87171; }
+    .dragon .l { color: #fbbf24; }
+    .dragon .line-overlay { background: #dc2626; }
+
+    .toxic {
+      background: rgba(10,25,10,0.95);
+      border: 2px solid #84cc16;
+      box-shadow: 0 0 15px rgba(132,204,22,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      width: fit-content;
+      margin: 0 auto;
+      padding: 12px 28px;
+    }
+    .toxic .w { color: #a3e635; text-shadow: 0 0 8px #a3e635; }
+    .toxic .l { color: #f43f5e; }
+    .toxic .line-overlay { background: #84cc16; width: 2px; height: 24px; }
+
+    .mouse {
+      background: rgba(15,15,25,0.95);
+      border: 2px solid #a855f7;
+      border-radius: 40px 40px 30px 30px;
+      box-shadow: 0 0 15px rgba(168,85,247,0.4);
+    }
+    .mouse::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 2px;
+      height: 12px;
+      background: #a855f7;
+    }
+    .mouse .w { color: #c084fc; }
+    .mouse .l { color: #f43f5e; }
+    .mouse .line-overlay { background: rgba(255,255,255,0.2); }
+
+    .royale {
+      background: rgba(20,16,8,0.95);
+      border: 2px solid #ffcc00;
+      box-shadow: 0 0 15px rgba(255,204,0,0.3);
+    }
+    .royale .w { color: #ffcc00; text-shadow: 0 0 8px rgba(255,204,0,0.5); }
+    .royale .l { color: #ef4444; }
+    .royale .line-overlay { background: rgba(255,204,0,0.3); }
+
+    .fireice {
+      background: rgba(15,15,20,0.9);
+      border: 2px solid #38bdf8;
+      box-shadow: 0 0 15px rgba(249,115,22,0.4);
+    }
+    .fireice .w { color: #f97316; text-shadow: 0 0 8px #f97316; }
+    .fireice .l { color: #38bdf8; text-shadow: 0 0 8px #38bdf8; }
+    .fireice .line-overlay { background: rgba(255,255,255,0.2); }
+
+    .arcade {
+      background: #000;
+      border: 3px solid #3b82f6;
+      border-radius: 8px;
+      font-family: "Press Start 2P", cursive;
+    }
+    .arcade .item-overlay { font-size: 0.85rem; }
+    .arcade .lbl { font-size: 0.7rem; }
+    .arcade .w { color: #22c55e; }
+    .arcade .l { color: #ef4444; }
+    .arcade .line-overlay { background: #3b82f6; }
+
+    .kitty {
+      background: rgba(255,240,245,0.95);
+      border: 3px solid #ff69b4;
+      border-radius: 60px 60px 40px 40px;
+      box-shadow: 0 0 15px rgba(255,105,180,0.5);
+      margin-top: 12px;
+    }
+    .kitty::before,
+    .kitty::after {
+      content: "";
+      position: absolute;
+      top: -14px;
+      width: 0;
+      height: 0;
+      border-left: 14px solid transparent;
+      border-right: 14px solid transparent;
+      border-bottom: 16px solid #ff69b4;
+    }
+    .kitty::before { left: 18px; transform: rotate(-15deg); }
+    .kitty::after { right: 18px; transform: rotate(15deg); }
+    .kitty-bow {
+      position: absolute;
+      top: -18px;
+      right: 32px;
+      font-size: 1.2rem;
+      z-index: 2;
+    }
+    .kitty .w { color: #ff1493; font-family: "Fredoka One", cursive; }
+    .kitty .l { color: #8a2be2; font-family: "Fredoka One", cursive; }
+    .kitty .line-overlay { background: #ffb6c1; }
+
+    .bunny {
+      background: rgba(255,255,255,0.95);
+      border: 3px solid #ffb6c1;
+      border-radius: 30px;
+      box-shadow: 0 0 15px rgba(255,182,193,0.6);
+      margin-top: 15px;
+    }
+    .bunny::before,
+    .bunny::after {
+      content: "";
+      position: absolute;
+      top: -20px;
+      width: 14px;
+      height: 22px;
+      background: #fff;
+      border: 3px solid #ffb6c1;
+      border-radius: 12px 12px 0 0;
+    }
+    .bunny::before { left: 25px; transform: rotate(-10deg); }
+    .bunny::after { right: 25px; transform: rotate(10deg); }
+    .bunny .w { color: #ff69b4; font-family: "Fredoka One", cursive; }
+    .bunny .l { color: #a78bfa; font-family: "Fredoka One", cursive; }
+    .bunny .line-overlay { background: #ffd1dc; }
+
+    .magicstar {
+      background: rgba(30,15,45,0.92);
+      border: 2px solid #f472b6;
+      border-radius: 20px;
+      box-shadow: 0 0 18px rgba(244,114,182,0.5);
+    }
+    .magicstar::before {
+      content: "✨";
+      position: absolute;
+      top: -12px;
+      left: -10px;
+      font-size: 1.2rem;
+    }
+    .magicstar::after {
+      content: "⭐";
+      position: absolute;
+      bottom: -12px;
+      right: -10px;
+      font-size: 1.1rem;
+    }
+    .magicstar .w { color: #f472b6; font-family: "Fredoka One", cursive; }
+    .magicstar .l { color: #c084fc; font-family: "Fredoka One", cursive; }
+    .magicstar .line-overlay { background: rgba(244,114,182,0.4); }
+
+    .minimal {
+      background: rgba(18,18,18,0.85);
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+    .minimal .w { color: #10b981; }
+    .minimal .l { color: #ef4444; }
+    .minimal .line-overlay { background: rgba(255,255,255,0.2); }
+
+    .purpleneon {
+      background: rgba(20,10,35,0.92);
+      border: 2px solid #a855f7;
+      box-shadow: 0 0 15px rgba(168,85,247,0.5);
+    }
+    .purpleneon .w { color: #c084fc; text-shadow: 0 0 8px #c084fc; }
+    .purpleneon .l { color: #f43f5e; text-shadow: 0 0 8px #f43f5e; }
+    .purpleneon .line-overlay { background: rgba(168,85,247,0.4); }
   </style>
 </head>
 <body>
@@ -7225,7 +7463,6 @@ app.get("/wins-overlay/:token", async (req, res) => {
 
       const box = document.getElementById('previewBox');
       box.className = 'box-overlay ' + (settings.theme || 'pscontroller');
-      // ← أضف هذا لتطبيق العرض
       box.style.width = (settings.width || 285) + 'px';
       
       const bow = document.getElementById('kittyBow');
@@ -7236,17 +7473,14 @@ app.get("/wins-overlay/:token", async (req, res) => {
       if (settings) applySettings(settings);
     });
 
-    // طلب الإعدادات الحالية عند التحميل
     socket.on('connect', () => {
       socket.emit('get-wins-settings', TOKEN);
     });
 
-    // استقبال الإعدادات الأولية
     socket.on('wins-initial', (settings) => {
       if (settings) applySettings(settings);
     });
 
-    // (احتياطي) جلب الإعدادات عبر HTTP أيضاً
     async function fetchInitial() {
       try {
         const res = await fetch('/api/wins-settings?token=' + TOKEN);
