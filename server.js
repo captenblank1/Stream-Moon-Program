@@ -5729,6 +5729,8 @@ const overlaySettingsSchema = new mongoose.Schema({
     glowColor: { type: String, default: "#00ffe1" },
     badgeColor: { type: String, default: "#ff0055" },
     crowns: { type: [Number], default: [] },
+    maxHeight: { type: Number, default: 500 }, // أقصى ارتفاع للـ overlay (بكسل)
+    maxNames: { type: Number, default: 10 }, // أقصى عدد من الأسماء المعروضة
   },
   overlay2: {
     title: { type: String, default: "🔥 كبار الداعمين" },
@@ -5737,12 +5739,35 @@ const overlaySettingsSchema = new mongoose.Schema({
     glowColor: { type: String, default: "#ffcc00" },
     badgeColor: { type: String, default: "#a855f7" },
     crowns: { type: [Number], default: [] },
+    maxHeight: { type: Number, default: 500 }, // ← أضف هذا
+    maxNames: { type: Number, default: 10 }, // ← أضف هذا
   },
 });
 const OverlaySettings = mongoose.model(
   "OverlaySettings",
   overlaySettingsSchema,
 );
+
+// ===== دالة إضافة اسم مع الاحتفاظ بآخر N اسم (حسب الإعداد) =====
+async function addNameToOverlay(userId, overlayId, newName) {
+  if (!newName || !newName.trim()) return;
+  const settings = await OverlaySettings.findOne({ userId });
+  if (!settings) return;
+  const key = overlayId === 1 ? "overlay1" : "overlay2";
+  const overlay = settings[key];
+  const maxNames = overlay.maxNames || 10;
+
+  let names = overlay.names || "";
+  const lines = names.split("\n").filter((l) => l.trim() !== "");
+  lines.push(newName.trim());
+  const trimmed = lines.slice(-maxNames);
+  overlay.names = trimmed.join("\n");
+  await settings.save();
+  io.to(`screen-${userId}`).emit("overlay-updated", {
+    overlay1: settings.overlay1,
+    overlay2: settings.overlay2,
+  });
+}
 
 app.post("/api/overlay/add-name", authenticateToken, async (req, res) => {
   try {
@@ -5800,7 +5825,7 @@ app.post("/api/overlay-settings", authenticateToken, async (req, res) => {
   }
 });
 
-// المسار الديناميكي
+// المسار الديناميكي للـ Overlay
 app.get("/overlay/:token/:overlayId", async (req, res) => {
   try {
     const { token, overlayId } = req.params;
@@ -5828,6 +5853,8 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
     const badge =
       overlay.badgeColor || (overlayId === "1" ? "#ff0055" : "#a855f7");
     const crowns = overlay.crowns || [];
+    const maxHeight = overlay.maxHeight || 500; // أقصى ارتفاع
+    const maxNames = overlay.maxNames || 10; // أقصى عدد أسماء
 
     function escape(text) {
       if (!text) return "";
@@ -5837,50 +5864,28 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
       );
     }
 
+    // دالة إنشاء قائمة الأسماء (تعرض آخر maxNames فقط)
     function nameListHTML(namesStr, crownsArr) {
       const items = namesStr.split("\n").filter((n) => n.trim() !== "");
-      // خذ آخر 10 عناصر فقط
-      const lastTen = items.slice(-10);
-      if (!lastTen.length)
+      // خذ آخر maxNames عنصر
+      const lastItems = items.slice(-maxNames);
+      if (!lastItems.length)
         return '<div style="color:#888;text-align:center;padding:10px;">لا توجد أسماء</div>';
       const crownSet = new Set(crownsArr);
-      return lastTen
+      return lastItems
         .map((n, idx) => {
-          const originalIndex = items.length - lastTen.length + idx; // للحفاظ على التاج بناءً على الموقع الأصلي
+          const originalIndex = items.length - lastItems.length + idx;
           return `
-      <div class="name-card">
-        <div class="name-info">
-          <div class="badge-num">${idx + 1}</div>
-          <span class="name-text">${escape(n.trim())}</span>
-        </div>
-        ${crownSet.has(originalIndex) ? '<span class="crown-icon">👑</span>' : ""}
-      </div>
-    `;
+            <div class="name-card">
+              <div class="name-info">
+                <div class="badge-num">${idx + 1}</div>
+                <span class="name-text">${escape(n.trim())}</span>
+              </div>
+              ${crownSet.has(originalIndex) ? '<span class="crown-icon">👑</span>' : ""}
+            </div>
+          `;
         })
         .join("");
-    }
-
-    // ===== دالة إضافة اسم مع الاحتفاظ بآخر 10 أسماء =====
-    async function addNameToOverlay(userId, overlayId, newName) {
-      if (!newName || !newName.trim()) return;
-      const settings = await OverlaySettings.findOne({ userId });
-      if (!settings) return;
-      const key = overlayId === 1 ? "overlay1" : "overlay2";
-      const overlay = settings[key];
-      let names = overlay.names || "";
-      const lines = names.split("\n").filter((l) => l.trim() !== "");
-      lines.push(newName.trim());
-      // الاحتفاظ بآخر 10 فقط
-      const lastTen = lines.slice(-10);
-      overlay.names = lastTen.join("\n");
-      // يمكن الحفاظ على التاج أو إعادة حسابه (اختياري)
-      // إذا أردت إزالة التاج من الأسماء المحذوفة، يمكنك تعديل crowns هنا
-      await settings.save();
-      // بث التحديث لجميع شاشات هذا المستخدم
-      io.to(`screen-${userId}`).emit("overlay-updated", {
-        overlay1: settings.overlay1,
-        overlay2: settings.overlay2,
-      });
     }
 
     const html = `<!DOCTYPE html>
@@ -5892,13 +5897,64 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'Cairo',sans-serif;background:transparent;color:#fff;overflow:hidden;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center}
-    .overlay-box{width:285px;background:rgba(18,18,28,0.5);backdrop-filter:blur(12px);border-radius:18px;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,0.5);border:2px solid ${glow}}
-    .overlay-header{display:flex;justify-content:center;padding-bottom:12px;margin-bottom:15px;border-bottom:1px solid rgba(255,255,255,0.1)}
-    .overlay-header h2{font-size:26px;font-weight:900;color:${glow}}
-    .overlay-list{display:flex;flex-direction:column;gap:10px}
-    .name-card{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-radius:8px;background:rgba(255,255,255,0.04);border-right:4px solid ${badge};animation:fadeIn 0.3s ease forwards}
+    .overlay-box{
+      width:285px;
+      height:${maxHeight}px;          /* ← الارتفاع الديناميكي من الإعدادات */
+      background:rgba(18,18,28,0.5);
+      backdrop-filter:blur(12px);
+      border-radius:18px;
+      padding:20px;
+      box-shadow:0 10px 30px rgba(0,0,0,0.5);
+      border:2px solid ${glow};
+      display:flex;
+      flex-direction:column;
+      overflow:hidden;               /* منع السكرول خارج الصندوق */
+    }
+    .overlay-header{
+      flex-shrink:0;
+      display:flex;
+      justify-content:center;
+      padding-bottom:12px;
+      margin-bottom:15px;
+      border-bottom:1px solid rgba(255,255,255,0.1);
+    }
+    .overlay-header h2{font-size:26px;font-weight:900;color:${glow};margin:0}
+    .overlay-list{
+      flex:1;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      overflow-y:auto;               /* سكرول عمودي في حالة تجاوز المحتوى */
+      padding-right:5px;
+    }
+    /* تنسيق شريط التمرير (اختياري) */
+    .overlay-list::-webkit-scrollbar { width: 4px; }
+    .overlay-list::-webkit-scrollbar-track { background: transparent; }
+    .overlay-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+
+    .name-card{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:8px 12px;
+      border-radius:8px;
+      background:rgba(255,255,255,0.04);
+      border-right:4px solid ${badge};
+      animation:fadeIn 0.3s ease forwards;
+      flex-shrink:0;
+    }
     .name-info{display:flex;align-items:center;gap:10px}
-    .badge-num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:900;background:linear-gradient(135deg,${badge},#ff5500);color:#fff}
+    .badge-num{
+      width:28px;height:28px;
+      border-radius:50%;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size:.85rem;
+      font-weight:900;
+      background:linear-gradient(135deg,${badge},#ff5500);
+      color:#fff;
+    }
     .name-text{font-size:20px;font-weight:700;color:#fff}
     .crown-icon{font-size:1.1rem;filter:drop-shadow(0 0 5px rgba(255,215,0,0.8))}
     @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
@@ -5922,20 +5978,20 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
   <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
   <script>
     (function() {
-     const overlayId = '${overlayId}';
-      // الإعدادات الأولية
+      const overlayId = '${overlayId}';
       const initialSettings = {
         title: ${JSON.stringify(title)},
         names: ${JSON.stringify(names)},
         theme: ${JSON.stringify(theme)},
         glow: ${JSON.stringify(glow)},
         badge: ${JSON.stringify(badge)},
-        crowns: ${JSON.stringify(crowns)}
+        crowns: ${JSON.stringify(crowns)},
+        maxHeight: ${maxHeight},
+        maxNames: ${maxNames}
       };
 
       let currentSettings = JSON.parse(JSON.stringify(initialSettings));
 
-      // دالة لتحديث الواجهة
       function updateOverlay(settings) {
         // تحديث العنوان
         const titleEl = document.querySelector('.overlay-header h2');
@@ -5946,18 +6002,22 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
         if (!list) return;
         const items = settings.names.split('\\n').filter(s => s.trim() !== '');
         const crownSet = new Set(settings.crowns);
+        // تطبيق maxNames محلياً
+        const maxNames = settings.maxNames || 10;
+        const lastItems = items.slice(-maxNames);
         let html = '';
-        if (items.length === 0) {
+        if (lastItems.length === 0) {
           html = '<div style="color:#888;text-align:center;padding:10px;">لا توجد أسماء</div>';
         } else {
-          items.forEach((name, i) => {
+          lastItems.forEach((name, idx) => {
+            const originalIndex = items.length - lastItems.length + idx;
             html += \`
               <div class="name-card">
                 <div class="name-info">
-                  <div class="badge-num">\${i+1}</div>
+                  <div class="badge-num">\${idx+1}</div>
                   <span class="name-text">\${escapeHtml(name.trim())}</span>
                 </div>
-                \${crownSet.has(i) ? '<span class="crown-icon">👑</span>' : ''}
+                \${crownSet.has(originalIndex) ? '<span class="crown-icon">👑</span>' : ''}
               </div>
             \`;
           });
@@ -5967,10 +6027,11 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
         // تحديث الثيم
         const box = document.querySelector('.overlay-box');
         if (box) {
-          // إزالة جميع الثيمات السابقة
           box.className = box.className.split(' ').filter(c => !c.startsWith('theme-')).join(' ');
           box.classList.add(settings.theme);
           box.style.borderColor = settings.glow;
+          // تحديث الارتفاع
+          box.style.height = (settings.maxHeight || 500) + 'px';
         }
 
         // تحديث لون العنوان
@@ -5985,15 +6046,9 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
           el.style.borderColor = settings.badge;
         });
 
-        // تحديث حجم الخط للعنوان والأسماء (يمكن إضافة حجم ثابت)
-        // لكننا نفضل تركه كما هو في الـ CSS الافتراضي (لأننا استخدمنا px)
-        // لذلك لا حاجة لتعديله هنا.
-
-        // تخزين الإعدادات الحالية
         currentSettings = settings;
       }
 
-      // دالة escapeHtml
       function escapeHtml(str) {
         if (!str) return '';
         return str.replace(/[&<>"]/g, function(m) {
@@ -6005,54 +6060,36 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
         });
       }
 
-      // الاتصال بـ Socket.IO
       const socket = io(window.location.origin, {
         query: { token: ${JSON.stringify(token)} },
         transports: ['websocket', 'polling']
       });
 
-      socket.on('connect', function() {
-        console.log('✅ Overlay socket connected');
-      });
+      socket.on('connect', () => console.log('✅ Overlay socket connected'));
 
-      // استماع حدث تحديث الإعدادات
-      socket.on('overlay-updated', function(newSettings) {
+      socket.on('overlay-updated', (newSettings) => {
         console.log('🔄 استلام تحديث الإعدادات:', newSettings);
-        
-        // تحديد أي من overlay1 أو overlay2 بناءً على رقم الشاشة
         const overlayKey = overlayId === '1' ? 'overlay1' : 'overlay2';
         const overlayData = newSettings[overlayKey];
-        
         if (overlayData) {
-          // تحويل أسماء الحقول لتتوافق مع currentSettings و updateOverlay
           const adapted = {
             title: overlayData.title,
             names: overlayData.names,
             theme: overlayData.theme,
-            glow: overlayData.glowColor,      // glowColor ← glow
-            badge: overlayData.badgeColor,    // badgeColor ← badge
-            crowns: overlayData.crowns
+            glow: overlayData.glowColor,
+            badge: overlayData.badgeColor,
+            crowns: overlayData.crowns,
+            maxHeight: overlayData.maxHeight,
+            maxNames: overlayData.maxNames
           };
-          
-          // دمج مع الإعدادات الحالية (الحفاظ على القيم غير المُرسلة)
           const merged = Object.assign({}, currentSettings, adapted);
           updateOverlay(merged);
         }
       });
 
-      // الاستماع لأحداث الصوت والفيديو والتراكب (موجودة بالفعل في الـ script الأصلي)
-      socket.on('play-sound', (payload) => {
-        console.log('🔊 play-sound', payload);
-      });
-
-      socket.on('gift-video', (data) => {
-        console.log('🎬 gift-video', data);
-      });
-
-      socket.on('show-overlay', (data) => {
-        console.log('📢 show-overlay', data);
-      });
-
+      socket.on('play-sound', (payload) => console.log('🔊 play-sound', payload));
+      socket.on('gift-video', (data) => console.log('🎬 gift-video', data));
+      socket.on('show-overlay', (data) => console.log('📢 show-overlay', data));
       socket.on('connect_error', (err) => console.warn('socket connect_error', err));
     })();
   </script>
@@ -6145,15 +6182,15 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
         .form-group { display: flex; flex-direction: column; gap: 4px; }
         .form-group label { font-size: 0.75rem; font-weight: 700; color: #b0b0d0; letter-spacing: 0.3px; }
 
-        input[type="text"], textarea, select {
+        input[type="text"], textarea, select, input[type="number"] {
             width: 100%; padding: 8px 12px;
             background: #1b1d2a; border: 1px solid #26283b;
             border-radius: 8px; color: #fff;
             font-family: 'Cairo', sans-serif; font-size: 0.85rem;
             outline: none; transition: border 0.2s;
         }
-        input[type="text"]:focus, textarea:focus, select:focus { border-color: #00ffe1; }
-        .panel-2 input[type="text"]:focus, .panel-2 textarea:focus, .panel-2 select:focus { border-color: #ffcc00; }
+        input[type="text"]:focus, textarea:focus, select:focus, input[type="number"]:focus { border-color: #00ffe1; }
+        .panel-2 input[type="text"]:focus, .panel-2 textarea:focus, .panel-2 select:focus, .panel-2 input[type="number"]:focus { border-color: #ffcc00; }
         textarea { resize: vertical; min-height: 80px; }
 
         .crown-selector-list {
@@ -6187,6 +6224,10 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
         }
         .color-item input[type="color"] { border: none; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; background: none; padding: 0; }
         .color-item span { font-size: 0.7rem; color: #a0a0c0; }
+        .number-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .number-item { display: flex; flex-direction: column; gap: 2px; }
+        .number-item label { font-size: 0.7rem; color: #a0a0c0; }
+        .number-item input[type="number"] { padding: 4px 8px; font-size: 0.8rem; }
         .status { font-size: 0.75rem; color: #10b981; text-align: center; height: 20px; line-height: 20px; }
         .panel-actions { display: flex; justify-content: center; margin-top: 8px; }
         .reset-btn {
@@ -6222,7 +6263,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
     <div class="app-wrapper">
         <h1 class="header-title">🎛️ لوحة تحكم الـ Overlays</h1>
         <div class="control-grid">
-            <!-- Panel 1 (مع زر إعادة الضبط) -->
+            <!-- Panel 1 -->
             <div class="panel panel-1">
                 <h2>🎮 القائمة الأولى</h2>
                 <div class="link-box">
@@ -6257,12 +6298,26 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                         <div class="color-item"><input type="color" id="badgeColor1" value="#ff0055"><span>الأرقام</span></div>
                     </div>
                 </div>
+                <!-- الحقول الجديدة: الارتفاع وعدد الأسماء -->
+                <div class="form-group">
+                    <label>إعدادات العرض</label>
+                    <div class="number-inputs">
+                        <div class="number-item">
+                            <label>الارتفاع (px)</label>
+                            <input type="number" id="maxHeight1" value="500" min="200" max="1000">
+                        </div>
+                        <div class="number-item">
+                            <label>عدد الأسماء</label>
+                            <input type="number" id="maxNames1" value="10" min="1" max="50">
+                        </div>
+                    </div>
+                </div>
                 <div class="panel-actions">
                     <button class="reset-btn" data-overlay="1">Reset 🔄</button>
                 </div>
                 <div class="status" id="status1"></div>
             </div>
-            <!-- Panel 2 (مع زر إعادة الضبط) -->
+            <!-- Panel 2 -->
             <div class="panel panel-2">
                 <h2>⭐ القائمة الثانية</h2>
                 <div class="link-box">
@@ -6297,6 +6352,20 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                         <div class="color-item"><input type="color" id="badgeColor2" value="#a855f7"><span>الأرقام</span></div>
                     </div>
                 </div>
+                <!-- الحقول الجديدة -->
+                <div class="form-group">
+                    <label>إعدادات العرض</label>
+                    <div class="number-inputs">
+                        <div class="number-item">
+                            <label>الارتفاع (px)</label>
+                            <input type="number" id="maxHeight2" value="500" min="200" max="1000">
+                        </div>
+                        <div class="number-item">
+                            <label>عدد الأسماء</label>
+                            <input type="number" id="maxNames2" value="10" min="1" max="50">
+                        </div>
+                    </div>
+                </div>
                 <div class="panel-actions">
                     <button class="reset-btn" data-overlay="2">Reset 🔄</button>
                 </div>
@@ -6320,7 +6389,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                 toastTimeout = setTimeout(() => el.classList.remove('show'), 3000);
             }
 
-            // ─── نسخ الرابط ───
+            // نسخ الرابط
             document.querySelectorAll('.copy-btn').forEach(btn => {
                 btn.addEventListener('click', function() {
                     const id = this.dataset.overlay;
@@ -6341,7 +6410,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                 });
             });
 
-            // ─── جلب رمز المستخدم ───
+            // جلب رمز المستخدم
             let screenToken = '';
             fetch(API_BASE + '/api/user/screen-token', { credentials: 'include' })
                 .then(res => res.json())
@@ -6356,7 +6425,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                 })
                 .catch(() => showToast('❌ خطأ في الاتصال بالخادم'));
 
-            // ─── فئة التحكم ───
+            // فئة التحكم
             class Controller {
                 constructor(id) {
                     this.id = id;
@@ -6367,6 +6436,8 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                     this.glowColor = document.getElementById('glowColor' + id);
                     this.badgeColor = document.getElementById('badgeColor' + id);
                     this.crownList = document.getElementById('crownList' + id);
+                    this.maxHeight = document.getElementById('maxHeight' + id);
+                    this.maxNames = document.getElementById('maxNames' + id);
                     this.status = document.getElementById('status' + id);
                     this.init();
                 }
@@ -6390,6 +6461,8 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                         this.themeSelect.value = overlay.theme || (this.id === 1 ? 'theme-neon' : 'theme-gold');
                         this.glowColor.value = overlay.glowColor || (this.id === 1 ? '#00ffe1' : '#ffcc00');
                         this.badgeColor.value = overlay.badgeColor || (this.id === 1 ? '#ff0055' : '#a855f7');
+                        this.maxHeight.value = overlay.maxHeight || 500;
+                        this.maxNames.value = overlay.maxNames || 10;
                         this.crownedIndices = new Set(overlay.crowns || []);
                         this.renderCrowns();
                         this.status.textContent = '';
@@ -6409,7 +6482,9 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                             theme: this.themeSelect.value,
                             glowColor: this.glowColor.value,
                             badgeColor: this.badgeColor.value,
-                            crowns: Array.from(this.crownedIndices)
+                            crowns: Array.from(this.crownedIndices),
+                            maxHeight: parseInt(this.maxHeight.value) || 500,
+                            maxNames: parseInt(this.maxNames.value) || 10
                         };
                         const res = await fetch(API_BASE + '/api/overlay-settings', {
                             method: 'POST',
@@ -6457,7 +6532,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                 }
 
                 bindEvents() {
-                    const saveable = [this.titleInput, this.themeSelect, this.glowColor, this.badgeColor];
+                    const saveable = [this.titleInput, this.themeSelect, this.glowColor, this.badgeColor, this.maxHeight, this.maxNames];
                     saveable.forEach(el => {
                         el.addEventListener('input', () => this.saveToServer());
                         el.addEventListener('change', () => this.saveToServer());
@@ -6469,12 +6544,11 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                 }
             }
 
-            // ─── إنشاء المتحكمين ───
             const ctrl1 = new Controller(1);
             const ctrl2 = new Controller(2);
             controllers.push(ctrl1, ctrl2);
 
-            // ─── ربط أزرار إعادة الضبط (كلاهما) ───
+            // ربط أزرار إعادة الضبط
             document.querySelectorAll('.reset-btn').forEach(btn => {
                 btn.addEventListener('click', function() {
                     const id = parseInt(this.dataset.overlay);
@@ -6482,52 +6556,47 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                 });
             });
 
-function resetOverlay(id) {
-    // 1. جلب الإعدادات الحالية أولاً
-    fetch(API_BASE + '/api/overlay-settings', { credentials: 'include' })
-        .then(res => res.json())
-        .then(data => {
-            if (!data.success) throw new Error(data.message);
-            const settings = data.settings;
-            const key = id === 1 ? 'overlay1' : 'overlay2';
-            
-            // 2. نسخ الإعدادات الحالية مع تغيير الأسماء فقط إلى نص فارغ
-            const updatedOverlay = {
-                title: settings[key].title,
-                names: '',  // ← هذا هو التعديل الوحيد
-                theme: settings[key].theme,
-                glowColor: settings[key].glowColor,
-                badgeColor: settings[key].badgeColor,
-                crowns: settings[key].crowns || []
-            };
-            
-            // 3. إرسال التحديث إلى الخادم
-            const payload = {};
-            payload[key] = updatedOverlay;
-            
-            return fetch(API_BASE + '/api/overlay-settings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify(payload)
-            });
-        })
-        .then(res => res.json())
-        .then(result => {
-            if (result.success) {
-                showToast('✅ تم مسح الأسماء من القائمة ' + id);
-                // إعادة تحميل الإعدادات للمتحكم المطابق
-                const ctrl = controllers[id-1];
-                if (ctrl) ctrl.loadFromServer();
-            } else {
-                showToast('❌ فشل مسح الأسماء: ' + (result.message || ''));
+            function resetOverlay(id) {
+                fetch(API_BASE + '/api/overlay-settings', { credentials: 'include' })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (!data.success) throw new Error(data.message);
+                        const settings = data.settings;
+                        const key = id === 1 ? 'overlay1' : 'overlay2';
+                        const updatedOverlay = {
+                            title: settings[key].title,
+                            names: '',
+                            theme: settings[key].theme,
+                            glowColor: settings[key].glowColor,
+                            badgeColor: settings[key].badgeColor,
+                            crowns: settings[key].crowns || [],
+                            maxHeight: settings[key].maxHeight || 500,
+                            maxNames: settings[key].maxNames || 10
+                        };
+                        const payload = {};
+                        payload[key] = updatedOverlay;
+                        return fetch(API_BASE + '/api/overlay-settings', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include',
+                            body: JSON.stringify(payload)
+                        });
+                    })
+                    .then(res => res.json())
+                    .then(result => {
+                        if (result.success) {
+                            showToast('✅ تم مسح الأسماء من القائمة ' + id);
+                            const ctrl = controllers[id-1];
+                            if (ctrl) ctrl.loadFromServer();
+                        } else {
+                            showToast('❌ فشل مسح الأسماء: ' + (result.message || ''));
+                        }
+                    })
+                    .catch(err => {
+                        console.error(err);
+                        showToast('❌ خطأ في الاتصال بالخادم');
+                    });
             }
-        })
-        .catch(err => {
-            console.error(err);
-            showToast('❌ خطأ في الاتصال بالخادم');
-        });
-}
         })();
     </script>
 </body>
@@ -6540,7 +6609,6 @@ function resetOverlay(id) {
     res.status(500).send("حدث خطأ في الخادم");
   }
 });
-
 // ================ بدء الخادم ================
 server.listen(PORT, "0.0.0.0", () => {
   logger.info(`✅ السيرفر يعمل على المنفذ ${PORT}`);
