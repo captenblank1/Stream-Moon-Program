@@ -6885,6 +6885,11 @@ app.get("/wins-dashboard", authenticateToken, async (req, res) => {
   padding: 12px 28px;      /* ← حشوة مناسبة */
 }
 
+.toxic * {
+  font-size: 1.5rem !important;
+}
+
+
 .toxic .w {
   color: #a3e635;
   text-shadow: 0 0 8px #a3e635;
@@ -6918,7 +6923,7 @@ app.get("/wins-dashboard", authenticateToken, async (req, res) => {
 
     .arcade { background: #000; border: 3px solid #3b82f6; border-radius: 8px; font-family: "Press Start 2P", cursive; }
     .arcade .item-overlay { font-size: 0.85rem; }
-    .arcade .lbl { font-size: 0.7rem; }
+    .arcade .lbl { font-size: 1.4rem; }
     .arcade .w { color: #22c55e; }
     .arcade .l { color: #ef4444; }
     .arcade .line-overlay { background: #3b82f6; }
