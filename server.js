@@ -6729,7 +6729,6 @@ app.get("/wins-dashboard", authenticateToken, async (req, res) => {
     const screenToken = user.screenToken || (await generateScreenToken(user));
     const baseUrl = `${req.protocol}://${req.get("host")}`;
 
-    // جلب الإعدادات الحالية من قاعدة البيانات
     let settings = await WinsOverlay.findOne({ userId: req.user.id });
     if (!settings) {
       settings = new WinsOverlay({ userId: req.user.id });
@@ -6829,10 +6828,11 @@ app.get("/wins-dashboard", authenticateToken, async (req, res) => {
     .copy-link-btn:hover { opacity: 0.9; transform: scale(1.02); }
     .reset { background: #dc2626; color: #fff; padding: 8px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
 
-    /* ثيمات الـ Overlay (نفسها الموجودة في صفحة العرض) */
+    /* ===== ثيمات الـ Overlay (مع التوسيط العرضي) ===== */
     .box-overlay {
       display: flex;
       align-items: center;
+      justify-content: center;   /* ← تمت إضافته لتوسيط المحتوى عرضياً */
       gap: 16px;
       padding: 12px 28px;
       border-radius: 50px;
@@ -6840,378 +6840,17 @@ app.get("/wins-dashboard", authenticateToken, async (req, res) => {
       transition: all 0.3s ease;
       width: auto;
     }
+
     .item-overlay { display: flex; align-items: center; gap: 6px; font-size: 1.3rem; font-weight: 900; }
     .lbl { font-size: 0.9rem; font-weight: 900; }
     .line-overlay { width: 2px; height: 24px; }
 
-    .pscontroller { background: rgba(18,24,38,0.95); border: 3px solid #3b82f6; border-radius: 40px 40px 20px 20px; box-shadow: 0 0 20px rgba(59,130,246,0.5); padding: 16px 36px; position: relative; }
-    .pscontroller::before { content: "🎮"; position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-size: 1.2rem; background: #3b82f6; border-radius: 50%; padding: 2px 6px; }
-    .pscontroller .w { color: #60a5fa; font-family: "Orbitron", sans-serif; }
-    .pscontroller .l { color: #f43f5e; font-family: "Orbitron", sans-serif; }
-    .pscontroller .line-overlay { background: rgba(255,255,255,0.2); }
-
-    .headset { background: rgba(15,23,42,0.95); border: 2px solid #10b981; border-radius: 25px; box-shadow: 0 0 15px rgba(16,185,129,0.4); margin-top: 10px; position: relative; }
-    .headset::before { content: ""; position: absolute; top: -14px; left: 15px; right: 15px; height: 14px; border: 3px solid #10b981; border-bottom: none; border-radius: 20px 20px 0 0; }
-    .headset .w { color: #34d399; }
-    .headset .l { color: #f87171; }
-    .headset .line-overlay { background: rgba(255,255,255,0.2); }
-
-    .shield { background: rgba(20,20,30,0.95); border: 3px solid #eab308; border-radius: 10px 10px 40px 40px; box-shadow: 0 0 15px rgba(234,179,8,0.4); position: relative; }
-    .shield .w { color: #facc15; font-family: "Orbitron", sans-serif; }
-    .shield .l { color: #ef4444; font-family: "Orbitron", sans-serif; }
-    .shield .line-overlay { background: #eab308; }
-
-    .cyber { background: rgba(10,15,25,0.92); border: 2px solid #00ffe1; box-shadow: 0 0 15px rgba(0,255,225,0.4); }
-    .cyber .w { color: #00ffe1; text-shadow: 0 0 8px rgba(0,255,225,0.6); }
-    .cyber .l { color: #ff0055; text-shadow: 0 0 8px rgba(255,0,85,0.6); }
-    .cyber .line-overlay { background: rgba(255,255,255,0.2); }
-
-    .dragon { background: rgba(30,10,10,0.95); border: 2px solid #dc2626; box-shadow: 0 0 18px rgba(220,38,38,0.6); border-radius: 15px 40px 15px 40px; }
-    .dragon .w { color: #f87171; }
-    .dragon .l { color: #fbbf24; }
-    .dragon .line-overlay { background: #dc2626; }
-
-/* ===== تعديل شكل الصندوق ===== */
-.toxic {
-  background: rgba(10, 25, 10, 0.95);
-  border: 2px solid #84cc16;
-  box-shadow: 0 0 15px rgba(132, 204, 22, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  width: fit-content;      /* ← العرض حسب المحتوى */
-  margin: 0 auto;          /* ← توسيط الصندوق في الصفحة */
-  padding: 12px 28px;      /* ← حشوة مناسبة */
-}
-
-.toxic * {
-  font-size: 1.5rem !important;
-}
-
-
-.toxic .w {
-  color: #a3e635;
-  text-shadow: 0 0 8px #a3e635;
-}
-
-.toxic .l {
-  color: #f43f5e;
-}
-
-.toxic .line-overlay {
-  background: #84cc16;
-  width: 2px;
-  height: 24px;
-}
-
-    .mouse { background: rgba(15,15,25,0.95); border: 2px solid #a855f7; border-radius: 40px 40px 30px 30px; box-shadow: 0 0 15px rgba(168,85,247,0.4); position: relative; }
-    .mouse::before { content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 2px; height: 12px; background: #a855f7; }
-    .mouse .w { color: #c084fc; }
-    .mouse .l { color: #f43f5e; }
-    .mouse .line-overlay { background: rgba(255,255,255,0.2); }
-
-    .royale { background: rgba(20,16,8,0.95); border: 2px solid #ffcc00; box-shadow: 0 0 15px rgba(255,204,0,0.3); }
-    .royale .w { color: #ffcc00; text-shadow: 0 0 8px rgba(255,204,0,0.5); }
-    .royale .l { color: #ef4444; }
-    .royale .line-overlay { background: rgba(255,204,0,0.3); }
-
-    .fireice { background: rgba(15,15,20,0.9); border: 2px solid #38bdf8; box-shadow: 0 0 15px rgba(249,115,22,0.4); }
-    .fireice .w { color: #f97316; text-shadow: 0 0 8px #f97316; }
-    .fireice .l { color: #38bdf8; text-shadow: 0 0 8px #38bdf8; }
-    .fireice .line-overlay { background: rgba(255,255,255,0.2); }
-
-    .arcade { background: #000; border: 3px solid #3b82f6; border-radius: 8px; font-family: "Press Start 2P", cursive; }
-    .arcade .item-overlay { font-size: 0.85rem; }
-    .arcade .lbl { font-size: 1.4rem; }
-    .arcade .w { color: #22c55e; }
-    .arcade .l { color: #ef4444; }
-    .arcade .line-overlay { background: #3b82f6; }
-
-    .kitty { background: rgba(255,240,245,0.95); border: 3px solid #ff69b4; border-radius: 60px 60px 40px 40px; box-shadow: 0 0 15px rgba(255,105,180,0.5); margin-top: 12px; position: relative; }
-    .kitty::before, .kitty::after { content: ""; position: absolute; top: -14px; width: 0; height: 0; border-left: 14px solid transparent; border-right: 14px solid transparent; border-bottom: 16px solid #ff69b4; }
-    .kitty::before { left: 18px; transform: rotate(-15deg); }
-    .kitty::after { right: 18px; transform: rotate(15deg); }
-    .kitty-bow { position: absolute; top: -18px; right: 32px; font-size: 1.2rem; z-index: 2; }
-    .kitty .w { color: #ff1493; font-family: "Fredoka One", cursive; }
-    .kitty .l { color: #8a2be2; font-family: "Fredoka One", cursive; }
-    .kitty .line-overlay { background: #ffb6c1; }
-
-    .bunny { background: rgba(255,255,255,0.95); border: 3px solid #ffb6c1; border-radius: 30px; box-shadow: 0 0 15px rgba(255,182,193,0.6); margin-top: 15px; position: relative; }
-    .bunny::before, .bunny::after { content: ""; position: absolute; top: -20px; width: 14px; height: 22px; background: #fff; border: 3px solid #ffb6c1; border-radius: 12px 12px 0 0; }
-    .bunny::before { left: 25px; transform: rotate(-10deg); }
-    .bunny::after { right: 25px; transform: rotate(10deg); }
-    .bunny .w { color: #ff69b4; font-family: "Fredoka One", cursive; }
-    .bunny .l { color: #a78bfa; font-family: "Fredoka One", cursive; }
-    .bunny .line-overlay { background: #ffd1dc; }
-
-    .magicstar { background: rgba(30,15,45,0.92); border: 2px solid #f472b6; border-radius: 20px; box-shadow: 0 0 18px rgba(244,114,182,0.5); position: relative; }
-    .magicstar::before { content: "✨"; position: absolute; top: -12px; left: -10px; font-size: 1.2rem; }
-    .magicstar::after { content: "⭐"; position: absolute; bottom: -12px; right: -10px; font-size: 1.1rem; }
-    .magicstar .w { color: #f472b6; font-family: "Fredoka One", cursive; }
-    .magicstar .l { color: #c084fc; font-family: "Fredoka One", cursive; }
-    .magicstar .line-overlay { background: rgba(244,114,182,0.4); }
-
-    .minimal { background: rgba(18,18,18,0.85); border: 1px solid rgba(255,255,255,0.2); }
-    .minimal .w { color: #10b981; }
-    .minimal .l { color: #ef4444; }
-    .minimal .line-overlay { background: rgba(255,255,255,0.2); }
-
-    .purpleneon { background: rgba(20,10,35,0.92); border: 2px solid #a855f7; box-shadow: 0 0 15px rgba(168,85,247,0.5); }
-    .purpleneon .w { color: #c084fc; text-shadow: 0 0 8px #c084fc; }
-    .purpleneon .l { color: #f43f5e; text-shadow: 0 0 8px #f43f5e; }
-    .purpleneon .line-overlay { background: rgba(168,85,247,0.4); }
-  </style>
-</head>
-<body>
-  <h1>🎛️ لوحة تحكم العداد</h1>
-  <div class="wrapper">
-    <div class="panel">
-      <button class="copy-link-btn" onclick="copyOverlayLink()">🔗 نسخ رابط الـ Overlay لـ OBS</button>
-      <div class="grid">
-        <div class="card w">
-          <input type="text" id="wLabelInput" placeholder="اسم الخانة الأولى" />
-          <div class="num" id="pVal">${settings.wins}</div>
-          <div class="btns">
-            <button class="btn-w" onclick="add('wins', 1)">+</button>
-            <button class="btn-sub" onclick="add('wins', -1)">-</button>
-          </div>
-        </div>
-        <div class="card l">
-          <input type="text" id="lLabelInput" placeholder="اسم الخانة الثانية" />
-          <div class="num" id="mVal">${settings.losses}</div>
-          <div class="btns">
-            <button class="btn-l" onclick="add('losses', 1)">+</button>
-            <button class="btn-sub" onclick="add('losses', -1)">-</button>
-          </div>
-        </div>
-      </div>
-      <div>
-        <label style="font-size:0.85rem;color:#a0a0c0;display:block;margin-bottom:2px;">🎨 اختر الشكل:</label>
-        <select id="themeSelect">
-          <option value="pscontroller" ${settings.theme === "pscontroller" ? "selected" : ""}>🎮 إطار دراع بلايستيشن</option>
-          <option value="headset" ${settings.theme === "headset" ? "selected" : ""}>🎧 إطار سماعة جيمنج</option>
-          <option value="shield" ${settings.theme === "shield" ? "selected" : ""}>🛡️ إطار درع الحرب</option>
-          <option value="cyber" ${settings.theme === "cyber" ? "selected" : ""}>⚡ جيمنج نيون</option>
-          <option value="dragon" ${settings.theme === "dragon" ? "selected" : ""}>🐉 التنين الأحمر</option>
-          <option value="toxic" ${settings.theme === "toxic" ? "selected" : ""}>☣️ سام نيون</option>
-          <option value="mouse" ${settings.theme === "mouse" ? "selected" : ""}>🖱️ إطار ماوس جيمنج</option>
-          <option value="royale" ${settings.theme === "royale" ? "selected" : ""}>👑 فخامة VIP</option>
-          <option value="fireice" ${settings.theme === "fireice" ? "selected" : ""}>🔥 نار وثلج</option>
-          <option value="arcade" ${settings.theme === "arcade" ? "selected" : ""}>👾 ريترو أركيد</option>
-          <option value="kitty" ${settings.theme === "kitty" ? "selected" : ""}>🐱 إطار القطة كيتي</option>
-          <option value="bunny" ${settings.theme === "bunny" ? "selected" : ""}>🐰 إطار الأرنب</option>
-          <option value="magicstar" ${settings.theme === "magicstar" ? "selected" : ""}>✨ النجمة السحرية</option>
-          <option value="purpleneon" ${settings.theme === "purpleneon" ? "selected" : ""}>🔮 بنفسجي تويتش</option>
-          <option value="minimal" ${settings.theme === "minimal" ? "selected" : ""}>✨ مينيمال بسيط</option>
-        </select>
-      </div>
-      <div>
-        <label style="font-size:0.85rem;color:#a0a0c0;display:block;margin-bottom:2px;">📐 العرض (px):</label>
-        <input type="number" id="width" value="${settings.width || 285}" min="100" max="600" />
-      </div>
-      <button class="reset" onclick="reset()">🗑️ تصفير العداد</button>
-    </div>
-    <div class="preview-box-container">
-      <span class="preview-title">👁️ معاينة حية (Live Preview)</span>
-      <div class="box-overlay ${settings.theme || "pscontroller"}" id="previewBox">
-        <div class="kitty-bow" id="kittyBow" style="display:${settings.theme === "kitty" ? "block" : "none"}">🎀</div>
-        <div class="item-overlay w">
-          <span class="lbl" id="prevWLabel">${settings.winLabel}</span>
-          <span id="prevWNum">${settings.wins}</span>
-        </div>
-        <div class="line-overlay"></div>
-        <div class="item-overlay l">
-          <span class="lbl" id="prevLLabel">${settings.lossLabel}</span>
-          <span id="prevLNum">${settings.losses}</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    const USER_ID = '${user._id}';
-    const SCREEN_TOKEN = '${screenToken}';
-    const BASE_URL = '${baseUrl}';
-
-    const socket = io({ query: { token: SCREEN_TOKEN } });
-    let currentSettings = {};
-
-    // تحميل الإعدادات من الخادم
-    async function loadSettings() {
-      try {
-        const res = await fetch('/api/wins-settings', { credentials: 'include' });
-        const data = await res.json();
-        if (data.success) {
-          currentSettings = data.settings;
-          applySettings(currentSettings);
-        }
-      } catch (e) {
-        console.error('فشل تحميل الإعدادات', e);
-      }
-    }
-
-    function applySettings(settings) {
-      document.getElementById('pVal').innerText = settings.wins || 0;
-      document.getElementById('mVal').innerText = settings.losses || 0;
-      document.getElementById('prevWNum').innerText = settings.wins || 0;
-      document.getElementById('prevLNum').innerText = settings.losses || 0;
-      document.getElementById('prevWLabel').innerText = settings.winLabel || 'WIN';
-      document.getElementById('prevLLabel').innerText = settings.lossLabel || 'LOSE';
-      document.getElementById('wLabelInput').value = settings.winLabel || 'WIN';
-      document.getElementById('lLabelInput').value = settings.lossLabel || 'LOSE';
-      document.getElementById('themeSelect').value = settings.theme || 'pscontroller';
-      document.getElementById('width').value = settings.width || 285;
-
-      const prevBox = document.getElementById('previewBox');
-      prevBox.className = 'box-overlay ' + (settings.theme || 'pscontroller');
-      prevBox.style.width = (settings.width || 285) + 'px';
-      const bow = document.getElementById('kittyBow');
-      bow.style.display = settings.theme === 'kitty' ? 'block' : 'none';
-    }
-
-    // حفظ الإعدادات إلى الخادم (مع width)
-    async function saveSettings() {
-      const payload = {
-        wins: parseInt(document.getElementById('pVal').innerText) || 0,
-        losses: parseInt(document.getElementById('mVal').innerText) || 0,
-        winLabel: document.getElementById('wLabelInput').value || 'WIN',
-        lossLabel: document.getElementById('lLabelInput').value || 'LOSE',
-        theme: document.getElementById('themeSelect').value,
-        width: parseInt(document.getElementById('width').value) || 285
-      };
-      try {
-        const res = await fetch('/api/wins-settings', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (data.success) {
-          currentSettings = data.settings;
-          applySettings(data.settings);
-        }
-      } catch (e) {
-        console.error('فشل حفظ الإعدادات', e);
-      }
-    }
-
-    function add(type, val) {
-      const current = parseInt(document.getElementById(type === 'wins' ? 'pVal' : 'mVal').innerText) || 0;
-      const newVal = Math.max(0, current + val);
-      document.getElementById(type === 'wins' ? 'pVal' : 'mVal').innerText = newVal;
-      saveSettings();
-    }
-
-    function reset() {
-      document.getElementById('pVal').innerText = 0;
-      document.getElementById('mVal').innerText = 0;
-      saveSettings();
-    }
-
-    function copyOverlayLink() {
-      const url = BASE_URL + '/wins-overlay/' + SCREEN_TOKEN;
-      navigator.clipboard.writeText(url).then(() => {
-        alert('✅ تم نسخ الرابط');
-      }).catch(() => {});
-    }
-
-    // استماع التحديثات من الخادم عبر Socket.IO
-    socket.on('wins-updated', (settings) => {
-      if (settings) {
-        currentSettings = settings;
-        applySettings(settings);
-      }
-    });
-
-    // ربط الأحداث بالـ DOM
-    document.getElementById('wLabelInput').addEventListener('input', saveSettings);
-    document.getElementById('lLabelInput').addEventListener('input', saveSettings);
-    document.getElementById('themeSelect').addEventListener('change', saveSettings);
-    document.getElementById('width').addEventListener('input', saveSettings);
-
-    // مفاتيح الاختصار
-    window.addEventListener('keydown', (e) => {
-      if (e.key === '=' || e.key === '+') { e.preventDefault(); add('wins', 1); }
-      else if (e.key === '-') { e.preventDefault(); add('losses', 1); }
-    });
-
-    loadSettings();
-  </script>
-</body>
-</html>`;
-    res.send(html);
-  } catch (err) {
-    logger.error("❌ خطأ في wins-dashboard:", err.message);
-    res.status(500).send("خطأ داخلي");
-  }
-});
-
-app.get("/wins-overlay/:token", async (req, res) => {
-  try {
-    const { token } = req.params;
-    const user = await User.findOne({ screenToken: token });
-    if (!user) return res.status(404).send("رمز غير صالح");
-
-    const html = `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-  <meta charset="UTF-8" />
-  <title>عداد الفوز/الخسارة</title>
-  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@700;900&family=Fredoka+One&family=Press+Start+2P&family=Orbitron:wght@900&display=swap" rel="stylesheet" />
-  <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: transparent;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      font-family: "Cairo", sans-serif;
-    }
-
-    /* ===== القاعدة الأساسية للصندوق ===== */
-    .box-overlay {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 12px;
-      width: fit-content;
-      margin: 0 auto;
-      padding: 8px 20px;        /* ← متوسط */
-      border-radius: 50px;
-      position: relative;
-      transition: all 0.3s ease;
-    }
-
-    /* ===== حجم خط متوسط ===== */
-    .box-overlay * {
-      font-size: 1.1rem !important;   /* ← متوسط */
-    }
-
-    .item-overlay {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-weight: 900;
-    }
-    .lbl {
-      font-weight: 900;
-    }
-    .line-overlay {
-      width: 2px;
-      height: 24px;
-    }
-
-    /* ===== جميع الثيمات (نفسها) ===== */
     .pscontroller {
       background: rgba(18,24,38,0.95);
       border: 3px solid #3b82f6;
       border-radius: 40px 40px 20px 20px;
       box-shadow: 0 0 20px rgba(59,130,246,0.5);
-      padding: 12px 28px;
+      padding: 16px 36px;
     }
     .pscontroller::before {
       content: "🎮";
@@ -7436,6 +7075,480 @@ app.get("/wins-overlay/:token", async (req, res) => {
   </style>
 </head>
 <body>
+  <h1>🎛️ لوحة تحكم العداد</h1>
+  <div class="wrapper">
+    <div class="panel">
+      <button class="copy-link-btn" onclick="copyOverlayLink()">🔗 نسخ رابط الـ Overlay لـ OBS</button>
+      <div class="grid">
+        <div class="card w">
+          <input type="text" id="wLabelInput" placeholder="اسم الخانة الأولى" />
+          <div class="num" id="pVal">${settings.wins}</div>
+          <div class="btns">
+            <button class="btn-w" onclick="add('wins', 1)">+</button>
+            <button class="btn-sub" onclick="add('wins', -1)">-</button>
+          </div>
+        </div>
+        <div class="card l">
+          <input type="text" id="lLabelInput" placeholder="اسم الخانة الثانية" />
+          <div class="num" id="mVal">${settings.losses}</div>
+          <div class="btns">
+            <button class="btn-l" onclick="add('losses', 1)">+</button>
+            <button class="btn-sub" onclick="add('losses', -1)">-</button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <label style="font-size:0.85rem;color:#a0a0c0;display:block;margin-bottom:2px;">🎨 اختر الشكل:</label>
+        <select id="themeSelect">
+          <option value="pscontroller" ${settings.theme === "pscontroller" ? "selected" : ""}>🎮 إطار دراع بلايستيشن</option>
+          <option value="headset" ${settings.theme === "headset" ? "selected" : ""}>🎧 إطار سماعة جيمنج</option>
+          <option value="shield" ${settings.theme === "shield" ? "selected" : ""}>🛡️ إطار درع الحرب</option>
+          <option value="cyber" ${settings.theme === "cyber" ? "selected" : ""}>⚡ جيمنج نيون</option>
+          <option value="dragon" ${settings.theme === "dragon" ? "selected" : ""}>🐉 التنين الأحمر</option>
+          <option value="toxic" ${settings.theme === "toxic" ? "selected" : ""}>☣️ سام نيون</option>
+          <option value="mouse" ${settings.theme === "mouse" ? "selected" : ""}>🖱️ إطار ماوس جيمنج</option>
+          <option value="royale" ${settings.theme === "royale" ? "selected" : ""}>👑 فخامة VIP</option>
+          <option value="fireice" ${settings.theme === "fireice" ? "selected" : ""}>🔥 نار وثلج</option>
+          <option value="arcade" ${settings.theme === "arcade" ? "selected" : ""}>👾 ريترو أركيد</option>
+          <option value="kitty" ${settings.theme === "kitty" ? "selected" : ""}>🐱 إطار القطة كيتي</option>
+          <option value="bunny" ${settings.theme === "bunny" ? "selected" : ""}>🐰 إطار الأرنب</option>
+          <option value="magicstar" ${settings.theme === "magicstar" ? "selected" : ""}>✨ النجمة السحرية</option>
+          <option value="purpleneon" ${settings.theme === "purpleneon" ? "selected" : ""}>🔮 بنفسجي تويتش</option>
+          <option value="minimal" ${settings.theme === "minimal" ? "selected" : ""}>✨ مينيمال بسيط</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:0.85rem;color:#a0a0c0;display:block;margin-bottom:2px;">📐 العرض (px):</label>
+        <input type="number" id="width" value="${settings.width || 285}" min="100" max="600" />
+      </div>
+      <button class="reset" onclick="reset()">🗑️ تصفير العداد</button>
+    </div>
+    <div class="preview-box-container">
+      <span class="preview-title">👁️ معاينة حية (Live Preview)</span>
+      <div class="box-overlay ${settings.theme || "pscontroller"}" id="previewBox">
+        <div class="kitty-bow" id="kittyBow" style="display:${settings.theme === "kitty" ? "block" : "none"}">🎀</div>
+        <div class="item-overlay w">
+          <span class="lbl" id="prevWLabel">${settings.winLabel}</span>
+          <span id="prevWNum">${settings.wins}</span>
+        </div>
+        <div class="line-overlay"></div>
+        <div class="item-overlay l">
+          <span class="lbl" id="prevLLabel">${settings.lossLabel}</span>
+          <span id="prevLNum">${settings.losses}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const USER_ID = '${user._id}';
+    const SCREEN_TOKEN = '${screenToken}';
+    const BASE_URL = '${baseUrl}';
+
+    const socket = io({ query: { token: SCREEN_TOKEN } });
+    let currentSettings = {};
+
+    async function loadSettings() {
+      try {
+        const res = await fetch('/api/wins-settings', { credentials: 'include' });
+        const data = await res.json();
+        if (data.success) {
+          currentSettings = data.settings;
+          applySettings(currentSettings);
+        }
+      } catch (e) {
+        console.error('فشل تحميل الإعدادات', e);
+      }
+    }
+
+    function applySettings(settings) {
+      document.getElementById('pVal').innerText = settings.wins || 0;
+      document.getElementById('mVal').innerText = settings.losses || 0;
+      document.getElementById('prevWNum').innerText = settings.wins || 0;
+      document.getElementById('prevLNum').innerText = settings.losses || 0;
+      document.getElementById('prevWLabel').innerText = settings.winLabel || 'WIN';
+      document.getElementById('prevLLabel').innerText = settings.lossLabel || 'LOSE';
+      document.getElementById('wLabelInput').value = settings.winLabel || 'WIN';
+      document.getElementById('lLabelInput').value = settings.lossLabel || 'LOSE';
+      document.getElementById('themeSelect').value = settings.theme || 'pscontroller';
+      document.getElementById('width').value = settings.width || 285;
+
+      const prevBox = document.getElementById('previewBox');
+      prevBox.className = 'box-overlay ' + (settings.theme || 'pscontroller');
+      prevBox.style.width = (settings.width || 285) + 'px';
+      const bow = document.getElementById('kittyBow');
+      bow.style.display = settings.theme === 'kitty' ? 'block' : 'none';
+    }
+
+    async function saveSettings() {
+      const payload = {
+        wins: parseInt(document.getElementById('pVal').innerText) || 0,
+        losses: parseInt(document.getElementById('mVal').innerText) || 0,
+        winLabel: document.getElementById('wLabelInput').value || 'WIN',
+        lossLabel: document.getElementById('lLabelInput').value || 'LOSE',
+        theme: document.getElementById('themeSelect').value,
+        width: parseInt(document.getElementById('width').value) || 285
+      };
+      try {
+        const res = await fetch('/api/wins-settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (data.success) {
+          currentSettings = data.settings;
+          applySettings(data.settings);
+        }
+      } catch (e) {
+        console.error('فشل حفظ الإعدادات', e);
+      }
+    }
+
+    function add(type, val) {
+      const current = parseInt(document.getElementById(type === 'wins' ? 'pVal' : 'mVal').innerText) || 0;
+      const newVal = Math.max(0, current + val);
+      document.getElementById(type === 'wins' ? 'pVal' : 'mVal').innerText = newVal;
+      saveSettings();
+    }
+
+    function reset() {
+      document.getElementById('pVal').innerText = 0;
+      document.getElementById('mVal').innerText = 0;
+      saveSettings();
+    }
+
+    function copyOverlayLink() {
+      const url = BASE_URL + '/wins-overlay/' + SCREEN_TOKEN;
+      navigator.clipboard.writeText(url).then(() => {
+        alert('✅ تم نسخ الرابط');
+      }).catch(() => {});
+    }
+
+    socket.on('wins-updated', (settings) => {
+      if (settings) {
+        currentSettings = settings;
+        applySettings(settings);
+      }
+    });
+
+    document.getElementById('wLabelInput').addEventListener('input', saveSettings);
+    document.getElementById('lLabelInput').addEventListener('input', saveSettings);
+    document.getElementById('themeSelect').addEventListener('change', saveSettings);
+    document.getElementById('width').addEventListener('input', saveSettings);
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === '=' || e.key === '+') { e.preventDefault(); add('wins', 1); }
+      else if (e.key === '-') { e.preventDefault(); add('losses', 1); }
+    });
+
+    loadSettings();
+  </script>
+</body>
+</html>`;
+    res.send(html);
+  } catch (err) {
+    logger.error("❌ خطأ في wins-dashboard:", err.message);
+    res.status(500).send("خطأ داخلي");
+  }
+});
+
+app.get("/wins-overlay/:token", async (req, res) => {
+  try {
+    const { token } = req.params;
+    const user = await User.findOne({ screenToken: token });
+    if (!user) return res.status(404).send("رمز غير صالح");
+
+    const userId = user._id.toString();
+
+    const html = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>عداد الفوز/الخسارة</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@700;900&family=Fredoka+One&family=Press+Start+2P&family=Orbitron:wght@900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: "Cairo", sans-serif;
+    }
+    .box-overlay {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      width: fit-content;   /* العرض حسب المحتوى */
+      margin: 0 auto;       /* توسيط الصندوق في الصفحة */
+      padding: 12px 28px;
+      border-radius: 50px;
+      position: relative;
+      transition: all 0.3s ease;
+    }
+
+    .box-overlay * {
+      font-size: 1.4rem !important;
+    }
+
+    .item-overlay {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 1.4rem;
+      font-weight: 900;
+    }
+    .lbl {
+      font-size: 1.4rem;
+      font-weight: 900;
+    }
+    .line-overlay {
+      width: 2px;
+      height: 24px;
+    }
+
+    .pscontroller {
+      background: rgba(18,24,38,0.95);
+      border: 3px solid #3b82f6;
+      border-radius: 40px 40px 20px 20px;
+      box-shadow: 0 0 20px rgba(59,130,246,0.5);
+      padding: 16px 36px;
+    }
+    .pscontroller::before {
+      content: "🎮";
+      position: absolute;
+      top: -16px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 1.2rem;
+      background: #3b82f6;
+      border-radius: 50%;
+      padding: 2px 6px;
+    }
+    .pscontroller .w { color: #60a5fa; font-family: "Orbitron", sans-serif; }
+    .pscontroller .l { color: #f43f5e; font-family: "Orbitron", sans-serif; }
+    .pscontroller .line-overlay { background: rgba(255,255,255,0.2); }
+
+    .headset {
+      background: rgba(15,23,42,0.95);
+      border: 2px solid #10b981;
+      border-radius: 25px;
+      box-shadow: 0 0 15px rgba(16,185,129,0.4);
+      margin-top: 10px;
+    }
+    .headset::before {
+      content: "";
+      position: absolute;
+      top: -14px;
+      left: 15px;
+      right: 15px;
+      height: 14px;
+      border: 3px solid #10b981;
+      border-bottom: none;
+      border-radius: 20px 20px 0 0;
+    }
+    .headset .w { color: #34d399; }
+    .headset .l { color: #f87171; }
+    .headset .line-overlay { background: rgba(255,255,255,0.2); }
+
+    .shield {
+      background: rgba(20,20,30,0.95);
+      border: 3px solid #eab308;
+      border-radius: 10px 10px 40px 40px;
+      box-shadow: 0 0 15px rgba(234,179,8,0.4);
+    }
+    .shield .w { color: #facc15; font-family: "Orbitron", sans-serif; }
+    .shield .l { color: #ef4444; font-family: "Orbitron", sans-serif; }
+    .shield .line-overlay { background: #eab308; }
+
+    .cyber {
+      background: rgba(10,15,25,0.92);
+      border: 2px solid #00ffe1;
+      box-shadow: 0 0 15px rgba(0,255,225,0.4);
+    }
+    .cyber .w { color: #00ffe1; text-shadow: 0 0 8px rgba(0,255,225,0.6); }
+    .cyber .l { color: #ff0055; text-shadow: 0 0 8px rgba(255,0,85,0.6); }
+    .cyber .line-overlay { background: rgba(255,255,255,0.2); }
+
+    .dragon {
+      background: rgba(30,10,10,0.95);
+      border: 2px solid #dc2626;
+      box-shadow: 0 0 18px rgba(220,38,38,0.6);
+      border-radius: 15px 40px 15px 40px;
+    }
+    .dragon .w { color: #f87171; }
+    .dragon .l { color: #fbbf24; }
+    .dragon .line-overlay { background: #dc2626; }
+
+    .toxic {
+      background: rgba(10,25,10,0.95);
+      border: 2px solid #84cc16;
+      box-shadow: 0 0 15px rgba(132,204,22,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      width: fit-content;
+      margin: 0 auto;
+      padding: 12px 28px;
+    }
+    .toxic .w { color: #a3e635; text-shadow: 0 0 8px #a3e635; }
+    .toxic .l { color: #f43f5e; }
+    .toxic .line-overlay { background: #84cc16; width: 2px; height: 24px; }
+
+    .mouse {
+      background: rgba(15,15,25,0.95);
+      border: 2px solid #a855f7;
+      border-radius: 40px 40px 30px 30px;
+      box-shadow: 0 0 15px rgba(168,85,247,0.4);
+    }
+    .mouse::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 2px;
+      height: 12px;
+      background: #a855f7;
+    }
+    .mouse .w { color: #c084fc; }
+    .mouse .l { color: #f43f5e; }
+    .mouse .line-overlay { background: rgba(255,255,255,0.2); }
+
+    .royale {
+      background: rgba(20,16,8,0.95);
+      border: 2px solid #ffcc00;
+      box-shadow: 0 0 15px rgba(255,204,0,0.3);
+    }
+    .royale .w { color: #ffcc00; text-shadow: 0 0 8px rgba(255,204,0,0.5); }
+    .royale .l { color: #ef4444; }
+    .royale .line-overlay { background: rgba(255,204,0,0.3); }
+
+    .fireice {
+      background: rgba(15,15,20,0.9);
+      border: 2px solid #38bdf8;
+      box-shadow: 0 0 15px rgba(249,115,22,0.4);
+    }
+    .fireice .w { color: #f97316; text-shadow: 0 0 8px #f97316; }
+    .fireice .l { color: #38bdf8; text-shadow: 0 0 8px #38bdf8; }
+    .fireice .line-overlay { background: rgba(255,255,255,0.2); }
+
+    .arcade {
+      background: #000;
+      border: 3px solid #3b82f6;
+      border-radius: 8px;
+      font-family: "Press Start 2P", cursive;
+    }
+    .arcade .item-overlay { font-size: 0.85rem; }
+    .arcade .lbl { font-size: 0.7rem; }
+    .arcade .w { color: #22c55e; }
+    .arcade .l { color: #ef4444; }
+    .arcade .line-overlay { background: #3b82f6; }
+
+    .kitty {
+      background: rgba(255,240,245,0.95);
+      border: 3px solid #ff69b4;
+      border-radius: 60px 60px 40px 40px;
+      box-shadow: 0 0 15px rgba(255,105,180,0.5);
+      margin-top: 12px;
+    }
+    .kitty::before,
+    .kitty::after {
+      content: "";
+      position: absolute;
+      top: -14px;
+      width: 0;
+      height: 0;
+      border-left: 14px solid transparent;
+      border-right: 14px solid transparent;
+      border-bottom: 16px solid #ff69b4;
+    }
+    .kitty::before { left: 18px; transform: rotate(-15deg); }
+    .kitty::after { right: 18px; transform: rotate(15deg); }
+    .kitty-bow {
+      position: absolute;
+      top: -18px;
+      right: 32px;
+      font-size: 1.2rem;
+      z-index: 2;
+    }
+    .kitty .w { color: #ff1493; font-family: "Fredoka One", cursive; }
+    .kitty .l { color: #8a2be2; font-family: "Fredoka One", cursive; }
+    .kitty .line-overlay { background: #ffb6c1; }
+
+    .bunny {
+      background: rgba(255,255,255,0.95);
+      border: 3px solid #ffb6c1;
+      border-radius: 30px;
+      box-shadow: 0 0 15px rgba(255,182,193,0.6);
+      margin-top: 15px;
+    }
+    .bunny::before,
+    .bunny::after {
+      content: "";
+      position: absolute;
+      top: -20px;
+      width: 14px;
+      height: 22px;
+      background: #fff;
+      border: 3px solid #ffb6c1;
+      border-radius: 12px 12px 0 0;
+    }
+    .bunny::before { left: 25px; transform: rotate(-10deg); }
+    .bunny::after { right: 25px; transform: rotate(10deg); }
+    .bunny .w { color: #ff69b4; font-family: "Fredoka One", cursive; }
+    .bunny .l { color: #a78bfa; font-family: "Fredoka One", cursive; }
+    .bunny .line-overlay { background: #ffd1dc; }
+
+    .magicstar {
+      background: rgba(30,15,45,0.92);
+      border: 2px solid #f472b6;
+      border-radius: 20px;
+      box-shadow: 0 0 18px rgba(244,114,182,0.5);
+    }
+    .magicstar::before {
+      content: "✨";
+      position: absolute;
+      top: -12px;
+      left: -10px;
+      font-size: 1.2rem;
+    }
+    .magicstar::after {
+      content: "⭐";
+      position: absolute;
+      bottom: -12px;
+      right: -10px;
+      font-size: 1.1rem;
+    }
+    .magicstar .w { color: #f472b6; font-family: "Fredoka One", cursive; }
+    .magicstar .l { color: #c084fc; font-family: "Fredoka One", cursive; }
+    .magicstar .line-overlay { background: rgba(244,114,182,0.4); }
+
+    .minimal {
+      background: rgba(18,18,18,0.85);
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+    .minimal .w { color: #10b981; }
+    .minimal .l { color: #ef4444; }
+    .minimal .line-overlay { background: rgba(255,255,255,0.2); }
+
+    .purpleneon {
+      background: rgba(20,10,35,0.92);
+      border: 2px solid #a855f7;
+      box-shadow: 0 0 15px rgba(168,85,247,0.5);
+    }
+    .purpleneon .w { color: #c084fc; text-shadow: 0 0 8px #c084fc; }
+    .purpleneon .l { color: #f43f5e; text-shadow: 0 0 8px #f43f5e; }
+    .purpleneon .line-overlay { background: rgba(168,85,247,0.4); }
+  </style>
+</head>
+<body>
   <div class="box-overlay pscontroller" id="previewBox">
     <div class="kitty-bow" id="kittyBow" style="display:none">🎀</div>
     <div class="item-overlay w">
@@ -7461,7 +7574,7 @@ app.get("/wins-overlay/:token", async (req, res) => {
       const box = document.getElementById('previewBox');
       box.className = 'box-overlay ' + (settings.theme || 'pscontroller');
       box.style.width = (settings.width || 285) + 'px';
-
+      
       const bow = document.getElementById('kittyBow');
       bow.style.display = settings.theme === 'kitty' ? 'block' : 'none';
     }
