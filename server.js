@@ -5730,8 +5730,7 @@ const overlaySettingsSchema = new mongoose.Schema({
     badgeColor: { type: String, default: "#ff0055" },
     crowns: { type: [Number], default: [] },
     maxHeight: { type: Number, default: 500 },
-    width: { type: Number, default: 285 }, // العرض الافتراضي
-    maxNames: { type: Number, default: 10 },
+    width: { type: Number, default: 285 },
   },
   overlay2: {
     title: { type: String, default: "🔥 كبار الداعمين" },
@@ -5741,8 +5740,7 @@ const overlaySettingsSchema = new mongoose.Schema({
     badgeColor: { type: String, default: "#a855f7" },
     crowns: { type: [Number], default: [] },
     maxHeight: { type: Number, default: 500 },
-    width: { type: Number, default: 285 }, // العرض الافتراضي
-    maxNames: { type: Number, default: 10 },
+    width: { type: Number, default: 285 },
   },
 });
 const OverlaySettings = mongoose.model(
@@ -5757,13 +5755,13 @@ async function addNameToOverlay(userId, overlayId, newName) {
   if (!settings) return;
   const key = overlayId === 1 ? "overlay1" : "overlay2";
   const overlay = settings[key];
-  const maxNames = overlay.maxNames || 10;
 
   let names = overlay.names || "";
   const lines = names.split("\n").filter((l) => l.trim() !== "");
   lines.push(newName.trim());
-  const trimmed = lines.slice(-maxNames);
-  overlay.names = trimmed.join("\n");
+  // إزالة القص: نخزن كل الأسماء بدون حذف
+  overlay.names = lines.join("\n");
+
   await settings.save();
   io.to(`screen-${userId}`).emit("overlay-updated", {
     overlay1: settings.overlay1,
@@ -5856,7 +5854,6 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
       overlay.badgeColor || (overlayId === "1" ? "#ff0055" : "#a855f7");
     const crowns = overlay.crowns || [];
     const maxHeight = overlay.maxHeight || 500;
-    const maxNames = overlay.maxNames || 10;
     const width = overlay.width || 285;
 
     function escape(text) {
@@ -5869,20 +5866,19 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
 
     function nameListHTML(namesStr, crownsArr) {
       const items = namesStr.split("\n").filter((n) => n.trim() !== "");
-      const lastItems = items.slice(-maxNames);
-      if (!lastItems.length)
+      // عرض جميع الأسماء بدون حد أقصى
+      if (!items.length)
         return '<div style="color:#888;text-align:center;padding:10px;">لا توجد أسماء</div>';
       const crownSet = new Set(crownsArr);
-      return lastItems
+      return items
         .map((n, idx) => {
-          const originalIndex = items.length - lastItems.length + idx;
           return `
             <div class="name-card">
               <div class="name-info">
                 <div class="badge-num">${idx + 1}</div>
                 <span class="name-text">${escape(n.trim())}</span>
               </div>
-              ${crownSet.has(originalIndex) ? '<span class="crown-icon">👑</span>' : ""}
+              ${crownSet.has(idx) ? '<span class="crown-icon">👑</span>' : ""}
             </div>
           `;
         })
@@ -5990,7 +5986,6 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
         badge: ${JSON.stringify(badge)},
         crowns: ${JSON.stringify(crowns)},
         maxHeight: ${maxHeight},
-        maxNames: ${maxNames},
         width: ${width}
       };
 
@@ -6015,21 +6010,19 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
         if (!list) return;
         const items = settings.names.split('\\n').filter(s => s.trim() !== '');
         const crownSet = new Set(settings.crowns);
-        const maxNames = settings.maxNames || 10;
-        const lastItems = items.slice(-maxNames);
+        // عرض جميع الأسماء بدون حد أقصى
         let html = '';
-        if (lastItems.length === 0) {
+        if (items.length === 0) {
           html = '<div style="color:#888;text-align:center;padding:10px;">لا توجد أسماء</div>';
         } else {
-          lastItems.forEach((name, idx) => {
-            const originalIndex = items.length - lastItems.length + idx;
+          items.forEach((name, idx) => {
             html += \`
               <div class="name-card">
                 <div class="name-info">
                   <div class="badge-num">\${idx+1}</div>
                   <span class="name-text">\${escapeHtml(name.trim())}</span>
                 </div>
-                \${crownSet.has(originalIndex) ? '<span class="crown-icon">👑</span>' : ''}
+                \${crownSet.has(idx) ? '<span class="crown-icon">👑</span>' : ''}
               </div>
             \`;
           });
@@ -6079,7 +6072,6 @@ app.get("/overlay/:token/:overlayId", async (req, res) => {
             badge: overlayData.badgeColor,
             crowns: overlayData.crowns,
             maxHeight: overlayData.maxHeight,
-            maxNames: overlayData.maxNames,
             width: overlayData.width
           };
           const merged = Object.assign({}, currentSettings, adapted);
@@ -6305,7 +6297,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                         <div class="color-item"><input type="color" id="badgeColor1" value="#ff0055"><span>الأرقام</span></div>
                     </div>
                 </div>
-                <!-- الحقول الجديدة: العرض والارتفاع وعدد الأسماء -->
+                <!-- إعدادات العرض -->
                 <div class="form-group">
                     <label>إعدادات العرض</label>
                     <div class="number-inputs">
@@ -6316,10 +6308,6 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                         <div class="number-item">
                             <label>الارتفاع (px)</label>
                             <input type="number" id="maxHeight1" value="500" min="200" max="1000">
-                        </div>
-                        <div class="number-item">
-                            <label>عدد الأسماء</label>
-                            <input type="number" id="maxNames1" value="10" min="1" max="50">
                         </div>
                     </div>
                 </div>
@@ -6363,7 +6351,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                         <div class="color-item"><input type="color" id="badgeColor2" value="#a855f7"><span>الأرقام</span></div>
                     </div>
                 </div>
-                <!-- الحقول الجديدة -->
+                <!-- إعدادات العرض -->
                 <div class="form-group">
                     <label>إعدادات العرض</label>
                     <div class="number-inputs">
@@ -6374,10 +6362,6 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                         <div class="number-item">
                             <label>الارتفاع (px)</label>
                             <input type="number" id="maxHeight2" value="500" min="200" max="1000">
-                        </div>
-                        <div class="number-item">
-                            <label>عدد الأسماء</label>
-                            <input type="number" id="maxNames2" value="10" min="1" max="50">
                         </div>
                     </div>
                 </div>
@@ -6453,7 +6437,6 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                     this.crownList = document.getElementById('crownList' + id);
                     this.width = document.getElementById('width' + id);
                     this.maxHeight = document.getElementById('maxHeight' + id);
-                    this.maxNames = document.getElementById('maxNames' + id);
                     this.status = document.getElementById('status' + id);
                     this.init();
                 }
@@ -6479,7 +6462,6 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                         this.badgeColor.value = overlay.badgeColor || (this.id === 1 ? '#ff0055' : '#a855f7');
                         this.width.value = overlay.width || 285;
                         this.maxHeight.value = overlay.maxHeight || 500;
-                        this.maxNames.value = overlay.maxNames || 10;
                         this.crownedIndices = new Set(overlay.crowns || []);
                         this.renderCrowns();
                         this.status.textContent = '';
@@ -6501,8 +6483,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                             badgeColor: this.badgeColor.value,
                             crowns: Array.from(this.crownedIndices),
                             width: parseInt(this.width.value) || 285,
-                            maxHeight: parseInt(this.maxHeight.value) || 500,
-                            maxNames: parseInt(this.maxNames.value) || 10
+                            maxHeight: parseInt(this.maxHeight.value) || 500
                         };
                         const res = await fetch(API_BASE + '/api/overlay-settings', {
                             method: 'POST',
@@ -6550,7 +6531,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                 }
 
                 bindEvents() {
-                    const saveable = [this.titleInput, this.themeSelect, this.glowColor, this.badgeColor, this.width, this.maxHeight, this.maxNames];
+                    const saveable = [this.titleInput, this.themeSelect, this.glowColor, this.badgeColor, this.width, this.maxHeight];
                     saveable.forEach(el => {
                         el.addEventListener('input', () => this.saveToServer());
                         el.addEventListener('change', () => this.saveToServer());
@@ -6589,8 +6570,7 @@ app.get("/dashboard", authenticateToken, async (req, res) => {
                             badgeColor: settings[key].badgeColor,
                             crowns: settings[key].crowns || [],
                             width: settings[key].width || 285,
-                            maxHeight: settings[key].maxHeight || 500,
-                            maxNames: settings[key].maxNames || 10
+                            maxHeight: settings[key].maxHeight || 500
                         };
                         const payload = {};
                         payload[key] = updatedOverlay;
