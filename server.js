@@ -5730,8 +5730,8 @@ const overlaySettingsSchema = new mongoose.Schema({
     badgeColor: { type: String, default: "#ff0055" },
     crowns: { type: [Number], default: [] },
     maxHeight: { type: Number, default: 500 },
-    maxWidth: { type: Number, default: 285 }, // ← العرض الافتراضي // أقصى ارتفاع للـ overlay (بكسل)
-    maxNames: { type: Number, default: 10 }, // أقصى عدد من الأسماء المعروضة
+    width: { type: Number, default: 285 }, // العرض الافتراضي
+    maxNames: { type: Number, default: 10 },
   },
   overlay2: {
     title: { type: String, default: "🔥 كبار الداعمين" },
@@ -5741,8 +5741,8 @@ const overlaySettingsSchema = new mongoose.Schema({
     badgeColor: { type: String, default: "#a855f7" },
     crowns: { type: [Number], default: [] },
     maxHeight: { type: Number, default: 500 },
-    maxWidth: { type: Number, default: 285 }, // ← العرض الافتراضي // ← أضف هذا
-    maxNames: { type: Number, default: 10 }, // ← أضف هذا
+    width: { type: Number, default: 285 }, // العرض الافتراضي
+    maxNames: { type: Number, default: 10 },
   },
 });
 const OverlaySettings = mongoose.model(
