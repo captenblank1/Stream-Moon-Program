@@ -2124,15 +2124,14 @@ function startLiveHeartbeat(userId) {
   return interval;
 }
 
-// ================ إدارة اتصالات TikTok ================
-// ============================================================
-// connectUser - النسخة المحسّنة النهائية (مع منع تسريب الذاكرة)
-// ============================================================
-
 async function connectUser(userId, username) {
+  console.log(
+    `🔍 [connectUser] بدء محاولة الاتصال للمستخدم ${userId} بـ @${username}`,
+  );
+
   // منع الاتصال المتزامن
   if (connectingUsers.has(userId)) {
-    console.log(`⏳ اتصال قيد التقدم للمستخدم ${userId}، تجاهل`);
+    console.log(`⏳ [connectUser] اتصال قيد التقدم للمستخدم ${userId}، تجاهل`);
     return false;
   }
   connectingUsers.add(userId);
@@ -2140,8 +2139,12 @@ async function connectUser(userId, username) {
 
   // ========== تنظيف شامل للاتصال القديم (باستخدام الدالة الموحدة) ==========
   deleteTikTokConnection(userId); // تقوم بكل شيء: إزالة المستمعين، إلغاء المؤقتات، تنظيف الكاش
+  console.log(`🧹 [connectUser] تم تنظيف الاتصال القديم للمستخدم ${userId}`);
 
   // ========== إنشاء اتصال جديد ==========
+  console.log(
+    `🛠️ [connectUser] إنشاء اتصال جديد لـ @${username} مع المفتاح: ${BLACKMOON_KEY ? "موجود" : "مفقود"}`,
+  );
   const connection = new TikTokLiveConnection(username, {
     apiKey: BLACKMOON_KEY,
     enableWebsocketUpgrade: true,
@@ -2559,6 +2562,9 @@ async function connectUser(userId, username) {
 
   // ---------- DISCONNECTED (مع backoff) ----------
   connection.on(WebcastEvent.DISCONNECTED, () => {
+    console.log(
+      `⚠️ [DISCONNECTED] تم قطع الاتصال بـ TikTok للمستخدم ${userId}`,
+    );
     const conn = getTikTokConnection(userId);
     if (conn) {
       conn.isLive = false;
@@ -2622,13 +2628,23 @@ async function connectUser(userId, username) {
 
   // ---------- ERROR ----------
   connection.on(WebcastEvent.ERROR, (err) => {
+    console.error(`❌ [ERROR] خطأ في اتصال TikTok للمستخدم ${userId}:`, err);
     if (err?.message?.includes("illegal tag")) return;
     logger.error(`❌ خطأ في اتصال TikTok للمستخدم ${userId}:`, err.message);
   });
 
+  // ---------- CONNECTED (حدث نجاح الاتصال) ----------
+  connection.on(WebcastEvent.CONNECTED, () => {
+    console.log(
+      `✅ [CONNECTED] تم الاتصال بنجاح بـ @${username} للمستخدم ${userId}`,
+    );
+  });
+
   // ========== محاولة الاتصال ==========
   try {
+    console.log(`⏳ [connectUser] جاري الاتصال بـ @${username}...`);
     await connection.connect();
+    console.log(`✅ [connectUser] connection.connect() نجحت لـ @${username}`);
     await refreshCachesForUser(userId);
     resetOncePerLiveForUser(userId);
 
@@ -2648,9 +2664,13 @@ async function connectUser(userId, username) {
     startLiveHeartbeat(userId); // ستقوم بتخزين heartbeatInterval داخل connData
 
     logger.info(`✅ متصل بحساب @${username} للمستخدم ${userId}`);
+    console.log(`🎉 [connectUser] اكتمل الاتصال بنجاح لـ @${username}`);
     return true;
   } catch (err) {
-    logger.info(`⚠️ الحساب @${username} ليس لايف حالياً للمستخدم ${userId}`);
+    console.error(`❌ [connectUser] فشل الاتصال بـ @${username}:`, err);
+    logger.info(
+      `⚠️ الحساب @${username} ليس لايف حالياً للمستخدم ${userId}: ${err.message}`,
+    );
     setTikTokConnection(userId, {
       connection,
       username,
@@ -2665,16 +2685,12 @@ async function connectUser(userId, username) {
     return false;
   } finally {
     connectingUsers.delete(userId);
+    console.log(
+      `🧹 [connectUser] تم إزالة userId ${userId} من connectingUsers`,
+    );
   }
 }
 
-// ============================================================
-// الدوال المساعدة المحسّنة (يجب أن تكون موجودة في النطاق العام)
-// ============================================================
-
-/**
- * حذف اتصال TikTok بشكل كامل مع تنظيف جميع الموارد
- */
 function deleteTikTokConnection(userId) {
   const entry = state.userTikTokConnections.get(userId);
   if (!entry) return;
@@ -3672,6 +3688,26 @@ app.get("/api/live-status", authenticateToken, async (req, res) => {
   const isLive = connection ? connection.isLive : false;
   const user = await User.findById(userId);
   const username = user?.tiktokUsername || null;
+
+  console.log(
+    `📡 [live-status] userId=${userId}, username=${username}, isLive=${isLive}, connection=${!!connection}`,
+  );
+
+  // إذا كان هناك كائن اتصال ولكن isLive == false، تحقق من roomId
+  if (connection && !isLive) {
+    try {
+      const roomId = connection.connection?.state?.roomInfo?.data?.roomId;
+      if (roomId) {
+        console.log(
+          `🔍 [live-status] تم العثور على roomId=${roomId} رغم isLive=false، تحديث الحالة`,
+        );
+        connection.isLive = true;
+        setTikTokConnection(userId, connection);
+        return res.json({ isLive: true, username });
+      }
+    } catch (e) {}
+  }
+
   res.json({ isLive, username });
 });
 
