@@ -964,9 +964,9 @@ async function deleteFilesForCommand(cmd, userId) {
 
 // ================ رفع ملف من رابط ================
 async function uploadFileFromUrl(url, userId, type) {
-  // التحقق من المدخلات
-  if (!url || typeof url !== "string") return null;
-  const cleanUrl = url.trim();
+  // التأكد أن url نصية
+  if (url === null || url === undefined) return null;
+  const cleanUrl = String(url).trim();
   if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
     return null;
   }
@@ -974,50 +974,37 @@ async function uploadFileFromUrl(url, userId, type) {
   // ===== معالجة روابط Cloudinary مباشرة (بدون تنزيل) =====
   if (cleanUrl.includes("cloudinary.com")) {
     try {
-      // استخراج اسم الملف باستخدام URL API لضمان الحصول على string
-      const parsedUrl = new URL(cleanUrl);
-      let pathname = parsedUrl.pathname; // string
-      // استخراج اسم الملف
-      let filename = pathname.split("/").pop(); // آخر جزء من المسار
-      if (!filename || filename === "") {
-        filename = type === "video" ? "video.mp4" : "audio.mp3";
-      } else {
-        // إذا كان الاسم يحتوي على معلمات، نزيلها
-        filename = filename.split("?")[0];
-      }
-      // إزالة الأرقام الزائدة من النهاية لجعل الاسم نظيفاً (اختياري)
-      // جلب حجم الملف عبر HEAD request
+      // استخراج اسم الملف من الرابط
+      const parsed = new URL(cleanUrl);
+      const pathParts = parsed.pathname.split("/");
+      let filename = pathParts.pop();
+      if (!filename) filename = type === "video" ? "video.mp4" : "audio.mp3";
+      filename = filename.split("?")[0];
+
+      // جلب حجم الملف (HEAD)
       let fileSizeMB = 0;
       try {
         const headRes = await fetch(cleanUrl, { method: "HEAD" });
-        const contentLength = headRes.headers.get("content-length");
-        if (contentLength) {
-          fileSizeMB = parseFloat(contentLength) / (1024 * 1024);
-        }
-      } catch (e) {
-        /* تجاهل */
-      }
+        const length = headRes.headers.get("content-length");
+        if (length) fileSizeMB = parseFloat(length) / (1024 * 1024);
+      } catch (_) {}
 
-      // حفظ السجل في قاعدة البيانات مع الرابط الأصلي
+      // حفظ في قاعدة البيانات
+      const docData = {
+        name:
+          path.parse(filename).name || (type === "video" ? "video" : "audio"),
+        file: filename,
+        cloudinaryUrl: cleanUrl,
+        sizeMB: fileSizeMB,
+        userId: userId,
+      };
       if (type === "audio") {
-        await Audio.create({
-          name: path.parse(filename).name || "audio",
-          file: filename,
-          cloudinaryUrl: cleanUrl,
-          sizeMB: fileSizeMB,
-          userId: userId,
-        });
+        await Audio.create(docData);
       } else {
-        await Video.create({
-          name: path.parse(filename).name || "video",
-          file: filename,
-          cloudinaryUrl: cleanUrl,
-          sizeMB: fileSizeMB,
-          userId: userId,
-        });
+        await Video.create(docData);
       }
 
-      // تحديث مساحة التخزين
+      // تحديث مساحة المستخدم
       const user = await User.findById(userId);
       if (user) {
         if (type === "audio") user.audioUsedMB += fileSizeMB;
@@ -1025,9 +1012,7 @@ async function uploadFileFromUrl(url, userId, type) {
         await user.save();
       }
 
-      logger.info(
-        `✅ تم إعادة استخدام رابط Cloudinary للمستخدم ${userId}: ${filename}`,
-      );
+      logger.info(`✅ تم إعادة استخدام رابط Cloudinary: ${filename}`);
       return filename;
     } catch (err) {
       logger.error(`❌ فشل معالجة رابط Cloudinary ${cleanUrl}: ${err.message}`);
@@ -1035,9 +1020,65 @@ async function uploadFileFromUrl(url, userId, type) {
     }
   }
 
-  // ===== بقية الكود لمعالجة الروابط العادية (غير Cloudinary) =====
+  // ===== معالجة الروابط العادية (تنزيل ورفع) =====
   try {
-    // ... (نفس الكود السابق)
+    const response = await fetch(cleanUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+    });
+
+    if (response.status === 404) {
+      logger.warn(`⚠️ الملف غير موجود (404): ${cleanUrl}`);
+      return null;
+    }
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(new Uint8Array(arrayBuffer));
+    const fileSizeMB = buffer.length / (1024 * 1024);
+
+    const folder = type === "video" ? "blackmoon_videos" : "blackmoon_audio";
+    const resourceType = type === "video" ? "video" : "raw";
+
+    const urlPath = new URL(cleanUrl).pathname;
+    const baseName =
+      path.parse(urlPath).name || (type === "video" ? "video" : "audio");
+    const ext = path.extname(urlPath) || (type === "video" ? ".mp4" : ".mp3");
+    const publicId = `${baseName.replace(/[^a-zA-Z0-9\u0600-\u06FF\-]/g, "-")}-${Date.now()}`;
+    const filename = `${publicId}${ext}`;
+
+    // رفع الملف باستخدام Buffer مباشرة (بدون base64)
+    const uploadResult = await cloudinary.uploader.upload(buffer, {
+      public_id: publicId,
+      resource_type: resourceType,
+      folder: folder,
+      access_mode: "public",
+      timeout: 120000,
+    });
+
+    const docData = {
+      name: baseName,
+      file: filename,
+      cloudinaryUrl: uploadResult.secure_url,
+      sizeMB: fileSizeMB,
+      userId: userId,
+    };
+    if (type === "audio") {
+      await Audio.create(docData);
+    } else {
+      await Video.create(docData);
+    }
+
+    const user = await User.findById(userId);
+    if (user) {
+      if (type === "audio") user.audioUsedMB += fileSizeMB;
+      else user.videoUsedMB += fileSizeMB;
+      await user.save();
+    }
+
+    return filename;
   } catch (err) {
     logger.error(`❌ فشل رفع الملف من ${cleanUrl}: ${err.message}`);
     return null;
