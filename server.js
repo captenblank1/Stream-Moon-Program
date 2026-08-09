@@ -1194,18 +1194,26 @@ async function getUserRcon(userId) {
   return rcon;
 }
 
-function replacePlaceholders(cmd, nickname, username, rconPlayer) {
+function replacePlaceholders(
+  cmd,
+  nickname,
+  username,
+  rconPlayer,
+  profilePicture = "",
+) {
   const safeName = (name) =>
     name && name.includes(" ") ? `"${name}"` : name || "";
 
   const safeNickname = safeName(nickname);
   const safeUsername = safeName(username);
   const safePlayer = safeName(rconPlayer);
+  const safeProfilePicture = profilePicture || "";
 
   let finalCmd = cmd
     .replace(/{player}/g, safePlayer)
     .replace(/{nickname}/g, safeNickname)
-    .replace(/{username}/g, safeUsername);
+    .replace(/{username}/g, safeUsername)
+    .replace(/{profilePicture}/g, safeProfilePicture);
 
   if (finalCmd.startsWith("/")) finalCmd = finalCmd.slice(1);
   return finalCmd.trim();
@@ -1616,6 +1624,7 @@ async function executeAction(
         realName,
         triggerUser,
         "",
+        "",
       );
       console.log(
         `⌨️ [KEYSTROKE] eventId=${eventId}, keys="${finalKeystroke}"`,
@@ -1727,8 +1736,8 @@ async function executeAction(
               realName,
               triggerUser,
               "",
+              avatar,
             );
-
             // جدولة إرسال الويبهوك بعد التأخير التراكمي
             setTimeout(() => {
               const webhookData = {
@@ -1756,6 +1765,7 @@ async function executeAction(
             realName,
             triggerUser,
             "",
+            avatar,
           );
           const webhookData = {
             name: name || "",
