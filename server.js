@@ -4008,6 +4008,14 @@ app.get(
   },
 );
 
+// ================ دالة تنظيف الأوامر المستوردة ================
+function sanitizeCommandForImport(cmd) {
+  if (!cmd || typeof cmd !== "object") return {};
+  // حذف الحقول التي لا يجب أن تُنشأ مع الأمر الجديد
+  const { _id, __v, createdAt, updatedAt, ...clean } = cmd;
+  return clean;
+}
+
 app.post("/api/profiles/import-shared", authenticateToken, async (req, res) => {
   try {
     const { data, targetProfile } = req.body;
@@ -5081,7 +5089,7 @@ app.post(
         try {
           // تنقية الأمر من الحقول القديمة
           const cleanCmd = sanitizeCommandForImport(cmd);
-          
+
           if (cmd.giftId !== undefined && cmd.giftId !== null) {
             const giftId = String(cmd.giftId);
             const existing = await GiftCommand.findOne({
@@ -5095,13 +5103,17 @@ app.post(
                 // لكننا نحافظ على _id الأصلي، ونستخدم updateOne لتجنب مشاكل التكرار
                 await GiftCommand.updateOne(
                   { _id: existing._id },
-                  { ...cleanCmd, profile: targetProfile, userId: req.user.id }
+                  { ...cleanCmd, profile: targetProfile, userId: req.user.id },
                 );
                 results.replaced++;
               } else results.skipped++;
             } else {
               // إنشاء أمر جديد بدون _id قديم
-              await GiftCommand.create({ ...cleanCmd, profile: targetProfile, userId: req.user.id });
+              await GiftCommand.create({
+                ...cleanCmd,
+                profile: targetProfile,
+                userId: req.user.id,
+              });
               results.added++;
             }
           } else if (
@@ -5255,12 +5267,16 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
             if (replace) {
               await GiftCommand.updateOne(
                 { _id: existing._id },
-                { ...cleanCmd, profile, userId: req.user.id }
+                { ...cleanCmd, profile, userId: req.user.id },
               );
               results.replaced++;
             } else results.skipped++;
           } else {
-            await GiftCommand.create({ ...cleanCmd, profile, userId: req.user.id });
+            await GiftCommand.create({
+              ...cleanCmd,
+              profile,
+              userId: req.user.id,
+            });
             results.added++;
           }
         } else if (
