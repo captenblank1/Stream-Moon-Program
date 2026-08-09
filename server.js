@@ -4043,24 +4043,28 @@ app.post("/api/profiles/import-shared", authenticateToken, async (req, res) => {
       }
     };
 
+    // معالجة هدايا
     for (let cmd of data.gifts || []) {
-      const newCmd = { ...cmd };
-      delete newCmd._id;
-      newCmd.userId = req.user.id;
-      newCmd.profile = targetId;
-      newCmd.audio = await uploadMedia(newCmd.audio, "audio");
-      newCmd.video = await uploadMedia(newCmd.video, "video");
-      await GiftCommand.create(newCmd);
+      const cleanCmd = sanitizeCommandForImport(cmd);
+      cleanCmd.audio = await uploadMedia(cleanCmd.audio, "audio");
+      cleanCmd.video = await uploadMedia(cleanCmd.video, "video");
+      await GiftCommand.create({
+        ...cleanCmd,
+        userId: req.user.id,
+        profile: targetId,
+      });
     }
 
+    // معالجة تفاعلات
     for (let cmd of data.interactions || []) {
-      const newCmd = { ...cmd };
-      delete newCmd._id;
-      newCmd.userId = req.user.id;
-      newCmd.profile = targetId;
-      newCmd.audio = await uploadMedia(newCmd.audio, "audio");
-      newCmd.video = await uploadMedia(newCmd.video, "video");
-      await InteractionCommand.create(newCmd);
+      const cleanCmd = sanitizeCommandForImport(cmd);
+      cleanCmd.audio = await uploadMedia(cleanCmd.audio, "audio");
+      cleanCmd.video = await uploadMedia(cleanCmd.video, "video");
+      await InteractionCommand.create({
+        ...cleanCmd,
+        userId: req.user.id,
+        profile: targetId,
+      });
     }
 
     await refreshCachesForUser(req.user.id);
@@ -5001,6 +5005,7 @@ app.post(
       const results = { added: 0, replaced: 0, skipped: 0, errors: [] };
       const replace = req.body.replace === "true";
 
+      // أولاً معالجة الوسائط (الصوت والفيديو)
       for (const cmd of commands) {
         if (cmd.audio) {
           const audioExists = await Audio.findOne({
@@ -5071,10 +5076,12 @@ app.post(
         }
       }
 
+      // ثم معالجة الأوامر
       for (const cmd of commands) {
         try {
-          cmd.profile = targetProfile;
-          cmd.userId = req.user.id;
+          // تنقية الأمر من الحقول القديمة
+          const cleanCmd = sanitizeCommandForImport(cmd);
+          
           if (cmd.giftId !== undefined && cmd.giftId !== null) {
             const giftId = String(cmd.giftId);
             const existing = await GiftCommand.findOne({
@@ -5084,13 +5091,17 @@ app.post(
             });
             if (existing) {
               if (replace) {
-                await GiftCommand.findByIdAndUpdate(existing._id, cmd, {
-                  new: true,
-                });
+                // في حالة الاستبدال، نقوم بتحديث الأمر الموجود بالبيانات الجديدة
+                // لكننا نحافظ على _id الأصلي، ونستخدم updateOne لتجنب مشاكل التكرار
+                await GiftCommand.updateOne(
+                  { _id: existing._id },
+                  { ...cleanCmd, profile: targetProfile, userId: req.user.id }
+                );
                 results.replaced++;
               } else results.skipped++;
             } else {
-              await GiftCommand.create(cmd);
+              // إنشاء أمر جديد بدون _id قديم
+              await GiftCommand.create({ ...cleanCmd, profile: targetProfile, userId: req.user.id });
               results.added++;
             }
           } else if (
@@ -5105,11 +5116,12 @@ app.post(
               "keystroke",
             ].includes(cmd.type)
           ) {
-            let finalCmd = { ...cmd };
+            let finalCmd = { ...cleanCmd };
             if (cmd.type === "keystroke" && cmd.combo) {
               finalCmd.type = "all";
               finalCmd.combo = cmd.combo;
             }
+            // إنشاء أمر تفاعل جديد
             await InteractionCommand.create({
               ...finalCmd,
               profile: targetProfile,
@@ -5155,6 +5167,7 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
 
     const results = { added: 0, replaced: 0, skipped: 0, errors: [] };
 
+    // معالجة الوسائط أولاً
     for (const cmd of commands) {
       if (cmd.audio) {
         const audioExists = await Audio.findOne({
@@ -5225,8 +5238,12 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
       }
     }
 
+    // ثم معالجة الأوامر
     for (const cmd of commands) {
       try {
+        // تنقية الأمر من الحقول القديمة
+        const cleanCmd = sanitizeCommandForImport(cmd);
+
         if (cmd.giftId !== undefined && cmd.giftId !== null) {
           const giftId = String(cmd.giftId);
           const existing = await GiftCommand.findOne({
@@ -5236,15 +5253,14 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
           });
           if (existing) {
             if (replace) {
-              await GiftCommand.findByIdAndUpdate(
-                existing._id,
-                { ...cmd, profile, userId: req.user.id },
-                { new: true },
+              await GiftCommand.updateOne(
+                { _id: existing._id },
+                { ...cleanCmd, profile, userId: req.user.id }
               );
               results.replaced++;
             } else results.skipped++;
           } else {
-            await GiftCommand.create({ ...cmd, profile, userId: req.user.id });
+            await GiftCommand.create({ ...cleanCmd, profile, userId: req.user.id });
             results.added++;
           }
         } else if (
@@ -5259,7 +5275,7 @@ app.post("/api/profiles/import", authenticateToken, async (req, res) => {
             "keystroke",
           ].includes(cmd.type)
         ) {
-          let finalCmd = { ...cmd };
+          let finalCmd = { ...cleanCmd };
           if (cmd.type === "keystroke" && cmd.combo) {
             finalCmd.type = "all";
             finalCmd.combo = cmd.combo;
