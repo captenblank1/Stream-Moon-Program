@@ -373,9 +373,6 @@ const allowedOrigins = [
   "https://www.streammoon.net",
   "https://streammoon.onrender.com",
   "https://backend-7hj8.onrender.com",
-  "http://localhost:3000",
-  "http://localhost:5500",
-  "http://127.0.0.1:5500",
 ];
 if (process.env.FRONTEND_URL) allowedOrigins.push(process.env.FRONTEND_URL);
 
