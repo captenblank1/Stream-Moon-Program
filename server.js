@@ -576,7 +576,7 @@ const userSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
   audioUsedMB: { type: Number, default: 0 },
   videoUsedMB: { type: Number, default: 0 },
-  machineId: { type: String, unique: true, sparse: true, default: null },
+  machineId: { type: String, unique: true, sparse: true },
   rconConfig: {
     host: { type: String, default: DEFAULT_RCON_HOST },
     port: { type: Number, default: DEFAULT_RCON_PORT },
