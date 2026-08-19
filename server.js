@@ -728,6 +728,18 @@ const profileSchema = new mongoose.Schema({
 profileSchema.index({ owner: 1, id: 1 }, { unique: true });
 const Profile = mongoose.model("Profile", profileSchema);
 
+// ================ نموذج Hotkey ================
+const hotkeySchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  key: { type: String, required: true }, // e.g. "A", "F1", "Ctrl+A"
+  commandId: { type: mongoose.Schema.Types.ObjectId, required: true }, // يشير إلى GiftCommand أو InteractionCommand
+  commandType: { type: String, enum: ["gift", "interaction"], required: true }, // نوع الأمر
+  active: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now },
+});
+hotkeySchema.index({ userId: 1, key: 1 }, { unique: true }); // منع تكرار نفس المفتاح لنفس المستخدم
+const Hotkey = mongoose.model("Hotkey", hotkeySchema);
+
 // ================ دوال مساعدة ================
 async function ensureUserProfiles(userId) {
   const count = await Profile.countDocuments({ owner: userId });
@@ -5727,6 +5739,83 @@ app.post(
   },
 );
 
+// ================ نقاط نهاية Hotkey ================
+
+// جلب إعدادات Hotkey للمستخدم الحالي
+app.get("/api/hotkey", authenticateToken, async (req, res) => {
+  try {
+    const hotkeys = await Hotkey.find({ userId: req.user.id });
+    res.json({ success: true, hotkeys });
+  } catch (err) {
+    logger.error("❌ خطأ في جلب إعدادات Hotkey:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// حفظ (أو تحديث) إعداد Hotkey واحد
+app.post("/api/hotkey", authenticateToken, async (req, res) => {
+  try {
+    const { key, commandId, commandType, active } = req.body;
+    if (!key || !commandId || !commandType) {
+      return res
+        .status(400)
+        .json({ success: false, message: "جميع الحقول مطلوبة" });
+    }
+    // التحقق من صحة commandId ونوعه
+    let commandExists = false;
+    if (commandType === "gift") {
+      const gift = await GiftCommand.findOne({
+        _id: commandId,
+        userId: req.user.id,
+      });
+      if (gift) commandExists = true;
+    } else if (commandType === "interaction") {
+      const interaction = await InteractionCommand.findOne({
+        _id: commandId,
+        userId: req.user.id,
+      });
+      if (interaction) commandExists = true;
+    }
+    if (!commandExists) {
+      return res
+        .status(400)
+        .json({ success: false, message: "الأمر غير موجود أو لا يخصك" });
+    }
+
+    // استخدام upsert لتحديث أو إنشاء
+    const hotkey = await Hotkey.findOneAndUpdate(
+      { userId: req.user.id, key },
+      {
+        key,
+        commandId,
+        commandType,
+        active: active !== undefined ? active : true,
+      },
+      { upsert: true, new: true },
+    );
+    res.json({ success: true, hotkey });
+  } catch (err) {
+    logger.error("❌ خطأ في حفظ إعداد Hotkey:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// حذف إعداد Hotkey (اختياري، ولكن يمكننا استخدامه لإلغاء الربط)
+app.delete("/api/hotkey/:key", authenticateToken, async (req, res) => {
+  try {
+    const key = req.params.key;
+    const result = await Hotkey.findOneAndDelete({ userId: req.user.id, key });
+    if (result) {
+      res.json({ success: true, message: "تم حذف الاختصار" });
+    } else {
+      res.status(404).json({ success: false, message: "الاختصار غير موجود" });
+    }
+  } catch (err) {
+    logger.error("❌ خطأ في حذف إعداد Hotkey:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ================ Socket.IO ================
 const pluginNamespace = io.of("/plugin");
 pluginNamespace.use((socket, next) => {
@@ -5852,6 +5941,31 @@ io.on("connection", (socket) => {
     logger.info(`📱 عميل Socket.IO بدون userId: ${socket.id}`);
   }
 
+  // ===== أحداث كشف CAPTCHA (من frontend) =====
+  socket.on("captcha-detected", (data) => {
+    const userId = socket.userId || "unknown";
+    logger.info(`📢 CAPTCHA detected for user ${userId}:`, data);
+    // يمكنك هنا إرسال إشعار للمستخدم أو تنبيه المشرف
+    // مثلاً: إرسال إشعار إلى الواجهة
+    if (socket.userId) {
+      io.to(`user-${socket.userId}`).emit("captcha-status", {
+        active: true,
+        ...data,
+      });
+    }
+  });
+
+  socket.on("captcha-cleared", (data) => {
+    const userId = socket.userId || "unknown";
+    logger.info(`✅ CAPTCHA cleared for user ${userId}:`, data);
+    if (socket.userId) {
+      io.to(`user-${socket.userId}`).emit("captcha-status", {
+        active: false,
+        ...data,
+      });
+    }
+  });
+
   // استقبال طلب الإعدادات من صفحة العرض (Wins Overlay)
   socket.on("get-wins-settings", async (token) => {
     try {
@@ -5880,7 +5994,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  // ===== ✅ تم إضافة المعالج الجديد لـ Overlay الأسماء هنا =====
+  // ===== ✅ معالج Overlay الأسماء =====
   socket.on("get-overlay-settings", async (token) => {
     try {
       const user = await User.findOne({ screenToken: token });
@@ -5916,7 +6030,6 @@ io.on("connection", (socket) => {
     logger.info("📱 عميل Socket.IO قطع الاتصال:", socket.id);
   });
 });
-
 // ================ Cron Job ================
 cron.schedule("0 * * * *", async () => {
   logger.info("Checking expired subscriptions...");
