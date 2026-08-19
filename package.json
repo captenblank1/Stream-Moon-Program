@@ -1,12 +1,12 @@
 {
-  "name": "SteamMoon",
+  "name": "StreamMoon",
   "version": "1.0.0",
   "description": "Stream Moon - TikTok LIVE Controller",
   "main": "electron-main.js",
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder",
-    "dist:portable": "electron-packager . SteamMoon --platform=win32 --arch=x64 --out=release-build --overwrite --icon=icon.ico"
+    "dist:portable": "electron-packager . StreamMoon --platform=win32 --arch=x64 --out=release-build --overwrite --icon=icon.ico"
   },
   "author": "",
 
@@ -27,7 +27,7 @@
   },
   "build": {
     "appId": "com.streammoon.app",
-    "productName": "SteamMoon",
+    "productName": "StreamMoon",
     "forceCodeSigning": false,
     "directories": {
       "output": "build"
@@ -48,7 +48,7 @@
     ],
     "win": {
       "target": "nsis",
-      "executableName": "SteamMoon",
+      "executableName": "StreamMoon",
       "artifactName": "${productName}-Setup-${version}.${ext}",
       "publisherName": "StreamMoon",
       "icon": "icon.ico",
@@ -63,8 +63,8 @@
       "createDesktopShortcut": true,
       
       "createStartMenuShortcut": true,
-      "shortcutName": "SteamMoon",
-      "uninstallDisplayName": "SteamMoon"
+      "shortcutName": "StreamMoon",
+      "uninstallDisplayName": "StreamMoon"
     },
     "publish": {
       "provider": "github",

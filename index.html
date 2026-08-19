@@ -10,7 +10,11 @@
     />
     <title>Stream Moon</title>
     <link rel="stylesheet" href="css/normalize.css" />
-    <link rel="stylesheet" href="css/all.min.css" />
+    <!-- استخدام CDN لـ Font Awesome -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
+    />
     <link rel="stylesheet" href="css/style.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -126,46 +130,46 @@
     <div class="auth-header">
       <div id="auth-status"></div>
       <div class="auth-buttons">
-        <button id="login-btn">
+        <button id="login-btn" class="btn btn-secondary">
           <i class="fas fa-sign-in-alt"></i> تسجيل الدخول
         </button>
-        <button id="register-btn">
+        <button id="register-btn" class="btn btn-secondary">
           <i class="fas fa-user-plus"></i> إنشاء حساب
         </button>
-        <button id="logout-btn" style="display: none">
+        <button id="logout-btn" class="btn btn-secondary" style="display: none">
           <i class="fas fa-sign-out-alt"></i> تسجيل الخروج
         </button>
-        <button id="delete-account-btn" style="display: none">
+        <button
+          id="delete-account-btn"
+          class="btn btn-danger"
+          style="display: none"
+        >
           <i class="fas fa-trash-alt"></i> حذف الحساب
         </button>
         <button
           id="delete-all-profile-btn"
-          class="delete-all-btn"
+          class="btn btn-danger"
           onclick="confirmDeleteAll()"
-          style="display: inline-flex; background-color: #f44336"
         >
           <i class="fas fa-trash"></i> حذف البروفايل
         </button>
         <div class="profile-actions">
           <button
             id="add-profile-btn"
-            class="profile-action-btn"
+            class="btn btn-secondary"
             title="استيراد أوامر من ملف JSON"
           >
             <i class="fas fa-upload"></i> اضافه البروفايل
           </button>
           <button
             id="copy-profile-btn"
-            class="profile-action-btn"
+            class="btn btn-secondary"
             title="تصدير الأوامر إلى ملف JSON"
           >
             <i class="fas fa-download"></i> نسخ البروفايل
           </button>
         </div>
-        <button
-          id="upgrade-btn"
-          style="display: none; background-color: #ff9800"
-        >
+        <button id="upgrade-btn" class="btn btn-warning" style="display: none">
           <i class="fas fa-crown"></i> اشتراك فى خطه
         </button>
       </div>
@@ -187,15 +191,11 @@
       <div class="modal-content">
         <span class="close-modal" id="close-login">&times;</span>
         <h2>تسجيل الدخول</h2>
-        <input
-          type="email"
-          id="login-email"
-          placeholder="البريد الإلكتروني"
-        /><input
-          type="password"
-          id="login-password"
-          placeholder="كلمة المرور"
-        /><button id="login-submit">دخول</button>
+        <input type="email" id="login-email" placeholder="البريد الإلكتروني" />
+        <input type="password" id="login-password" placeholder="كلمة المرور" />
+        <button id="login-submit" class="btn btn-primary btn-block">
+          دخول
+        </button>
         <p id="login-message" style="color: #ff6b6b; margin-top: 10px"></p>
       </div>
     </div>
@@ -207,11 +207,15 @@
           type="email"
           id="register-email"
           placeholder="البريد الإلكتروني"
-        /><input
+        />
+        <input
           type="password"
           id="register-password"
           placeholder="كلمة المرور"
-        /><button id="register-submit">تسجيل</button>
+        />
+        <button id="register-submit" class="btn btn-primary btn-block">
+          تسجيل
+        </button>
         <p id="register-message" style="color: #ff6b6b; margin-top: 10px"></p>
       </div>
     </div>
@@ -329,19 +333,27 @@
           <p>Your TikTok Username <span>(Required!)</span></p>
           <input id="user-tiktok" type="text" placeholder="@Username TikTok" />
         </div>
-        <button type="button" id="send-usertik">Connect to TikTok LIVE</button>
+        <button
+          type="button"
+          id="send-usertik"
+          class="btn btn-primary btn-block"
+        >
+          Connect to TikTok LIVE
+        </button>
         <p id="result"></p>
       </div>
       <div class="minecraft-properties">
-        <input id="player-name" type="text" placeholder="Player Name" /><input
-          id="player-ip"
-          type="text"
-          placeholder="IP"
-        /><input id="player-port" type="text" placeholder="Port" /><input
-          id="player-password"
-          type="text"
-          placeholder="Password"
-        /><button type="button" id="send-minecraft-properties">Send</button>
+        <input id="player-name" type="text" placeholder="Player Name" />
+        <input id="player-ip" type="text" placeholder="IP" />
+        <input id="player-port" type="text" placeholder="Port" />
+        <input id="player-password" type="text" placeholder="Password" />
+        <button
+          type="button"
+          id="send-minecraft-properties"
+          class="btn btn-primary btn-block"
+        >
+          Send
+        </button>
         <p id="result2"></p>
       </div>
     </div>
@@ -377,7 +389,9 @@
               >Profile 1</span
             >
           </div>
-          <button class="add-btn" onclick="showAddCard()">Create Action</button>
+          <button class="add-btn btn btn-primary" onclick="showAddCard()">
+            Create Action
+          </button>
         </div>
         <div id="commandLimitWarning" class="command-limit-warning">
           ⚠️ لقد وصلت للحد الأقصى للأوامر (7) في النسخة المجانية. قم بالترقية
@@ -402,8 +416,8 @@
               value="0"
               max="50"
               style="width: 100%; height: 20px"
-            ></progress
-            ><span id="audio-storage-text">0 / 50 ميجا</span>
+            ></progress>
+            <span id="audio-storage-text">0 / 50 ميجا</span>
           </div>
           <div
             id="video-storage"
@@ -420,8 +434,8 @@
               value="0"
               max="500"
               style="width: 100%; height: 20px"
-            ></progress
-            ><span id="video-storage-text">0 / 500 ميجا</span>
+            ></progress>
+            <span id="video-storage-text">0 / 500 ميجا</span>
           </div>
         </div>
 
@@ -449,10 +463,8 @@
                 <div class="selected">Choose a gift...</div>
                 <div class="options"></div>
               </div>
-              <input type="hidden" id="giftSelect" /><input
-                type="hidden"
-                id="giftName"
-              />
+              <input type="hidden" id="giftSelect" />
+              <input type="hidden" id="giftName" />
             </div>
           </div>
           <div class="webhook-field">
@@ -484,10 +496,10 @@
             id="keyword"
             placeholder="Write a comment, for example: Game name"
           />
-          <label for="threshold">Number of likes</label
-          ><input type="number" id="threshold" placeholder="0" value="0" />
-          <label for="targetUser">Enter a username or leave it as all</label
-          ><input
+          <label for="threshold">Number of likes</label>
+          <input type="number" id="threshold" placeholder="0" value="0" />
+          <label for="targetUser">Enter a username or leave it as all</label>
+          <input
             type="text"
             id="targetUser"
             placeholder="مثال: all أو username"
@@ -495,7 +507,8 @@
           />
           <label for="command"
             >يمكنك وضع عدة اوامر في سطور منفصلة مع دعم or و delay</label
-          ><textarea
+          >
+          <textarea
             id="command"
             placeholder="/Command (ضع أمرًا في كل سطر)"
             rows="3"
@@ -505,11 +518,12 @@
               <button
                 type="button"
                 id="openKeyboardShortcutBtn"
-                class="btn-secondary"
+                class="btn btn-secondary"
                 style="flex: 1"
               >
-                <i class="fas fa-keyboard"></i> تعيين زر كيبورد</button
-              ><span
+                <i class="fas fa-keyboard"></i> تعيين زر كيبورد
+              </button>
+              <span
                 id="shortcutDisplay"
                 style="
                   background: #1e2a36;
@@ -542,17 +556,17 @@
             </div>
           </div>
           <input type="hidden" id="shortcutData" value="" />
-          <label for="repeat">Count</label
-          ><input type="number" id="repeat" placeholder="1" value="1" />
-          <label for="interval">interval (ms)</label
-          ><input
+          <label for="repeat">Count</label>
+          <input type="number" id="repeat" placeholder="1" value="1" />
+          <label for="interval">interval (ms)</label>
+          <input
             type="number"
             id="interval"
             placeholder="الفاصل بالمللي ثانية"
             value="100"
           />
-          <label for="delayBefore">delay Before (ms)</label
-          ><input
+          <label for="delayBefore">delay Before (ms)</label>
+          <input
             type="number"
             id="delayBefore"
             placeholder="التأخير قبل التنفيذ"
@@ -567,9 +581,10 @@
               <div class="selected">اختر صوت...</div>
               <div class="options"></div>
             </div>
-            <input type="hidden" id="audioSelect" /><button
+            <input type="hidden" id="audioSelect" />
+            <button
               type="button"
-              class="clear-btn"
+              class="btn btn-danger btn-sm"
               onclick="clearAudio()"
             >
               🗑️ إزالة الصوت
@@ -580,9 +595,10 @@
                 id="audioUploadInput"
                 accept="audio/*"
                 style="display: none"
-              /><button
+              />
+              <button
                 type="button"
-                class="upload-audio-btn"
+                class="btn btn-secondary btn-sm"
                 onclick="document.getElementById('audioUploadInput').click()"
               >
                 📁 رفع صوت من الكمبيوتر
@@ -593,14 +609,12 @@
               class="progress-container"
               style="display: none"
             >
-              <progress id="audioProgress" value="0" max="100"></progress
-              ><span id="audioProgressPercent" class="progress-percent"
-                >0%</span
-              >
+              <progress id="audioProgress" value="0" max="100"></progress>
+              <span id="audioProgressPercent" class="progress-percent">0%</span>
             </div>
           </div>
-          <label for="volume">Sound Volume</label
-          ><input
+          <label for="volume">Sound Volume</label>
+          <input
             style="border: none"
             type="range"
             id="volume"
@@ -611,18 +625,21 @@
             oninput="
               document.getElementById('volumeValue').textContent = this.value
             "
-          /><span id="volumeValue">100</span>
+          />
+          <span id="volumeValue">100</span>
           <div class="video-section">
-            <label class="custom-upload" for="videoInput">🎬 Select File</label
-            ><input type="file" id="videoInput" accept="video/*" />
+            <label class="custom-upload" for="videoInput">🎬 Select File</label>
+            <input type="file" id="videoInput" accept="video/*" />
             <div id="videoPreview"></div>
-            <input type="hidden" id="video" /><button
+            <input type="hidden" id="video" />
+            <button
               type="button"
-              class="clear-btn"
+              class="btn btn-danger btn-sm"
               onclick="clearVideo()"
             >
-              🗑️ إزالة الفيديو</button
-            ><span
+              🗑️ إزالة الفيديو
+            </button>
+            <span
               id="videoFileName"
               style="margin-left: 10px; color: #aaa"
             ></span>
@@ -631,13 +648,11 @@
               class="progress-container"
               style="display: none"
             >
-              <progress id="videoProgress" value="0" max="100"></progress
-              ><span id="videoProgressPercent" class="progress-percent"
-                >0%</span
-              >
+              <progress id="videoProgress" value="0" max="100"></progress>
+              <span id="videoProgressPercent" class="progress-percent">0%</span>
             </div>
-            <label for="videoVolume">Video Volume</label
-            ><input
+            <label for="videoVolume">Video Volume</label>
+            <input
               type="range"
               id="videoVolume"
               min="0"
@@ -648,17 +663,11 @@
                 document.getElementById('videoVolumeValue').textContent =
                   this.value
               "
-            /><span id="videoVolumeValue">100</span>
+            />
+            <span id="videoVolumeValue">100</span>
           </div>
-          <label for="screen">Screens</label
-          ><input
-            type="number"
-            id="screen"
-            placeholder="رقم الشاشة"
-            value="1"
-          />
-
-          <!-- حقول التراكب والمدة -->
+          <label for="screen">Screens</label>
+          <input type="number" id="screen" placeholder="رقم الشاشة" value="1" />
           <div class="form-group">
             <label
               ><input type="checkbox" id="showOverlayCheckbox" /> إظهار تراكب
@@ -666,16 +675,16 @@
             >
           </div>
           <div class="form-group" id="overlayTextGroup" style="display: none">
-            <label for="overlayTextInput">نص التراكب</label
-            ><input
+            <label for="overlayTextInput">نص التراكب</label>
+            <input
               type="text"
               id="overlayTextInput"
               placeholder="النص الذي سيظهر تحت اسم الداعم"
             />
           </div>
           <div class="form-group">
-            <label for="durationInput">Display duration (seconds)</label
-            ><input
+            <label for="durationInput">Display duration (seconds)</label>
+            <input
               type="number"
               id="durationInput"
               value="5"
@@ -684,15 +693,18 @@
               step="1"
             />
           </div>
-
           <div class="actions">
             <button
-              class="confirm-btn"
+              class="confirm-btn btn btn-primary"
               type="button"
               onclick="confirmAdd(event)"
             >
-              Save</button
-            ><button class="cancel-btn" onclick="checkForChangesAndClose()">
+              Save
+            </button>
+            <button
+              class="cancel-btn btn btn-secondary"
+              onclick="checkForChangesAndClose()"
+            >
               Close
             </button>
           </div>
@@ -725,15 +737,21 @@
       <div class="modal" id="deleteModal">
         <div class="modal-content">
           <p>هل تريد حذف كل الأوامر؟</p>
-          <button onclick="deleteAll()">نعم</button
-          ><button onclick="closeModal()">إلغاء</button>
+          <button class="btn btn-danger" onclick="deleteAll()">نعم</button>
+          <button class="btn btn-secondary" onclick="closeModal()">
+            إلغاء
+          </button>
         </div>
       </div>
       <div class="modal" id="disconnectModal">
         <div class="modal-content">
           <p id="disconnectMessage">هل تريد قطع الاتصال بالبث المباشر؟</p>
-          <button onclick="confirmDisconnect()">نعم</button
-          ><button onclick="closeDisconnectModal()">إلغاء</button>
+          <button class="btn btn-danger" onclick="confirmDisconnect()">
+            نعم
+          </button>
+          <button class="btn btn-secondary" onclick="closeDisconnectModal()">
+            إلغاء
+          </button>
         </div>
       </div>
       <div class="modal" id="commandSelectionModal">
@@ -758,10 +776,13 @@
                 >تحديد الكل</span
               >
             </label>
-
             <div style="flex: 1"></div>
-            <button id="confirmCommandAction" class="confirm-btn">تأكيد</button
-            ><button id="cancelCommandAction" class="cancel-btn">إلغاء</button>
+            <button id="confirmCommandAction" class="btn btn-primary">
+              تأكيد
+            </button>
+            <button id="cancelCommandAction" class="btn btn-secondary">
+              إلغاء
+            </button>
           </div>
           <div
             style="
@@ -934,7 +955,7 @@
       </div>
     </div>
 
-    <!-- ===== قسم Hotkey مع جدول عرض الاختصارات ===== -->
+    <!-- ===== قسم Hotkey ===== -->
     <div
       class="start-section-6 section-css"
       id="startSectionHotkey"
@@ -944,12 +965,12 @@
         <h2><i class="fas fa-keyboard"></i> إعدادات الاختصار (Hotkey)</h2>
         <p>اختر مفتاحاً وأمراً لتنفيذه عند الضغط على المفتاح.</p>
       </div>
-
-      <!-- نموذج الإعدادات -->
       <div class="hotkey-settings">
         <div class="hotkey-field">
           <label>المفتاح:</label>
-          <button id="selectHotkeyBtn">اختر مفتاح</button>
+          <button id="selectHotkeyBtn" class="btn btn-secondary">
+            اختر مفتاح
+          </button>
           <span id="hotkeyDisplay">لم يتم التعيين</span>
           <input type="hidden" id="hotkeyKey" value="" />
         </div>
@@ -960,13 +981,14 @@
           </select>
         </div>
         <div class="hotkey-field">
-          <label> <input type="checkbox" id="hotkeyActive" /> مفعل </label>
+          <label><input type="checkbox" id="hotkeyActive" /> مفعل</label>
         </div>
-        <button id="saveHotkeyBtn">حفظ الإعدادات</button>
+        <button id="saveHotkeyBtn" class="btn btn-primary">
+          حفظ الإعدادات
+        </button>
         <div id="hotkeyStatus"></div>
       </div>
 
-      <!-- جدول عرض الاختصارات المسجلة -->
       <div
         style="margin-top: 40px; border-top: 1px solid #333; padding-top: 25px"
       >
@@ -1008,44 +1030,40 @@
           >&times;</span
         >
         <h2 class="modal-title">اختر اختصار لوحة المفاتيح</h2>
-
         <div class="keyboard-selector">
           <div class="selected-key-display">
             <span>المفتاح المحدد:</span>
             <span class="key-badge" id="modalSelectedKeyDisplay">—</span>
             <input type="hidden" id="modalSelectedKey" value="" />
           </div>
-
           <div class="modifier-group">
-            <label class="modifier-label">
-              <input
+            <label class="modifier-label"
+              ><input
                 type="checkbox"
                 id="modalModCtrl"
                 class="modifier-checkbox"
               />
-              Ctrl
-            </label>
-            <label class="modifier-label">
-              <input
+              Ctrl</label
+            >
+            <label class="modifier-label"
+              ><input
                 type="checkbox"
                 id="modalModAlt"
                 class="modifier-checkbox"
               />
-              Alt
-            </label>
-            <label class="modifier-label">
-              <input
+              Alt</label
+            >
+            <label class="modifier-label"
+              ><input
                 type="checkbox"
                 id="modalModShift"
                 class="modifier-checkbox"
               />
-              Shift
-            </label>
+              Shift</label
+            >
           </div>
-
           <div class="keyboard-wrapper">
             <div class="keyboard-title">⌨️ لوحة المفاتيح — جميع الأزرار</div>
-
             <div class="kb-row-fn">
               <div class="kb-key fn">Esc</div>
               <div class="kb-key fn">F1</div>
@@ -1064,7 +1082,6 @@
               <div class="kb-key fn">ScrLk</div>
               <div class="kb-key fn">Pause</div>
             </div>
-
             <div class="keyboard-body">
               <div class="kb-block main-block">
                 <div class="kb-grid-row">
@@ -1139,7 +1156,6 @@
                   <div class="kb-key w-1-25u mod">Ctrl</div>
                 </div>
               </div>
-
               <div class="kb-block nav-block">
                 <div class="nav-row">
                   <div class="kb-key fn">Ins</div>
@@ -1163,27 +1179,22 @@
                   <div class="kb-key arrow">→</div>
                 </div>
               </div>
-
               <div class="kb-block numpad-block">
                 <div class="kb-key numpad">Num</div>
                 <div class="kb-key numpad">/</div>
                 <div class="kb-key numpad op">*</div>
                 <div class="kb-key numpad op">-</div>
-
                 <div class="kb-key numpad">7</div>
                 <div class="kb-key numpad">8</div>
                 <div class="kb-key numpad">9</div>
                 <div class="kb-key numpad op row-span-2">+</div>
-
                 <div class="kb-key numpad">4</div>
                 <div class="kb-key numpad">5</div>
                 <div class="kb-key numpad">6</div>
-
                 <div class="kb-key numpad">1</div>
                 <div class="kb-key numpad">2</div>
                 <div class="kb-key numpad">3</div>
                 <div class="kb-key numpad op row-span-2">↵</div>
-
                 <div class="kb-key numpad col-span-2">0</div>
                 <div class="kb-key numpad">.</div>
               </div>
@@ -1193,7 +1204,6 @@
             انقر على أي مفتاح لاختياره. يمكنك دمج Ctrl/Alt/Shift.
           </p>
         </div>
-
         <div class="modal-actions">
           <button
             class="action-btn cancel-btn"
@@ -1242,13 +1252,8 @@
             margin-top: 20px;
           "
         >
-          <button
-            id="confirmYesBtn"
-            class="confirm-btn"
-            style="background-color: #1dd9e6e1"
-          >
-            نعم</button
-          ><button id="confirmNoBtn" class="cancel-btn">إلغاء</button>
+          <button id="confirmYesBtn" class="btn btn-primary">نعم</button>
+          <button id="confirmNoBtn" class="btn btn-secondary">إلغاء</button>
         </div>
       </div>
     </div>
@@ -1257,7 +1262,6 @@
     <script
       defer
       src="https://www.paypal.com/sdk/js?client-id=AQneDdEH8DY3y08aXjag-dCeXlHLmR0dtoRFNCl0bzA8Ogp92K_XkRmPS4OjgTho6BuKJtQPPh-MmQoM&vault=true&intent=subscription"
-      data-sdk-integration-source="button-factory"
     ></script>
     <script src="main.js" defer></script>
   </body>

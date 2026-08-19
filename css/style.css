@@ -29,7 +29,7 @@ body {
   background-color: var(--bg-dark);
   color: var(--text-light);
   line-height: 1.6;
-  direction: ltr; /* أو rtl حسب اللغة، نستخدم ltr لأن النصوص إنجليزية */
+  direction: ltr;
 }
 
 /* ================ السيدبار (القائمة الجانبية) ================ */
@@ -116,7 +116,7 @@ aside .action p {
   position: sticky;
   top: 0;
   z-index: 99;
-  margin-left: 250px; /* عرض السيدبار */
+  margin-left: 250px;
   flex-wrap: wrap;
   gap: 15px;
 }
@@ -140,26 +140,101 @@ aside .action p {
   flex-wrap: wrap;
 }
 
-.auth-buttons button {
-  background: #333;
-  color: white;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
+/* ================ الأزرار الموحدة (BASE) ================ */
+.btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  transition: var(--transition);
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 18px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  white-space: nowrap;
+  background: #333;
+  color: #fff;
+}
+.btn:hover {
+  transform: translateY(-1px);
+  opacity: 0.9;
 }
 
-.auth-buttons button i {
+.btn-primary {
+  background: var(--primary-color);
+  color: #fff;
+}
+.btn-primary:hover {
+  background: var(--primary-hover);
+}
+
+.btn-danger {
+  background: var(--danger-color);
+  color: #fff;
+}
+.btn-danger:hover {
+  background: var(--danger-hover);
+}
+
+.btn-secondary {
+  background: #444;
+  color: #fff;
+}
+.btn-secondary:hover {
+  background: #666;
+}
+
+.btn-success {
+  background: #4caf50;
+  color: #fff;
+}
+.btn-success:hover {
+  background: #388e3c;
+}
+
+.btn-warning {
+  background: #ff9800;
+  color: #fff;
+}
+.btn-warning:hover {
+  background: #e68900;
+}
+
+.btn-sm {
+  padding: 4px 12px;
+  font-size: 12px;
+}
+.btn-lg {
+  padding: 12px 28px;
   font-size: 16px;
 }
+.btn-block {
+  width: 100%;
+  justify-content: center;
+}
 
-.auth-buttons button:hover {
+/* ================ أزرار شريط المصادقة ================ */
+.auth-buttons .btn {
+  background: #333;
+  color: #fff;
+}
+.auth-buttons .btn:hover {
   background: var(--primary-color);
+}
+.auth-buttons .btn-danger {
+  background: var(--danger-color);
+}
+.auth-buttons .btn-danger:hover {
+  background: var(--danger-hover);
+}
+.auth-buttons .btn-warning {
+  background: #ff9800;
+}
+.auth-buttons .btn-warning:hover {
+  background: #e68900;
 }
 
 /* ================ المحتوى الرئيسي ================ */
@@ -172,7 +247,7 @@ aside .action p {
   display: flex;
   gap: 20px;
   flex-wrap: wrap;
-  margin-top: 70px; /* لتعويض الـ auth-header */
+  margin-top: 70px;
 }
 
 /* ================ بطاقات الحساب وإعدادات ماينكرافت ================ */
@@ -331,34 +406,16 @@ aside .action p {
   color: white;
 }
 
-/* ================ أزرار الإجراءات ================ */
+/* ================ أزرار الإجراءات (معاد تعريفها باستخدام class btn) ================ */
 .delete-all-btn,
 .add-btn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 6px;
-  font-weight: bold;
-  cursor: pointer;
-  transition: var(--transition);
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+  /* سيتم استخدام class btn مباشرة، نحتفظ بهذه الفئات للتوافق مع الـ JS */
+  /* لكن سنضيف لها قواعد إضافية إن لزم */
 }
-
-.delete-all-btn {
-  background: var(--danger-color);
-  color: white;
-}
-
-.delete-all-btn:hover {
-  background: var(--danger-hover);
-}
-
 .add-btn {
   background: var(--primary-color);
   color: white;
 }
-
 .add-btn:hover {
   background: var(--primary-hover);
 }
@@ -427,7 +484,6 @@ aside .action p {
   background: var(--primary-color);
   color: white;
 }
-
 .card .confirm-btn:hover {
   background: var(--primary-hover);
 }
@@ -436,7 +492,6 @@ aside .action p {
   background: #555;
   color: white;
 }
-
 .card .cancel-btn:hover {
   background: #777;
 }
@@ -560,6 +615,7 @@ td .options button {
   transition: var(--transition);
   padding: 5px;
   border-radius: 4px;
+  font-size: 14px;
 }
 
 td .options button:hover {
@@ -620,7 +676,7 @@ input[type="range"]::-webkit-slider-thumb {
   opacity: 0;
   visibility: hidden;
   transition: var(--transition);
-  z-index: 1000;
+  z-index: 10000;
 }
 
 #message.show {
@@ -674,7 +730,7 @@ input[type="range"]::-webkit-slider-thumb {
 .modal-content button {
   width: 100%;
   padding: 12px;
-  background: #1dd9e6e1;
+  background: var(--primary-color);
   border: none;
   color: white;
   font-weight: bold;
@@ -740,7 +796,7 @@ input[type="range"]::-webkit-slider-thumb {
   }
 }
 
-/* إضافات للأزرار الجديدة */
+/* ================ إضافات أخرى ================ */
 .clear-btn {
   background: #f44336;
   color: white;
@@ -754,6 +810,7 @@ input[type="range"]::-webkit-slider-thumb {
 .clear-btn:hover {
   background: #d32f2f;
 }
+
 .audio-section,
 .video-section {
   margin-top: 15px;
@@ -761,7 +818,22 @@ input[type="range"]::-webkit-slider-thumb {
   border: 1px solid var(--border-color);
   border-radius: 6px;
 }
-/* تنسيق لحالة الاتصال */
+
+.upload-audio-btn {
+  background: #2196f3;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 5px;
+  font-size: 12px;
+}
+.upload-audio-btn:hover {
+  background: #0b7dda;
+}
+
+/* حالة الاتصال */
 #connect-text {
   transition: color 0.3s;
 }
@@ -774,7 +846,8 @@ input[type="range"]::-webkit-slider-thumb {
 .disconnected {
   color: red !important;
 }
-/* تنسيق زر تعديل اسم البروفايل */
+
+/* تعديل اسم البروفايل */
 .profile-edit-btn {
   background: transparent;
   border: none;
@@ -789,6 +862,7 @@ input[type="range"]::-webkit-slider-thumb {
   color: #1dd9e6e1;
   background: #333;
 }
+
 .profile-item {
   display: flex;
   align-items: center;
@@ -807,13 +881,11 @@ input[type="range"]::-webkit-slider-thumb {
   padding: 2px 5px;
   width: 100px;
 }
-/* إضافة لعرض اسم البروفايل في المحدد الرئيسي */
 #current-profile-name-display {
   margin-left: 5px;
   color: #1dd9e6e1;
   font-weight: bold;
 }
-/* أزرار إدارة البروفايلات */
 .profile-actions {
   display: flex;
   gap: 10px;
@@ -835,109 +907,6 @@ input[type="range"]::-webkit-slider-thumb {
   background: #1dd9e6e1;
 }
 
-/* إضافات للأزرار الجديدة */
-.clear-btn {
-  background: #f44336;
-  color: white;
-  border: none;
-  padding: 5px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  margin-top: 5px;
-  font-size: 12px;
-}
-.clear-btn:hover {
-  background: #d32f2f;
-}
-.audio-section,
-.video-section {
-  margin-top: 15px;
-  padding: 10px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-}
-.upload-audio-btn {
-  background: #2196f3;
-  color: white;
-  border: none;
-  padding: 5px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  margin-top: 5px;
-  font-size: 12px;
-}
-.upload-audio-btn:hover {
-  background: #0b7dda;
-}
-#connect-text {
-  transition: color 0.3s;
-}
-.connecting {
-  color: orange !important;
-}
-.connected {
-  color: #1dd9e6e1 !important;
-}
-.disconnected {
-  color: red !important;
-}
-.profile-edit-btn {
-  background: transparent;
-  border: none;
-  color: #888;
-  cursor: pointer;
-  margin-left: 5px;
-  font-size: 14px;
-  padding: 2px 5px;
-  border-radius: 3px;
-}
-.profile-edit-btn:hover {
-  color: #1dd9e6e1;
-  background: #333;
-}
-.profile-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 5px 10px;
-}
-.profile-name {
-  flex: 1;
-  cursor: pointer;
-}
-.profile-name-input {
-  background: #333;
-  color: white;
-  border: 1px solid #1dd9e6e1;
-  border-radius: 3px;
-  padding: 2px 5px;
-  width: 100px;
-}
-#current-profile-name-display {
-  margin-left: 5px;
-  color: #1dd9e6e1;
-  font-weight: bold;
-}
-.profile-actions {
-  display: flex;
-  gap: 10px;
-  margin-left: 15px;
-}
-.profile-action-btn {
-  background: #333;
-  color: white;
-  border: none;
-  padding: 6px 12px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 13px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.profile-action-btn:hover {
-  background: #1dd9e6e1;
-}
 .command-table-modal {
   width: 90vw !important;
   max-width: 1400px !important;
@@ -973,6 +942,7 @@ input[type="range"]::-webkit-slider-thumb {
   height: 18px;
   cursor: pointer;
 }
+
 .duplicate-group {
   background: #2a2a2a;
   border: 1px solid #1dd9e6e1;
@@ -988,6 +958,7 @@ input[type="range"]::-webkit-slider-thumb {
   font-weight: bold;
   color: #1dd9e6e1;
 }
+
 .modal-actions {
   display: flex;
   gap: 10px;
@@ -1010,6 +981,7 @@ input[type="range"]::-webkit-slider-thumb {
   color: #fff;
   border-radius: 4px;
 }
+
 .progress-container {
   margin-top: 5px;
   display: flex;
@@ -1026,6 +998,7 @@ progress {
   font-size: 12px;
   color: #1dd9e6e1;
 }
+
 tr.disabled-row {
   background-color: #3a2a2a;
   color: #ffaaaa;
@@ -1035,6 +1008,7 @@ tr.disabled-row button {
   opacity: 0.5;
   pointer-events: none;
 }
+
 .command-limit-warning {
   background: #ff9800;
   color: #000;
@@ -1043,6 +1017,7 @@ tr.disabled-row button {
   margin-bottom: 10px;
   display: none;
 }
+
 .plan-card {
   transition: all 0.2s ease;
   cursor: pointer;
@@ -1055,10 +1030,12 @@ tr.disabled-row button {
   border-color: #1dd9e6e1 !important;
   background: #2a2a2a;
 }
+
 #paypal-button-container {
   margin-top: 15px;
   min-height: 45px;
 }
+
 .notification-bar {
   width: 80%;
   position: fixed;
@@ -1113,6 +1090,8 @@ tr.disabled-row button {
     font-size: 1em;
   }
 }
+
+/* ===== Keyboard Selector ===== */
 .keyboard-selector {
   background: #0f151e;
   border-radius: 16px;
@@ -1195,11 +1174,12 @@ tr.disabled-row button {
 .mt-4 {
   margin-top: 20px;
 }
-/* ================ مودال اختيار الصوت (Fixed) ================ */
+
+/* ================ مودال اختيار الصوت ================ */
 #audioModal {
   display: none;
   position: fixed;
-  z-index: 10050; /* أعلى من الكارد (9999) وأقل من مودال التأكيد (10000) */
+  z-index: 10050;
   left: 0;
   top: 0;
   width: 100%;
@@ -1209,7 +1189,6 @@ tr.disabled-row button {
   justify-content: center;
   backdrop-filter: blur(4px);
 }
-
 #audioModal .modal-content {
   background: #1e1e1e;
   border-radius: 20px;
@@ -1222,7 +1201,6 @@ tr.disabled-row button {
   border: 1px solid #1dd9e6e1;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
 }
-
 #audioModal .modal-header {
   display: flex;
   justify-content: space-between;
@@ -1232,13 +1210,11 @@ tr.disabled-row button {
   background: #2a2a2a;
   border-radius: 20px 20px 0 0;
 }
-
 #audioModal .modal-header h3 {
   margin: 0;
   color: #1dd9e6e1;
   font-size: 1.2rem;
 }
-
 #audioModal .modal-header .close-audio-modal {
   font-size: 28px;
   font-weight: bold;
@@ -1246,17 +1222,14 @@ tr.disabled-row button {
   color: #aaa;
   transition: 0.2s;
 }
-
 #audioModal .modal-header .close-audio-modal:hover {
   color: #f44336;
 }
-
 #audioModal .modal-body {
   flex: 1;
   overflow-y: hidden;
   padding: 15px;
 }
-
 #audioModal .modal-footer {
   padding: 10px 15px;
   border-top: 1px solid #333;
@@ -1264,8 +1237,6 @@ tr.disabled-row button {
   background: #1a1a1a;
   border-radius: 0 0 20px 20px;
 }
-
-/* شريط البحث داخل المودال */
 #audioModal .audio-search-input {
   width: 100%;
   padding: 10px 15px;
@@ -1276,8 +1247,6 @@ tr.disabled-row button {
   border-radius: 30px;
   font-size: 14px;
 }
-
-/* حاوية خيارات الأصوات */
 #audioModal .audio-options-container {
   max-height: 600px;
   overflow-y: scroll;
@@ -1286,8 +1255,6 @@ tr.disabled-row button {
   gap: 8px;
   overflow-x: hidden;
 }
-
-/* خيار الصوت الواحد داخل المودال */
 #audioModal .audio-option {
   display: flex;
   justify-content: space-between;
@@ -1299,46 +1266,38 @@ tr.disabled-row button {
   transition: 0.2s;
   border: 1px solid #444;
 }
-
 #audioModal .audio-option:hover {
   background: #3a3a3a;
   border-color: #1dd9e6e1;
 }
-
 #audioModal .audio-option.selected {
   background: #1dd9e6e1;
   color: white;
   border-color: #1dd9e6e1;
 }
-
 #audioModal .audio-left {
   display: flex;
   align-items: center;
   gap: 12px;
   flex: 1;
 }
-
 #audioModal .audio-icon {
   font-size: 1.6rem;
   color: #1dd9e6e1;
 }
-
 #audioModal .audio-name {
   font-weight: bold;
   font-size: 1rem;
 }
-
 #audioModal .audio-owner {
   font-size: 0.7rem;
   color: #ccc;
   margin-top: 3px;
 }
-
 #audioModal .audio-right {
   display: flex;
   gap: 8px;
 }
-
 #audioModal .play-audio-btn,
 #audioModal .delete-audio-btn {
   background: #444;
@@ -1350,14 +1309,14 @@ tr.disabled-row button {
   font-size: 0.75rem;
   transition: 0.2s;
 }
-
 #audioModal .play-audio-btn:hover {
   background: #1dd9e6e1;
 }
 #audioModal .delete-audio-btn:hover {
   background: #f44336;
 }
-/* التأكد من أن مودال التأكيد فوق كل العناصر */
+
+/* تأكيد */
 #confirmModal {
   z-index: 11000 !important;
   background-color: rgba(0, 0, 0, 0.8) !important;
@@ -1366,7 +1325,7 @@ tr.disabled-row button {
   z-index: 11001 !important;
   position: relative;
 }
-/* خلفية مظلمة تغطي الصفحة */
+
 .overlay {
   position: fixed;
   top: 0;
@@ -1379,7 +1338,6 @@ tr.disabled-row button {
   transition: all 0.3s ease;
 }
 
-/* بطاقة الإضافة/التعديل تظهر فوق الـ overlay */
 #addCard {
   position: fixed;
   top: 50%;
@@ -1394,10 +1352,9 @@ tr.disabled-row button {
   border-radius: 16px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   padding: 20px;
-  display: none; /* يختفي افتراضياً */
+  display: none;
 }
 
-/* تحسين ظهور الكارد على الشاشات الصغيرة */
 @media (max-width: 768px) {
   #addCard {
     width: 95%;
@@ -1405,12 +1362,14 @@ tr.disabled-row button {
     padding: 15px;
   }
 }
+
 .modal-content {
   display: block !important;
   visibility: visible !important;
   opacity: 1 !important;
 }
 
+/* ================ قسم الشاشات ================ */
 .start-section-3 {
   padding: 20px;
   margin-left: 250px;
@@ -1486,6 +1445,7 @@ tr.disabled-row button {
   padding: 40px;
   font-size: 18px;
 }
+
 .button-select-slide {
   padding: 15px 20px;
   border-bottom: 1px solid var(--border-color);
@@ -1499,15 +1459,12 @@ tr.disabled-row button {
   text-transform: uppercase;
   letter-spacing: 1px;
 }
-
 .button-select-slide:hover {
   background: var(--primary-color);
 }
-
 .button-select-slide:hover p {
   color: white;
 }
-
 .button-select-slide.active {
   background: var(--primary-color);
 }
@@ -1630,14 +1587,10 @@ tr.disabled-row button {
 #admin-dashboard-btn {
   display: none !important;
 }
-#message {
-  z-index: 10000 !important; /* أو قيمة أعلى من أي عنصر آخر */
-}
 
 /* ============================================================
    تنسيق الكيبورد المطور - معمارية القطاعات المنفصلة الـ 3
    ============================================================ */
-
 :root {
   --kb-bg: #1a1a2e;
   --kb-panel-bg: #0f151e;
@@ -1651,10 +1604,9 @@ tr.disabled-row button {
   --kb-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
   --kb-radius: 6px;
   --kb-gap: 5px;
-  --key-base-size: 36px; /* المقاس الموحد المربع لكل الأزرار */
+  --key-base-size: 36px;
 }
 
-/* المودال الداخلي */
 #keyboardShortcutModal .modal-content {
   max-width: 1015px;
   width: 100%;
@@ -1752,7 +1704,6 @@ tr.disabled-row button {
   cursor: pointer;
 }
 
-/* حاوية الكيبورد الكلية */
 .keyboard-wrapper {
   background: var(--kb-bg);
   border-radius: 20px;
@@ -1762,7 +1713,7 @@ tr.disabled-row button {
   width: 100%;
   box-sizing: border-box;
   overflow-x: auto;
-  direction: ltr; /* لضمان توجيه لوحة المفاتيح من اليسار لليمين كالحقيقية */
+  direction: ltr;
 }
 
 .keyboard-title {
@@ -1774,7 +1725,6 @@ tr.disabled-row button {
   opacity: 0.8;
 }
 
-/* صف أزرار F العلوي */
 .kb-row-fn {
   display: flex;
   gap: var(--kb-gap);
@@ -1788,7 +1738,6 @@ tr.disabled-row button {
   background: #1e1e34;
 }
 
-/* تنظيم الـ 3 قطاعات جنباً إلى جنب */
 .keyboard-body {
   display: flex;
   gap: 14px;
@@ -1801,9 +1750,8 @@ tr.disabled-row button {
   gap: var(--kb-gap);
 }
 
-/* --- القطاع الأول: الأزرار الرئيسية بنظام 60 عمود دقيق --- */
 .main-block {
-  flex: 0 0 575px; /* تثبيت عرض منطقة الحروف */
+  flex: 0 0 575px;
 }
 .kb-grid-row {
   display: grid;
@@ -1811,7 +1759,6 @@ tr.disabled-row button {
   gap: var(--kb-gap);
 }
 
-/* تعيين مساحات الأزرار الرياضية بناءً على المقياس الموحد لكيبورد ميكانيكي */
 .w-1u {
   grid-column: span 4;
 }
@@ -1840,7 +1787,6 @@ tr.disabled-row button {
   grid-column: span 25;
 }
 
-/* --- القطاع الثاني: أزرار التنقل والأسهم --- */
 .nav-block {
   flex: 0 0 calc((var(--key-base-size) * 3) + (var(--kb-gap) * 2));
 }
@@ -1855,7 +1801,6 @@ tr.disabled-row button {
   height: var(--key-base-size);
 }
 
-/* --- القطاع الثالث: النمباد الجانبي المصلح بالـ Grid وعواميد الطول --- */
 .numpad-block {
   display: grid;
   grid-template-columns: repeat(4, var(--key-base-size));
@@ -1865,8 +1810,6 @@ tr.disabled-row button {
   width: 100%;
   height: var(--key-base-size);
 }
-
-/* التمدد الطولي الذكي لزر الزائد والإدخال في النمباد */
 .kb-key.row-span-2 {
   grid-row: span 2;
   height: calc((var(--key-base-size) * 2) + var(--kb-gap)) !important;
@@ -1875,7 +1818,6 @@ tr.disabled-row button {
   grid-column: span 2;
 }
 
-/* تصميم الزر الموحد */
 .kb-key {
   display: flex;
   align-items: center;
@@ -1893,13 +1835,11 @@ tr.disabled-row button {
   transition: all 0.08s ease;
   user-select: none;
 }
-
 .kb-key:hover {
   background: var(--kb-key-hover);
   border-color: var(--kb-key-active);
   transform: translateY(-1px);
 }
-
 .kb-key:active,
 .kb-key.active-key {
   transform: scale(0.94);
@@ -1908,8 +1848,6 @@ tr.disabled-row button {
   color: #fff;
   box-shadow: 0 0 12px rgba(76, 175, 80, 0.4);
 }
-
-/* المفاتيح الملونة الجانبية والخاصة */
 .kb-key.fn,
 .kb-key.mod,
 .kb-key.numpad {
@@ -1926,13 +1864,17 @@ tr.disabled-row button {
   cursor: default;
   pointer-events: none;
 }
-
 .kb-key.space {
   color: var(--kb-muted);
   font-size: 14px;
 }
+.kb-key.selected {
+  background-color: #1dd9e6e1 !important;
+  color: #fff !important;
+  border-color: #1dd9e6e1 !important;
+  box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+}
 
-/* التذييل والأزرار السفلية للمودال */
 .helper-text {
   color: #aaa;
   text-align: center;
@@ -1962,7 +1904,6 @@ tr.disabled-row button {
 .action-btn:hover {
   opacity: 0.9;
 }
-
 .cancel-btn {
   background: #444;
   color: white;
@@ -1983,31 +1924,20 @@ tr.disabled-row button {
 .keyboard-footer span {
   color: var(--kb-key-active);
 }
-.kb-key.selected {
-  background-color: #1dd9e6e1 !important; /* أخضر */
-  color: #fff !important;
-  border-color: #1dd9e6e1 !important;
-  box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
-}
+
 #confirmYesBtn:focus {
   outline: 3px solid #1dd9e6e1;
   outline-offset: 2px;
-  /* أو أي تأثير بصري تاني */
 }
+
 .command-table-modal {
   overflow-y: scroll !important;
 }
-/* ================ تباعد خلايا جدول الأوامر ================ */
 
 .commands-table td {
-  padding: 20px 10px; /* مسافة داخلية حول المحتوى */
-  border-radius: 6px; /* زوايا مستديرة */
+  padding: 20px 10px;
+  border-radius: 6px;
 }
-
-/* يمكنك إضافة تأثير hover للخلايا (اختياري) */
-/* .commands-table tr:hover td {
-  background: #2a2a2a;
-} */
 
 /* ================ قسم Hotkey الجديد ================ */
 .start-section-hotkey {
@@ -2024,12 +1954,10 @@ tr.disabled-row button {
   text-align: center;
   margin-bottom: 30px;
 }
-
 .hotkey-header h2 {
   color: var(--primary-color);
   font-size: 24px;
 }
-
 .hotkey-header p {
   color: var(--text-muted);
   font-size: 14px;
@@ -2048,13 +1976,11 @@ tr.disabled-row button {
   flex-direction: column;
   gap: 8px;
 }
-
 .hotkey-field label {
   color: var(--text-muted);
   font-size: 14px;
   font-weight: 600;
 }
-
 .hotkey-field button {
   background: #333;
   color: white;
@@ -2069,7 +1995,6 @@ tr.disabled-row button {
   gap: 8px;
   width: fit-content;
 }
-
 .hotkey-field button:hover {
   background: var(--primary-color);
 }
@@ -2108,7 +2033,6 @@ tr.disabled-row button {
   align-self: center;
   width: fit-content;
 }
-
 #saveHotkeyBtn:hover {
   background: var(--primary-hover);
   transform: scale(1.02);
@@ -2125,31 +2049,26 @@ tr.disabled-row button {
   outline: none;
   cursor: pointer;
 }
-
 #hotkeyCommandSelect:focus {
   border-color: var(--primary-color);
 }
 
-/* تنسيق خانة التفعيل */
 .hotkey-field .toggle-group {
   display: flex;
   align-items: center;
   gap: 12px;
 }
-
 .hotkey-field .toggle-group input[type="checkbox"] {
   width: 18px;
   height: 18px;
   accent-color: var(--primary-color);
   cursor: pointer;
 }
-
 .hotkey-field .toggle-group label {
   cursor: pointer;
   font-weight: 400;
 }
 
-/* تنسيقات للشاشات الصغيرة */
 @media (max-width: 768px) {
   .start-section-hotkey {
     margin-left: 0;
@@ -2157,16 +2076,13 @@ tr.disabled-row button {
     border-radius: 0;
     padding: 15px;
   }
-
   .hotkey-settings {
     max-width: 100%;
   }
-
   #hotkeyDisplay {
     font-size: 16px;
     min-width: 80px;
   }
-
   #saveHotkeyBtn {
     width: 100%;
     text-align: center;
