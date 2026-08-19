@@ -5800,6 +5800,78 @@ app.post("/api/hotkey", authenticateToken, async (req, res) => {
   }
 });
 
+// ===== تحديث Hotkey موجود (PUT) =====
+app.put("/api/hotkey/:key", authenticateToken, async (req, res) => {
+  try {
+    const oldKey = req.params.key;
+    const { key, commandId, commandType, active } = req.body;
+
+    if (!key || !commandId || !commandType) {
+      return res.status(400).json({
+        success: false,
+        message: "جميع الحقول مطلوبة",
+      });
+    }
+
+    // التحقق من صحة commandId ونوعه
+    let commandExists = false;
+    if (commandType === "gift") {
+      const gift = await GiftCommand.findOne({
+        _id: commandId,
+        userId: req.user.id,
+      });
+      if (gift) commandExists = true;
+    } else if (commandType === "interaction") {
+      const interaction = await InteractionCommand.findOne({
+        _id: commandId,
+        userId: req.user.id,
+      });
+      if (interaction) commandExists = true;
+    }
+
+    if (!commandExists) {
+      return res.status(400).json({
+        success: false,
+        message: "الأمر غير موجود أو لا يخصك",
+      });
+    }
+
+    // إذا تغير المفتاح، تأكد من عدم وجود مفتاح مكرر
+    if (oldKey !== key) {
+      const existing = await Hotkey.findOne({
+        userId: req.user.id,
+        key: key,
+      });
+      if (existing) {
+        return res.status(400).json({
+          success: false,
+          message: `المفتاح "${key}" مستخدم بالفعل`,
+        });
+      }
+    }
+
+    // حذف الاختصار القديم (بالمفتاح القديم)
+    await Hotkey.findOneAndDelete({
+      userId: req.user.id,
+      key: oldKey,
+    });
+
+    // إنشاء الاختصار الجديد (بالمفتاح الجديد)
+    const hotkey = await Hotkey.create({
+      userId: req.user.id,
+      key: key,
+      commandId: commandId,
+      commandType: commandType,
+      active: active !== undefined ? active : true,
+    });
+
+    res.json({ success: true, hotkey });
+  } catch (err) {
+    logger.error("❌ خطأ في تحديث إعداد Hotkey:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // حذف إعداد Hotkey (اختياري، ولكن يمكننا استخدامه لإلغاء الربط)
 app.delete("/api/hotkey/:key", authenticateToken, async (req, res) => {
   try {
