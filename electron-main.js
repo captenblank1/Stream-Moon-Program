@@ -632,6 +632,15 @@ function initAutoUpdater() {
     return;
   }
 
+  // 1. تحديد خادم التحديثات يدوياً لضمان عدم حدوث خطأ في القراءة
+  autoUpdater.setFeedURL({
+    provider: "github",
+    owner: "captenblank1",
+    repo: "Stream-Moon-Program",
+  });
+
+  // 2. إيقاف التحقق من التوقيع الرقمي (بسبب forceCodeSigning: false)
+  autoUpdater.verifyUpdateCodeSignature = false;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
@@ -665,27 +674,17 @@ function initAutoUpdater() {
         .then(({ response }) => {
           if (response === 0) {
             autoUpdater.quitAndInstall();
-          } else {
-            logMessage("⏳ سيتم تثبيت التحديث عند إغلاق التطبيق.");
           }
-        })
-        .catch((err) => {
-          logError("❌ فشل عرض حوار التحديث:", err.message);
         });
     }
   });
 
   autoUpdater.on("error", (err) => {
     logError("❌ فشل التحديث التلقائي:", err.message);
-    if (mainWindow) {
-      dialog.showErrorBox(
-        "فشل التحديث",
-        `حدث خطأ أثناء محاولة التحديث: ${err.message}`,
-      );
-    }
   });
 
-  autoUpdater.checkForUpdatesAndNotify();
+  // بدء التحقق
+  autoUpdater.checkForUpdates();
 }
 
 function createWindow() {
