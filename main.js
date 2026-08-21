@@ -4189,6 +4189,9 @@ async function init() {
     });
   }
 
+  // ✅ ربط القوائم المنسدلة
+  setupCustomSelects();
+
   await connectFrontendSocket();
   await initHotkey();
 }
@@ -5146,3 +5149,53 @@ function setupCaptchaWatcher() {
 document.addEventListener("DOMContentLoaded", () => {
   setupCaptchaWatcher();
 });
+
+// ربط القوائم المنسدلة المخصصة (Custom Select) لأنواع الأوامر
+function setupCustomSelects() {
+  document.querySelectorAll('.custom-select .selected').forEach(selected => {
+    selected.removeEventListener('click', handleSelectClick);
+    selected.addEventListener('click', handleSelectClick);
+  });
+
+  document.querySelectorAll('.custom-select .options li').forEach(li => {
+    li.removeEventListener('click', handleOptionClick);
+    li.addEventListener('click', handleOptionClick);
+  });
+
+  // إغلاق القائمة عند النقر خارجها
+  document.removeEventListener('click', closeCustomSelects);
+  document.addEventListener('click', closeCustomSelects);
+}
+
+function handleSelectClick(e) {
+  e.stopPropagation();
+  const parent = this.closest('.custom-select');
+  if (parent) {
+    parent.classList.toggle('open');
+  }
+}
+
+function handleOptionClick(e) {
+  const parent = this.closest('.custom-select');
+  if (parent) {
+    const selectedSpan = parent.querySelector('.selected span');
+    if (selectedSpan) {
+      selectedSpan.textContent = this.textContent;
+    }
+    const hiddenInput = document.getElementById('actionType');
+    if (hiddenInput) {
+      hiddenInput.value = this.dataset.value;
+    }
+    // تحديث حقول الإدخال حسب النوع
+    updateInputsForType(this.dataset.value);
+    parent.classList.remove('open');
+  }
+}
+
+function closeCustomSelects(e) {
+  document.querySelectorAll('.custom-select.open').forEach(el => {
+    if (!el.contains(e.target)) {
+      el.classList.remove('open');
+    }
+  });
+}
