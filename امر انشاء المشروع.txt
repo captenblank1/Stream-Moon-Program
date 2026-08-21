@@ -1,0 +1,4 @@
+Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
+npm run dist
+
+repomix

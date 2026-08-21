@@ -1,0 +1,12 @@
+node_modules/
+build/
+release-build/
+dist/
+*.log
+*.exe
+*.blockmap
+*.yml
+*.yaml
+.env
+.DS_Store
+repomix-output.xml
