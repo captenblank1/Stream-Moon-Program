@@ -3201,10 +3201,21 @@ function attachAdminButtonEvents() {
 // ============================================================
 // دوال Overlay
 // ============================================================
-function loadOverlayTab(tab) {
+// ============================================================
+// دوال Overlay (تحميل مباشر بدون iframe)
+// ============================================================
+async function loadOverlayTab(tab) {
   const overlayContainer = document.getElementById("overlayDashboardContainer");
   if (!overlayContainer) return;
 
+  // عرض رسالة تحميل
+  overlayContainer.innerHTML = `
+    <div style="display:flex;justify-content:center;align-items:center;height:300px;color:#888;font-size:18px;">
+      <i class="fas fa-spinner fa-spin" style="margin-left:10px;"></i> جاري تحميل لوحة التحكم...
+    </div>
+  `;
+
+  // تحديث أزرار التبويب
   document.querySelectorAll(".overlay-tab-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.tab === tab);
     if (btn.dataset.tab === tab) {
@@ -3216,17 +3227,60 @@ function loadOverlayTab(tab) {
     }
   });
 
-  let src =
-    tab === "main" ? API_BASE + "/dashboard" : API_BASE + "/wins-dashboard";
+  // تحديد الرابط حسب التبويب
+  const url =
+    tab === "main"
+      ? API_BASE + "/dashboard.html"
+      : API_BASE + "/wins-dashboard.html";
 
-  overlayContainer.innerHTML = `
-    <iframe 
-      src="${src}" 
-      style="width: 100%; height: 90vh; min-height: 600px; border: none; border-radius: 12px; background: #0a0a0f; box-shadow: 0 4px 20px rgba(0,0,0,0.5);"
-      allow="clipboard-read; clipboard-write; cookies"
-      sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
-    ></iframe>
-  `;
+  try {
+    const response = await fetch(url, {
+      credentials: "include", // إرسال الكوكيز (JWT)
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const html = await response.text();
+
+    // معالجة الروابط النسبية لتصبح مطلقة (تجنب مشاكل تحميل CSS/JS)
+    const baseUrl = API_BASE;
+    const fixedHtml = html.replace(
+      /(src|href)=["'](?!https?:\/\/)([^"']*)["']/g,
+      (match, attr, value) => {
+        // إذا كان المسار يبدأ بـ / نزيله
+        if (value.startsWith("/")) value = value.slice(1);
+        return `${attr}="${baseUrl}/${value}"`;
+      },
+    );
+
+    // حقن المحتوى
+    overlayContainer.innerHTML = fixedHtml;
+
+    // إعادة تنفيذ السكربتات المضمنة (لأنها لن تنفذ تلقائياً)
+    const scripts = overlayContainer.querySelectorAll("script");
+    scripts.forEach((oldScript) => {
+      const newScript = document.createElement("script");
+      // نسخ جميع السمات (src, type, etc.)
+      for (let attr of oldScript.attributes) {
+        newScript.setAttribute(attr.name, attr.value);
+      }
+      // إذا كان السكربت يحتوي على محتوى نصي (غير خارجي)
+      if (oldScript.src) {
+        // سكربت خارجي، نضعه كما هو، لكن src قد يكون مطلقاً الآن بفضل التعديل أعلاه
+        newScript.src = oldScript.src;
+      } else {
+        newScript.textContent = oldScript.textContent;
+      }
+      // استبدال القديم بالجديد
+      oldScript.parentNode.replaceChild(newScript, oldScript);
+    });
+  } catch (err) {
+    overlayContainer.innerHTML = `
+      <div style="text-align:center;padding:40px;color:#f44336;">
+        <i class="fas fa-exclamation-triangle"></i> ❌ فشل تحميل لوحة التحكم: ${err.message}
+      </div>
+    `;
+    console.error("❌ فشل تحميل الـ Overlay:", err);
+  }
 }
 
 // ============================================================
@@ -4452,11 +4506,14 @@ if (overlaysNav) {
   };
 }
 
+// استماع للأحداث القادمة من المحتوى المحمّل (تبويبات الـ Overlay)
 document.addEventListener("click", function (e) {
   const tabBtn = e.target.closest(".overlay-tab-btn");
   if (tabBtn) {
     const tab = tabBtn.dataset.tab;
-    loadOverlayTab(tab);
+    if (tab) {
+      loadOverlayTab(tab);
+    }
   }
 });
 
@@ -5152,50 +5209,50 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // ربط القوائم المنسدلة المخصصة (Custom Select) لأنواع الأوامر
 function setupCustomSelects() {
-  document.querySelectorAll('.custom-select .selected').forEach(selected => {
-    selected.removeEventListener('click', handleSelectClick);
-    selected.addEventListener('click', handleSelectClick);
+  document.querySelectorAll(".custom-select .selected").forEach((selected) => {
+    selected.removeEventListener("click", handleSelectClick);
+    selected.addEventListener("click", handleSelectClick);
   });
 
-  document.querySelectorAll('.custom-select .options li').forEach(li => {
-    li.removeEventListener('click', handleOptionClick);
-    li.addEventListener('click', handleOptionClick);
+  document.querySelectorAll(".custom-select .options li").forEach((li) => {
+    li.removeEventListener("click", handleOptionClick);
+    li.addEventListener("click", handleOptionClick);
   });
 
   // إغلاق القائمة عند النقر خارجها
-  document.removeEventListener('click', closeCustomSelects);
-  document.addEventListener('click', closeCustomSelects);
+  document.removeEventListener("click", closeCustomSelects);
+  document.addEventListener("click", closeCustomSelects);
 }
 
 function handleSelectClick(e) {
   e.stopPropagation();
-  const parent = this.closest('.custom-select');
+  const parent = this.closest(".custom-select");
   if (parent) {
-    parent.classList.toggle('open');
+    parent.classList.toggle("open");
   }
 }
 
 function handleOptionClick(e) {
-  const parent = this.closest('.custom-select');
+  const parent = this.closest(".custom-select");
   if (parent) {
-    const selectedSpan = parent.querySelector('.selected span');
+    const selectedSpan = parent.querySelector(".selected span");
     if (selectedSpan) {
       selectedSpan.textContent = this.textContent;
     }
-    const hiddenInput = document.getElementById('actionType');
+    const hiddenInput = document.getElementById("actionType");
     if (hiddenInput) {
       hiddenInput.value = this.dataset.value;
     }
     // تحديث حقول الإدخال حسب النوع
     updateInputsForType(this.dataset.value);
-    parent.classList.remove('open');
+    parent.classList.remove("open");
   }
 }
 
 function closeCustomSelects(e) {
-  document.querySelectorAll('.custom-select.open').forEach(el => {
+  document.querySelectorAll(".custom-select.open").forEach((el) => {
     if (!el.contains(e.target)) {
-      el.classList.remove('open');
+      el.classList.remove("open");
     }
   });
 }
