@@ -82,6 +82,9 @@ function getCookie(name) {
   return null;
 }
 
+// ============================================================
+// تنقية HTML محسّنة - استخدام textContent أفضل، لكن للضرورة استخدم هذه الدالة
+// ============================================================
 function escapeHtml(str) {
   if (!str) return "";
   return String(str)
@@ -89,7 +92,9 @@ function escapeHtml(str) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+    .replaceAll("'", "&#039;")
+    .replaceAll("/", "&#x2F;") // منع هجمات close tag
+    .replaceAll("`", "&#x60;"); // منع template literals
 }
 
 function showMessage(msg) {
@@ -1589,6 +1594,7 @@ async function confirmAdd(event) {
 
 async function loadCommands(profileIdParam = null, noCache = false) {
   try {
+    // إلغاء المؤقتات القديمة
     for (const [id, timer] of autoSaveTimers) {
       clearTimeout(timer);
     }
@@ -1684,7 +1690,11 @@ async function loadCommands(profileIdParam = null, noCache = false) {
       let giftCellContent = "";
 
       if (cmd.__type === "gift") {
-        giftCellContent = `<img src="${getGiftImage(cmd.giftId)}" style="width:30px;height:30px;object-fit:cover;border-radius:4px;vertical-align:middle;" onerror="this.style.display='none'" title="${escapeHtml(cmd.giftName || cmd.name || "")}">`;
+        // ========== 🔒 إصلاح أمني: تنقية رابط الصورة ==========
+        const rawImgUrl = getGiftImage(cmd.giftId);
+        const safeImg = safeImageUrl(rawImgUrl);
+        const safeTitle = escapeHtml(cmd.giftName || cmd.name || "");
+        giftCellContent = `<img src="${safeImg}" style="width:30px;height:30px;object-fit:cover;border-radius:4px;vertical-align:middle;" onerror="this.style.display='none'" title="${safeTitle}">`;
       } else {
         let iconFile = "";
         const actionType = cmd.type || "";
@@ -1713,14 +1723,25 @@ async function loadCommands(profileIdParam = null, noCache = false) {
       const hasCombo = cmd.combo && cmd.combo.trim() !== "";
 
       if (hasCommand) {
-        commandCellContent = `<textarea class="input-like-textarea" data-field="command" rows="1" placeholder="/Command (ضع أمرًا في كل سطر)" ${isDisabled ? "disabled" : ""}>${escapeHtml(cmd.command)}</textarea>`;
+        // ========== 🔒 إصلاح أمني: تنقية الأمر ==========
+        const safeCommand = escapeHtml(cmd.command);
+        commandCellContent = `<textarea class="input-like-textarea" data-field="command" rows="1" placeholder="/Command (ضع أمرًا في كل سطر)" ${isDisabled ? "disabled" : ""}>${safeCommand}</textarea>`;
       } else if (hasWebhook) {
-        commandCellContent = `<div style="font-size:12px; color:#1dd9e6e1; word-break:break-all;">🔗 ${escapeHtml(cmd.webhookUrl)}</div>`;
+        // ========== 🔒 إصلاح أمني: تنقية رابط webhook ==========
+        const safeWebhook = escapeHtml(cmd.webhookUrl);
+        commandCellContent = `<div style="font-size:12px; color:#1dd9e6e1; word-break:break-all;">🔗 ${safeWebhook}</div>`;
       } else if (hasCombo) {
-        commandCellContent = `<div style="font-size:12px; color:#ff9800;">⌨️ ${escapeHtml(cmd.combo)}</div>`;
+        // ========== 🔒 إصلاح أمني: تنقية الاختصار ==========
+        const safeCombo = escapeHtml(cmd.combo);
+        commandCellContent = `<div style="font-size:12px; color:#ff9800;">⌨️ ${safeCombo}</div>`;
       } else {
         commandCellContent = `<div style="font-size:12px; color:#888;">—</div>`;
       }
+
+      // ========== 🔒 تنقية جميع القيم المعروضة في الجدول ==========
+      const safeName = escapeHtml(displayName);
+      const safeAudio = escapeHtml(audioValue);
+      const safeVideo = escapeHtml(videoValue);
 
       tr.innerHTML = `
 <td class="drag-handle" style="text-align: center; width: 50px; vertical-align: middle; padding: 2px 10px;">
@@ -1747,14 +1768,14 @@ async function loadCommands(profileIdParam = null, noCache = false) {
           <button class="edit-btn" type="button" ${isDisabled ? "disabled" : ""} style="background: none; border: none; cursor: pointer; color: #1dd9e6e1; font-size: 18px; display: inline-block; margin: 0 2px;"><i class="fas fa-edit"></i></button>
           <button class="execute-btn" type="button" ${isDisabled ? "disabled" : ""} style="background: none; border: none; cursor: pointer; color: #2196f3; font-size: 18px; display: inline-block; margin: 0 2px;"><i class="fas fa-play"></i></button>
         </td>
-        <td><input type="text" value="${escapeHtml(displayName)}" data-field="name" ${isDisabled ? "disabled" : ""}></td>
+        <td><input type="text" value="${safeName}" data-field="name" ${isDisabled ? "disabled" : ""}></td>
         <td style="text-align: center; vertical-align: middle;">${commandCellContent}</td>
         <td><input type="number" value="${cmd.screen || 1}" data-field="screen" ${isDisabled ? "disabled" : ""}></td>
         <td><input type="number" value="${cmd.repeat || 1}" data-field="repeat" ${isDisabled ? "disabled" : ""}></td>
         <td><input type="number" value="${cmd.interval || 500}" data-field="interval" ${isDisabled ? "disabled" : ""}></td>
         <td><input type="number" value="${cmd.delayBefore || 0}" data-field="delayBefore" ${isDisabled ? "disabled" : ""}></td>
-        <td><input type="hidden" data-field="audio" value="${escapeHtml(audioValue)}"><input type="checkbox" class="play-sound-checkbox" data-field="playSound" ${playSoundChecked} ${isDisabled ? "disabled" : ""}></td>
-        <td><input type="hidden" data-field="video" value="${escapeHtml(videoValue)}"><input type="checkbox" class="video-checkbox" data-field="playVideo" ${playVideoChecked} ${isDisabled ? "disabled" : ""}></td>
+        <td><input type="hidden" data-field="audio" value="${safeAudio}"><input type="checkbox" class="play-sound-checkbox" data-field="playSound" ${playSoundChecked} ${isDisabled ? "disabled" : ""}></td>
+        <td><input type="hidden" data-field="video" value="${safeVideo}"><input type="checkbox" class="video-checkbox" data-field="playVideo" ${playVideoChecked} ${isDisabled ? "disabled" : ""}></td>
         <td class="fathertd"><input type="range" min="0" max="100" step="1" value="${cmd.volume || 100}" data-field="volume" oninput="this.nextElementSibling.textContent = this.value" style="width:100px;" ${isDisabled ? "disabled" : ""}><span class="numvolume">${cmd.volume || 100}</span></td>
         <td class="fathertd"><input type="range" min="0" max="100" step="1" value="${cmd.videoVolume || 100}" data-field="videoVolume" oninput="this.nextElementSibling.textContent = this.value" style="width:100px;" ${isDisabled ? "disabled" : ""}><span class="numvolume">${cmd.videoVolume || 100}</span></td>
         <td class="gift-cell" style="text-align:center;">${giftCellContent}</td>
@@ -2853,11 +2874,13 @@ async function loadScreens() {
     let html = '<div class="screens-grid">';
     for (let i = 1; i <= 10; i++) {
       const screenUrl = `${baseUrl}/screens/${token}/${i}.html`;
+      // تنقية الرابط باستخدام escapeHtml
+      const safeUrl = escapeHtml(screenUrl);
       html += `
         <div class="screen-card">
           <div class="screen-number">${i}</div>
-          <div class="screen-url" dir="ltr">${escapeHtml(screenUrl)}</div>
-          <button class="copy-url-btn" data-url="${escapeHtml(screenUrl)}">📋 نسخ الرابط</button>
+          <div class="screen-url" dir="ltr">${safeUrl}</div>
+          <button class="copy-url-btn" data-url="${safeUrl}">📋 نسخ الرابط</button>
         </div>
       `;
     }
@@ -2872,7 +2895,7 @@ async function loadScreens() {
       });
     });
   } catch (err) {
-    container.innerHTML = `<div class="error-message">❌ فشل تحميل الروابط: ${err.message}</div>`;
+    container.innerHTML = `<div class="error-message">❌ فشل تحميل الروابط: ${escapeHtml(err.message)}</div>`;
   }
 }
 
@@ -3200,22 +3223,14 @@ function attachAdminButtonEvents() {
 
 // ============================================================
 // دوال Overlay
-// ============================================================
-// ============================================================
-// دوال Overlay (تحميل مباشر بدون iframe)
-// ============================================================
+// ============================================================\
+
 async function loadOverlayTab(tab) {
   const overlayContainer = document.getElementById("overlayDashboardContainer");
   if (!overlayContainer) return;
 
-  // عرض رسالة تحميل
-  overlayContainer.innerHTML = `
-    <div style="display:flex;justify-content:center;align-items:center;height:300px;color:#888;font-size:18px;">
-      <i class="fas fa-spinner fa-spin" style="margin-left:10px;"></i> جاري تحميل لوحة التحكم...
-    </div>
-  `;
+  overlayContainer.innerHTML = `<div style="display:flex;justify-content:center;align-items:center;height:300px;color:#888;font-size:18px;"><i class="fas fa-spinner fa-spin" style="margin-left:10px;"></i> جاري تحميل لوحة التحكم...</div>`;
 
-  // تحديث أزرار التبويب
   document.querySelectorAll(".overlay-tab-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.tab === tab);
     if (btn.dataset.tab === tab) {
@@ -3227,50 +3242,50 @@ async function loadOverlayTab(tab) {
     }
   });
 
-  // تحديد الرابط حسب التبويب
+  // تحديد الرابط مع المجلد overlay/
   const url =
     tab === "main"
-      ? API_BASE + "/dashboard.html"
-      : API_BASE + "/wins-dashboard.html";
+      ? API_BASE + "/overlay/dashboard.html"
+      : API_BASE + "/overlay/wins-dashboard.html";
 
   try {
-    const response = await fetch(url, {
-      credentials: "include", // إرسال الكوكيز (JWT)
-    });
+    const response = await fetch(url, { credentials: "include" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
     const html = await response.text();
 
-    // معالجة الروابط النسبية لتصبح مطلقة (تجنب مشاكل تحميل CSS/JS)
-    const baseUrl = API_BASE;
+    // معالجة الروابط النسبية لتصبح مطلقة مع الحفاظ على المجلد overlay/
+    const baseUrl = API_BASE + "/overlay/";
     const fixedHtml = html.replace(
       /(src|href)=["'](?!https?:\/\/)([^"']*)["']/g,
       (match, attr, value) => {
-        // إذا كان المسار يبدأ بـ / نزيله
+        // تجاهل الروابط التي تبدأ بـ data: أو javascript: أو ما شابه
+        if (value.startsWith("data:") || value.startsWith("javascript:"))
+          return match;
+        // إذا كان المسار يبدأ بـ / نزيله لتجنب التكرار
         if (value.startsWith("/")) value = value.slice(1);
-        return `${attr}="${baseUrl}/${value}"`;
+        // إذا كان المسار يبدأ بـ overlay/ بالفعل، لا نضيفه مرة أخرى
+        if (value.startsWith("overlay/")) {
+          return `${attr}="${API_BASE}/${value}"`;
+        }
+        return `${attr}="${baseUrl}${value}"`;
       },
     );
 
-    // حقن المحتوى
     overlayContainer.innerHTML = fixedHtml;
 
-    // إعادة تنفيذ السكربتات المضمنة (لأنها لن تنفذ تلقائياً)
+    // إعادة تنفيذ السكربتات المضمنة
     const scripts = overlayContainer.querySelectorAll("script");
     scripts.forEach((oldScript) => {
       const newScript = document.createElement("script");
-      // نسخ جميع السمات (src, type, etc.)
       for (let attr of oldScript.attributes) {
         newScript.setAttribute(attr.name, attr.value);
       }
-      // إذا كان السكربت يحتوي على محتوى نصي (غير خارجي)
       if (oldScript.src) {
-        // سكربت خارجي، نضعه كما هو، لكن src قد يكون مطلقاً الآن بفضل التعديل أعلاه
         newScript.src = oldScript.src;
       } else {
         newScript.textContent = oldScript.textContent;
       }
-      // استبدال القديم بالجديد
       oldScript.parentNode.replaceChild(newScript, oldScript);
     });
   } catch (err) {
@@ -3773,99 +3788,85 @@ async function loadHotkeyCommands() {
 }
 
 // عرض قائمة Hotkey المسجلة
-async function renderHotkeysList() {
-  const tbody = document.getElementById("hotkeysTbody");
-  if (!tbody) return;
+function buildCommandSelectionTable(commands, defaultChecked = true) {
+  window.currentCommandsList = commands;
+  const tbody = document.getElementById("commandSelectionTableBody");
+  tbody.innerHTML = "";
+  const selectAll = document.getElementById("select-all-commands");
+  selectAll.checked = defaultChecked;
 
-  try {
-    const res = await fetchWithAuth(`${API_BASE}/api/hotkey`);
-    const data = await res.json();
-    let hotkeys = data.success ? data.hotkeys : [];
+  commands.forEach((cmd, index) => {
+    const tr = document.createElement("tr");
+    tr.dataset.index = index;
 
-    if (hotkeys.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-muted);">❌ لا توجد اختصارات مسجلة</td></tr>`;
-      return;
+    const tdSelect = document.createElement("td");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "command-checkbox";
+    checkbox.dataset.index = index;
+    checkbox.checked = defaultChecked;
+    tdSelect.appendChild(checkbox);
+    tr.appendChild(tdSelect);
+
+    const tdName = document.createElement("td");
+    tdName.style.textAlign = "right";
+    tdName.textContent = cmd.name || cmd.giftName || "بدون اسم";
+    if (cmd.combo) {
+      const span = document.createElement("span");
+      span.style.color = "#ff9800";
+      span.style.fontSize = "12px";
+      span.textContent = ` ⌨️ ${cmd.combo}`;
+      tdName.appendChild(span);
     }
+    tr.appendChild(tdName);
 
-    const profileId = getSelectedProfileId();
-    let allCommands = [];
-    if (profileId) {
-      try {
-        const [giftsRes, interactRes] = await Promise.all([
-          fetchWithAuth(`${GIFT_API}?profile=${profileId}`).then((r) =>
-            r.json(),
-          ),
-          fetchWithAuth(`${INTERACT_API}?profile=${profileId}`).then((r) =>
-            r.json(),
-          ),
-        ]);
-        const gifts = giftsRes.gifts || [];
-        const interactions = interactRes.list || [];
-        allCommands = [
-          ...gifts.map((c) => ({ ...c, __type: "gift" })),
-          ...interactions.map((c) => ({ ...c, __type: "interaction" })),
-        ];
-      } catch (err) {
-        console.warn("⚠️ فشل تحميل الأوامر لعرض الهوت كي", err);
-      }
+    const tdCommand = document.createElement("td");
+    tdCommand.style.textAlign = "right";
+    const div = document.createElement("div");
+    div.style.maxWidth = "250px";
+    div.style.whiteSpace = "nowrap";
+    div.style.overflow = "hidden";
+    div.style.textOverflow = "ellipsis";
+    div.textContent = cmd.command || "";
+    tdCommand.appendChild(div);
+    if (cmd.webhookUrl) {
+      const small = document.createElement("small");
+      small.style.color = "#1dd9e6e1";
+      small.textContent = ` 🔗 ${cmd.webhookUrl}`;
+      tdCommand.appendChild(small);
     }
+    tr.appendChild(tdCommand);
 
-    let html = "";
-    hotkeys.forEach((hk, index) => {
-      const cmd = allCommands.find((c) => c._id === hk.commandId);
-      const name = cmd?.name || cmd?.giftName || "⚠️ أمر محذوف";
-      let giftImg = "";
-      if (cmd?.__type === "gift" && cmd?.giftId) {
-        giftImg = getGiftImage(cmd.giftId);
-      }
-      const typeLabel = hk.commandType === "gift" ? "🎁 هدية" : "⚡ تفاعل";
-      const isChecked = hk.active !== false ? "checked" : "";
-      const isCurrent =
-        hotkeySettings.key === hk.key &&
-        hotkeySettings.commandId === hk.commandId;
+    const tdScreen = document.createElement("td");
+    tdScreen.textContent = cmd.screen || 1;
+    tr.appendChild(tdScreen);
 
-      html += `
-  <tr data-key="${escapeHtml(hk.key)}" class="${isCurrent ? "current-hotkey" : ""}">
-    <td style="text-align:center;">${index + 1}</td>
-    <td style="text-align:center;">
-      <kbd style="background:#1e2a36;padding:4px 12px;border-radius:4px;border:1px solid #444;font-family:monospace;font-weight:bold;color:var(--primary-color);">${escapeHtml(hk.key)}</kbd>
-      ${isCurrent ? ' <span style="font-size:10px;color:#4caf50;">✓ نشط</span>' : ""}
-    </td>
-    <td>${escapeHtml(name)}</td>
-    <td style="text-align:center;">${typeLabel}</td>
-    <td style="text-align:center;">
-      ${giftImg ? `<img src="${giftImg}" style="width:30px;height:30px;object-fit:cover;border-radius:4px;" onerror="this.style.display='none'">` : "—"}
-    </td>
-    <td style="text-align:center;">
-      <input type="checkbox" class="hotkey-toggle" data-key="${escapeHtml(hk.key)}" ${isChecked} style="width:20px;height:20px;accent-color:var(--primary-color);cursor:pointer;">
-    </td>
-    <td style="text-align:center; white-space: nowrap;">
-      <button class="hotkey-edit-btn" 
-              data-key="${escapeHtml(hk.key)}" 
-              data-id="${hk.commandId}" 
-              data-type="${hk.commandType}" 
-              data-active="${hk.active !== false ? "true" : "false"}"
-              style="padding:4px 10px;font-size:12px;background:green;color:white;border:none;border-radius:4px;cursor:pointer;margin-right:4px;transition:var(--transition);">
-        ✏️ تعديل
-      </button>
-      <button class="hotkey-delete-btn" 
-              data-key="${escapeHtml(hk.key)}" 
-              style="padding:4px 10px;font-size:12px;background:#f44336;color:white;border:none;border-radius:4px;cursor:pointer;transition:var(--transition);">
-        🗑️ حذف
-      </button>
-    </td>
-  </tr>
-`;
-    });
-    tbody.innerHTML = html;
+    const tdRepeat = document.createElement("td");
+    tdRepeat.textContent = cmd.repeat || 1;
+    tr.appendChild(tdRepeat);
 
-    attachHotkeyToggleEvents(tbody);
-    attachHotkeyDeleteEvents(tbody);
-    attachHotkeyEditEvents(tbody);
-  } catch (err) {
-    console.error("فشل عرض قائمة الهوت كي", err);
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:#f44336;">❌ خطأ في تحميل البيانات</td></tr>`;
-  }
+    const tdInterval = document.createElement("td");
+    tdInterval.textContent = cmd.interval || 500;
+    tr.appendChild(tdInterval);
+
+    const tdDelay = document.createElement("td");
+    tdDelay.textContent = cmd.delayBefore || 0;
+    tr.appendChild(tdDelay);
+
+    const tdSound = document.createElement("td");
+    tdSound.textContent = cmd.audio ? "🎵" : "";
+    tr.appendChild(tdSound);
+
+    const tdVideo = document.createElement("td");
+    tdVideo.textContent = cmd.video ? "🎬" : "";
+    tr.appendChild(tdVideo);
+
+    const tdVideoVol = document.createElement("td");
+    tdVideoVol.textContent = cmd.videoVolume || 100;
+    tr.appendChild(tdVideoVol);
+
+    tbody.appendChild(tr);
+  });
 }
 
 function attachHotkeyToggleEvents(tbody) {
@@ -4556,21 +4557,20 @@ async function connectFrontendSocket() {
       lastPlayedSoundId = payload.id;
       try {
         if (!payload || !payload.filename) return;
-        let audioUrl = payload.filename;
-        if (audioUrl.startsWith("/audios/")) {
-          audioUrl = API_BASE + audioUrl;
-        } else if (
-          !audioUrl.startsWith("http://") &&
-          !audioUrl.startsWith("https://")
-        ) {
-          audioUrl = API_BASE + "/audios/" + encodeURIComponent(audioUrl);
+
+        // ========== إصلاح أمني: تنقية رابط الصوت ==========
+        const finalUrl = safeMediaUrl(payload.filename, "audio");
+        if (!finalUrl) {
+          console.warn("⚠️ تم تجاهل رابط صوت غير آمن:", payload.filename);
+          return;
         }
+
         await tryUnlockAudio();
-        const audio = new Audio(audioUrl);
+        const audio = new Audio(finalUrl);
         audio.volume = Math.min(1, Math.max(0, (payload.volume || 100) / 100));
         audio.crossOrigin = "anonymous";
         await audio.play();
-        console.log(`🔊 تم تشغيل الصوت في الفرونت: ${audioUrl}`);
+        console.log(`🔊 تم تشغيل الصوت في الفرونت: ${finalUrl}`);
       } catch (err) {
         console.warn("❌ فشل تشغيل الصوت في الفرونت:", err.message);
       }
@@ -5255,4 +5255,43 @@ function closeCustomSelects(e) {
       el.classList.remove("open");
     }
   });
+}
+
+// ============================================================
+// دالة تنقية روابط الصور - منع XSS عبر javascript: و data:text/html
+// ============================================================
+function safeImageUrl(url) {
+  if (!url) return "";
+  const trimmed = String(url).trim();
+  // السماح فقط بروابط http/https أو data:image (صور base64)
+  if (/^(https?:\/\/|data:image\/)/i.test(trimmed)) {
+    return trimmed;
+  }
+  // رفض أي رابط آخر (javascript:, vbscript:, data:text/html, etc.)
+  console.warn("⚠️ تم رفض رابط صورة غير آمن:", trimmed.substring(0, 50));
+  return "images/default.jpg"; // رابط افتراضي آمن
+}
+
+// ============================================================
+// دالة تنقية روابط الصوت والفيديو - منع XSS عبر Audio/Video
+// ============================================================
+function safeMediaUrl(url, type = "audio") {
+  if (!url) return "";
+  const trimmed = String(url).trim();
+
+  // السماح بمسارات /audios/ و /videos/ الخاصة بالتطبيق
+  if (type === "audio" && trimmed.startsWith("/audios/")) {
+    return API_BASE + trimmed;
+  }
+  if (type === "video" && trimmed.startsWith("/videos/")) {
+    return API_BASE + trimmed;
+  }
+
+  // السماح بروابط http/https فقط
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  console.warn(`⚠️ تم رفض رابط ${type} غير آمن:`, trimmed.substring(0, 50));
+  return "";
 }
