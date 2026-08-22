@@ -5819,6 +5819,20 @@ if (registerPasswordInput) {
   });
 }
 
+// ===== إظهار / إخفاء كلمة المرور =====
+function setupPasswordToggle(inputId, toggleId) {
+  const input = document.getElementById(inputId);
+  const toggle = document.getElementById(toggleId);
+  if (!input || !toggle) return;
+  toggle.addEventListener("click", () => {
+    const show = input.type === "password";
+    input.type = show ? "text" : "password";
+    toggle.textContent = show ? "🙈" : "👁";
+  });
+}
+setupPasswordToggle("login-password", "login-password-toggle");
+setupPasswordToggle("register-password", "register-password-toggle");
+
 function setBtnBusy(btn, busy, busyText) {
   if (!btn) return;
   btn.disabled = busy;
@@ -5878,6 +5892,15 @@ document.getElementById("register-submit").onclick = async function () {
   if (!strength.valid) {
     msg.style.color = "#ff6b6b";
     msg.textContent = strength.message;
+    return;
+  }
+  // التحقق من تأكيد كلمة المرور
+  const confirmPassword = document.getElementById(
+    "register-confirm-password",
+  ).value;
+  if (password !== confirmPassword) {
+    msg.style.color = "#ff6b6b";
+    msg.textContent = "❌ كلمتا المرور غير متطابقتين";
     return;
   }
   setBtnBusy(btn, true, "⏳ جارٍ إنشاء الحساب...");
