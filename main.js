@@ -5852,6 +5852,13 @@ document.getElementById("login-submit").onclick = async function () {
   const password = document.getElementById("login-password").value;
   const msg = document.getElementById("login-message");
   setBtnBusy(btn, true, "⏳ جارٍ تسجيل الدخول...");
+  // مسح أي توكن/كوكيز قديم من جلسة سابقة قبل تسجيل الدخول
+  // حتى لا يُستخدم توكن مرفوض في أول طلب بعد الـ reload
+  saveAuthToken(null);
+  try {
+    document.cookie =
+      "token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+  } catch {}
   try {
     const res = await fetch(`${API_BASE}/api/auth/login`, {
       method: "POST",
@@ -5869,7 +5876,8 @@ document.getElementById("login-submit").onclick = async function () {
         await bindAgent(token);
         console.log("✅ تم ربط الـ Agent بالتوكن");
       }
-      await updateAuthUI();
+      // الصفحة هتعيد التحميل فوراً — لا داعي لانتظار تحديث الواجهة هنا
+      // (كان يسبب تعليقاً ورسائل خطأ مؤقتة قبل الـ reload)
       loginModal.style.display = "none";
       msg.textContent = "";
       window.location.reload();
