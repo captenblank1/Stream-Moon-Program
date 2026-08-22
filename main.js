@@ -5819,6 +5819,20 @@ if (registerPasswordInput) {
   });
 }
 
+// ===== إظهار / إخفاء كلمة المرور =====
+function setupPasswordToggle(inputId, toggleId) {
+  const input = document.getElementById(inputId);
+  const toggle = document.getElementById(toggleId);
+  if (!input || !toggle) return;
+  toggle.addEventListener("click", () => {
+    const show = input.type === "password";
+    input.type = show ? "text" : "password";
+    toggle.textContent = show ? "🙈" : "👁";
+  });
+}
+setupPasswordToggle("login-password", "login-password-toggle");
+setupPasswordToggle("register-password", "register-password-toggle");
+
 function setBtnBusy(btn, busy, busyText) {
   if (!btn) return;
   btn.disabled = busy;
@@ -5838,6 +5852,13 @@ document.getElementById("login-submit").onclick = async function () {
   const password = document.getElementById("login-password").value;
   const msg = document.getElementById("login-message");
   setBtnBusy(btn, true, "⏳ جارٍ تسجيل الدخول...");
+  // مسح أي توكن/كوكيز قديم من جلسة سابقة قبل تسجيل الدخول
+  // حتى لا يُستخدم توكن مرفوض في أول طلب بعد الـ reload
+  saveAuthToken(null);
+  try {
+    document.cookie =
+      "token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+  } catch {}
   try {
     const res = await fetch(`${API_BASE}/api/auth/login`, {
       method: "POST",
@@ -5855,7 +5876,8 @@ document.getElementById("login-submit").onclick = async function () {
         await bindAgent(token);
         console.log("✅ تم ربط الـ Agent بالتوكن");
       }
-      await updateAuthUI();
+      // الصفحة هتعيد التحميل فوراً — لا داعي لانتظار تحديث الواجهة هنا
+      // (كان يسبب تعليقاً ورسائل خطأ مؤقتة قبل الـ reload)
       loginModal.style.display = "none";
       msg.textContent = "";
       window.location.reload();
@@ -5878,6 +5900,15 @@ document.getElementById("register-submit").onclick = async function () {
   if (!strength.valid) {
     msg.style.color = "#ff6b6b";
     msg.textContent = strength.message;
+    return;
+  }
+  // التحقق من تأكيد كلمة المرور
+  const confirmPassword = document.getElementById(
+    "register-confirm-password",
+  ).value;
+  if (password !== confirmPassword) {
+    msg.style.color = "#ff6b6b";
+    msg.textContent = "❌ كلمتا المرور غير متطابقتين";
     return;
   }
   setBtnBusy(btn, true, "⏳ جارٍ إنشاء الحساب...");

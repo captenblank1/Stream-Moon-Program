@@ -194,7 +194,20 @@
         <span class="close-modal" id="close-login">&times;</span>
         <h2>تسجيل الدخول</h2>
         <input type="email" id="login-email" placeholder="البريد الإلكتروني" />
-        <input type="password" id="login-password" placeholder="كلمة المرور" />
+        <div style="position: relative">
+          <input
+            type="password"
+            id="login-password"
+            placeholder="كلمة المرور"
+            style="padding-right: 44px"
+          />
+          <span
+            id="login-password-toggle"
+            title="إظهار / إخفاء كلمة المرور"
+            style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; user-select: none; font-size: 16px;"
+            >👁</span
+          >
+        </div>
         <button id="login-submit" class="btn btn-primary btn-block">
           دخول
         </button>
@@ -210,10 +223,25 @@
           id="register-email"
           placeholder="البريد الإلكتروني"
         />
+        <div style="position: relative; margin-top: 10px">
+          <input
+            type="password"
+            id="register-password"
+            placeholder="كلمة المرور"
+            style="padding-right: 44px"
+          />
+        <span
+          id="register-password-toggle"
+          title="إظهار / إخفاء كلمة المرور"
+          style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; user-select: none; font-size: 16px;"
+          >👁</span
+        >
+        </div>
         <input
           type="password"
-          id="register-password"
-          placeholder="كلمة المرور"
+          id="register-confirm-password"
+          placeholder="تأكيد كلمة المرور"
+          style="margin-top: 10px"
         />
         <button id="register-submit" class="btn btn-primary btn-block">
           تسجيل
