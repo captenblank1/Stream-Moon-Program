@@ -673,6 +673,11 @@ function connectToServer() {
 // ============================================================
 // 7. IPC للتواصل مع الواجهة
 // ============================================================
+// مزامنة عنوان السيرفر مع الواجهة (بدل العنوان الثابت)
+ipcMain.on("get-server-url-sync", (event) => {
+  event.returnValue = normalizeServerUrl(config.serverUrl);
+});
+
 ipcMain.handle("get-agent-status", () => {  return {
     connected: currentSocket?.connected || false,
     server: config.serverUrl,

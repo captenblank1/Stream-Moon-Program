@@ -2,7 +2,13 @@
 // main.js - Stream Moon Full Application
 // ============================================================
 
-window.API_BASE = "https://backend-7hj8.onrender.com";
+// عنوان السيرفر يتبع إعدادات التطبيق، مع الرابط السحابي كافتراضي
+window.API_BASE = (
+  window.electronAPI?.getServerUrlSync?.() ||
+  "https://backend-7hj8.onrender.com"
+)
+  .trim()
+  .replace(/\/+$/, "");
 const API_BASE = window.API_BASE || "";
 const GIFT_API = `${API_BASE}/api/gift-commands`;
 const INTERACT_API = `${API_BASE}/api/interaction-commands`;
@@ -51,6 +57,8 @@ let existingCommandsMap = new Map();
 let saveTimeout = null;
 let searchTimeout = null;
 let tempUploadedFiles = { audio: null, video: null };
+// عمليات الرفع الجارية — الحفظ ينتظرها قبل قراءة أسماء الملفات
+let pendingUploads = { audio: null, video: null };
 let frontendSocket = null;
 let audioCtx = null;
 let audioUnlocked = false;
@@ -95,16 +103,43 @@ function getCookie(name) {
 // ============================================================
 // تنقية HTML محسّنة - استخدام textContent أفضل، لكن للضرورة استخدم هذه الدالة
 // ============================================================
-function escapeHtml(str) {
+/**
+ * تنقية النص لحماية من XSS
+ * @param {string} str - النص المراد تنقيته
+ * @param {boolean} forInput - إذا كان true، لا يتم تحويل علامات الاقتباس (للاستخدام داخل input/textarea)
+ * @returns {string} النص المنقى
+ */
+function escapeHtml(str, forInput = false) {
   if (!str) return "";
-  return String(str)
+  let result = String(str)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;")
-    .replaceAll("/", "&#x2F;") // منع هجمات close tag
-    .replaceAll("`", "&#x60;"); // منع template literals
+    .replaceAll("`", "&#x60;");
+
+  // فقط عند العرض في عناصر HTML (غير input/textarea)
+  if (!forInput) {
+    result = result
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;")
+      .replaceAll("/", "&#x2F;"); // منع هجمات close tag
+  }
+  return result;
+}
+
+// فك تشفير HTML entities من البيانات القديمة المحفوظة مُشفّرة (&#x2F; &#x27; &quot; ...)
+function decodeHtmlEntities(str) {
+  if (!str || typeof str !== "string") return str;
+  return str
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) =>
+      String.fromCodePoint(parseInt(hex, 16)),
+    )
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;|&#x27;|&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
 }
 
 function showMessage(msg) {
@@ -1497,7 +1532,9 @@ function _showAddCard(commandData = null) {
       commandData.threshold !== null
         ? commandData.threshold
         : "";
-    document.getElementById("command").value = commandData.command || "";
+    document.getElementById("command").value = decodeHtmlEntities(
+      commandData.command || "",
+    );
     document.getElementById("repeat").value = commandData.repeat || 1;
     document.getElementById("interval").value = commandData.interval || 100;
     document.getElementById("delayBefore").value = commandData.delayBefore || 0;
@@ -1650,6 +1687,15 @@ async function confirmAdd(event) {
   const interval = parseInt(document.getElementById("interval").value) || 100;
   const delayBefore =
     parseInt(document.getElementById("delayBefore").value) || 0;
+  // انتظار أي رفع ملفات جارٍ قبل الحفظ حتى لا يضيع اسم الملف
+  if (pendingUploads.audio || pendingUploads.video) {
+    showMessage("⏳ انتظار انتهاء رفع الملفات قبل الحفظ...");
+    const active = [pendingUploads.audio, pendingUploads.video].filter(
+      Boolean,
+    );
+    await Promise.allSettled(active);
+  }
+
   const audioFile =
     tempUploadedFiles.audio || document.getElementById("audioSelect").value;
   const videoFile =
@@ -1672,9 +1718,10 @@ async function confirmAdd(event) {
     repeat,
     interval,
     delayBefore,
-    audio: audioFile || undefined,
+    // نرسل "" عند الإزالة حتى يمسحها الـ backend فعلياً (undefined يتجاهلها)
+    audio: audioFile || "",
     volume,
-    video: videoFile || undefined,
+    video: videoFile || "",
     videoVolume,
     screen,
     targetUser,
@@ -1940,13 +1987,13 @@ async function loadCommands(profileIdParam = null, noCache = false) {
       const hasCombo = cmd.combo && cmd.combo.trim() !== "";
 
       if (hasCommand) {
-        const safeCommand = escapeHtml(cmd.command);
+        const safeCommand = escapeHtml(decodeHtmlEntities(cmd.command), true);
         commandCellContent = `<textarea class="input-like-textarea" data-field="command" rows="1" placeholder="/Command (ضع أمرًا في كل سطر)" ${isDisabled ? "disabled" : ""}>${safeCommand}</textarea>`;
       } else if (hasWebhook) {
-        const safeWebhook = escapeHtml(cmd.webhookUrl);
+        const safeWebhook = escapeHtml(decodeHtmlEntities(cmd.webhookUrl));
         commandCellContent = `<div style="font-size:12px; color:#1dd9e6e1; word-break:break-all;">🔗 ${safeWebhook}</div>`;
       } else if (hasCombo) {
-        const safeCombo = escapeHtml(cmd.combo);
+        const safeCombo = escapeHtml(decodeHtmlEntities(cmd.combo));
         commandCellContent = `<div style="font-size:12px; color:#ff9800;">⌨️ ${safeCombo}</div>`;
       } else {
         commandCellContent = `<div style="font-size:12px; color:#888;">—</div>`;
@@ -2091,6 +2138,9 @@ async function saveRowFromTr(tr) {
       }
     } else if (field === "combo") {
       body[field] = inp.value.trim() || null;
+    } else if (field === "command" || field === "webhookUrl") {
+      // فك تشفير أي entities متبقية قبل الحفظ لتنظيف البيانات القديمة
+      body[field] = decodeHtmlEntities(inp.value);
     } else {
       body[field] = inp.value;
     }
@@ -4867,26 +4917,31 @@ async function init() {
       const formData = new FormData();
       formData.append("audio", file);
       showMessage("⏳ جاري رفع الصوت...");
-      try {
-        const res = await fetchWithAuth(`${API_BASE}/api/upload-audio`, {
-          method: "POST",
-          body: formData,
-        });
-        const data = await res.json();
-        if (data.success) {
-          tempUploadedFiles.audio = data.filename;
-          // تحديث القائمة المنسدلة
-          await loadAudios();
-          document.querySelector("#audioDropdown .selected").textContent =
-            data.filename;
-          document.getElementById("audioSelect").value = data.filename;
-          showMessage("✅ تم رفع الصوت بنجاح");
-        } else {
-          showMessage("❌ فشل رفع الصوت: " + (data.message || ""));
+      // تتبع عملية الرفع حتى ينتظرها الحفظ لو المستخدم دوست Save بدري
+      pendingUploads.audio = (async () => {
+        try {
+          const res = await fetchWithAuth(`${API_BASE}/api/upload-audio`, {
+            method: "POST",
+            body: formData,
+          });
+          const data = await res.json();
+          if (data.success) {
+            tempUploadedFiles.audio = data.filename;
+            // تحديث القائمة المنسدلة
+            await loadAudios();
+            document.querySelector("#audioDropdown .selected").textContent =
+              data.filename;
+            document.getElementById("audioSelect").value = data.filename;
+            showMessage("✅ تم رفع الصوت بنجاح");
+          } else {
+            showMessage("❌ فشل رفع الصوت: " + (data.message || ""));
+          }
+        } catch (err) {
+          showMessage("❌ خطأ في الاتصال");
+        } finally {
+          pendingUploads.audio = null;
         }
-      } catch (err) {
-        showMessage("❌ خطأ في الاتصال");
-      }
+      })();
     });
 
   // ===== إضافة مستمع رفع الفيديو =====
@@ -4898,23 +4953,28 @@ async function init() {
       const formData = new FormData();
       formData.append("video", file);
       showMessage("⏳ جاري رفع الفيديو...");
-      try {
-        const res = await fetchWithAuth(`${API_BASE}/api/upload-video`, {
-          method: "POST",
-          body: formData,
-        });
-        const data = await res.json();
-        if (data.success) {
-          tempUploadedFiles.video = data.filename;
-          document.getElementById("video").value = data.filename;
-          document.getElementById("videoFileName").textContent = data.filename;
-          showMessage("✅ تم رفع الفيديو بنجاح");
-        } else {
-          showMessage("❌ فشل رفع الفيديو: " + (data.message || ""));
+      // تتبع عملية الرفع حتى ينتظرها الحفظ لو المستخدم دوست Save بدري
+      pendingUploads.video = (async () => {
+        try {
+          const res = await fetchWithAuth(`${API_BASE}/api/upload-video`, {
+            method: "POST",
+            body: formData,
+          });
+          const data = await res.json();
+          if (data.success) {
+            tempUploadedFiles.video = data.filename;
+            document.getElementById("video").value = data.filename;
+            document.getElementById("videoFileName").textContent = data.filename;
+            showMessage("✅ تم رفع الفيديو بنجاح");
+          } else {
+            showMessage("❌ فشل رفع الفيديو: " + (data.message || ""));
+          }
+        } catch (err) {
+          showMessage("❌ خطأ في الاتصال");
+        } finally {
+          pendingUploads.video = null;
         }
-      } catch (err) {
-        showMessage("❌ خطأ في الاتصال");
-      }
+      })();
     });
 
   await connectFrontendSocket();

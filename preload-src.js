@@ -2,6 +2,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 const electronAPI = {
+  getServerUrlSync: () => ipcRenderer.sendSync("get-server-url-sync"),
   getAgentStatus: () => ipcRenderer.invoke("get-agent-status"),
   bindAgentSession: (token) => ipcRenderer.invoke("bind-agent-session", token),
   // فتح نافذة الدفع المعزولة (PayPal بدون صلاحيات Node)

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    
+
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' https:; connect-src 'self' https: wss:; object-src 'none'; frame-src 'none'; base-uri 'none'"
@@ -14,7 +14,7 @@
     />
     <title>Stream Moon</title>
     <link rel="stylesheet" href="css/normalize.css" />
-    
+
     <link rel="stylesheet" href="vendor/fontawesome/all.min.css" />
     <link rel="stylesheet" href="css/style.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -25,7 +25,7 @@
       media="print"
       onload="this.media = 'all'"
     />
-    
+
     <script src="vendor/Sortable.min.js"></script>
     <style>
       @font-face {
@@ -712,23 +712,23 @@
           </div>
         </div>
 
+
         <table class="commands-table">
-          <thead>
             <tr>
               <th style="width: 3%">☰</th>
               <th style="width: 4%">Active</th>
               <th style="width: 5%">Options</th>
               <th style="width: 15%">Name</th>
-              <th style="width: 25%">Command / Webhook / Keystroke</th>
+              <th style="width: 25%">Command</th>
               <th style="width: 7%">Screen</th>
               <th style="width: 7%">Count</th>
               <th style="width: 7%">Interval</th>
-              <th style="width: 9%">Delay Before</th>
+              <th style="width: 9%">Delay</th>
               <th style="width: 3%">Sound</th>
               <th style="width: 3%">Video</th>
               <th style="width: 2%">Vol</th>
               <th style="width: 2%">V.Vol</th>
-              <th style="width: 5%">Gift</th>
+              <th style="width: 5%">Interaction</th>
             </tr>
           </thead>
           <tbody id="commandsTable"></tbody>
@@ -815,7 +815,7 @@
                 <tr>
                   <th style="width: 30px">اختيار</th>
                   <th style="width: 15%">الاسم</th>
-                  <th>الأمر / Webhook</th>
+                  <th>الامر</th>
                   <th style="width: 7%">الشاشة</th>
                   <th style="width: 7%">التكرار</th>
                   <th style="width: 7%">الفاصل</th>
@@ -1315,7 +1315,16 @@
 
     <script>
       // التحميل بمسار مطلق من الـ preload - المسار النسبي يفشل في النسخة المغلفة لاعتماده على cwd
-      try{require("bytenode");require(window.__APP_DIR+"/main.jsc")}catch(e){try{require(window.__APP_DIR+"/main.js")}catch(e2){console.error(e2.message)}}
+      try {
+        require("bytenode");
+        require(window.__APP_DIR + "/main.jsc");
+      } catch (e) {
+        try {
+          require(window.__APP_DIR + "/main.js");
+        } catch (e2) {
+          console.error(e2.message);
+        }
+      }
     </script>
   </body>
 </html>
