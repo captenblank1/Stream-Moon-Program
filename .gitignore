@@ -6,7 +6,5 @@ dist/
 *.exe
 *.blockmap
 *.yml
-*.yaml
-.env
 .DS_Store
 repomix-output.xml

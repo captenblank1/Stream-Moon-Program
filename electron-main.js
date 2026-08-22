@@ -1,7 +1,14 @@
 // electron-main.js - Agent مدمج بالكامل (مع robotjs + autoUpdater + Hotkey)
 // ============================================================
 
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  Notification,
+  protocol,
+} = require("electron");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -28,6 +35,93 @@ let CONFIG_DIR,
   MACHINE_ID_FILE;
 
 const DEFAULT_SERVER_URL = "https://backend-7hj8.onrender.com";
+
+// ================ بروتوكول app:// المشفر ================
+// الأصول النصية (html/css/js) مشفرة AES-256-GCM في enc/
+// وتُقدَّم عبر هذا البروتوكول مع فك التشفير في الذاكرة فقط
+let RESOURCE_KEY = null;
+try {
+  RESOURCE_KEY = Buffer.from(require("./res-key.jsc"), "hex");
+} catch {
+  try {
+    RESOURCE_KEY = Buffer.from(require("./res-key.js"), "hex");
+  } catch {}
+}
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "app",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      corsEnabled: true,
+    },
+  },
+]);
+
+const MIME = {
+  ".html": "text/html",
+  ".css": "text/css",
+  ".js": "application/javascript",
+  ".json": "application/json",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".webmanifest": "application/manifest+json",
+};
+
+function decryptAsset(encPath) {
+  const raw = fs.readFileSync(encPath);
+  const iv = raw.subarray(0, 12);
+  const tag = raw.subarray(raw.length - 16);
+  const data = raw.subarray(12, raw.length - 16);
+  const d = crypto.createDecipheriv("aes-256-gcm", RESOURCE_KEY, iv);
+  d.setAuthTag(tag);
+  return Buffer.concat([d.update(data), d.final()]);
+}
+
+function registerAppProtocol() {
+  protocol.handle("app", (req) => {
+    let p;
+    try {
+      p = decodeURIComponent(new URL(req.url).pathname);
+    } catch {
+      return new Response("Bad Request", { status: 400 });
+    }
+    if (!p || p === "/") p = "/index.html";
+    p = p.replace(/^\/+/, "").split("?")[0];
+    // منع الخروج من مجلد التطبيق
+    if (p.includes("..")) return new Response("Forbidden", { status: 403 });
+
+    let buffer = null;
+    const encPath = path.join(__dirname, "enc", p + ".enc");
+    if (RESOURCE_KEY && fs.existsSync(encPath)) {
+      try {
+        buffer = decryptAsset(encPath);
+      } catch {
+        return new Response("Decrypt Error", { status: 500 });
+      }
+    } else {
+      const plainPath = path.join(__dirname, p);
+      if (fs.existsSync(plainPath) && fs.statSync(plainPath).isFile()) {
+        buffer = fs.readFileSync(plainPath);
+      }
+    }
+    if (!buffer) return new Response("Not Found", { status: 404 });
+    const ext = path.extname(p).toLowerCase();
+    return new Response(new Uint8Array(buffer), {
+      headers: { "Content-Type": MIME[ext] || "application/octet-stream" },
+    });
+  });
+}
+
 const HEARTBEAT_INTERVAL = 15000;
 const MAX_KEY_REPEAT = 100;
 const MAX_WEBHOOK_REPEAT = 100;
@@ -171,11 +265,34 @@ function rotateLog(filePath, maxSize = MAX_LOG_SIZE) {
   } catch (_) {}
 }
 
+// تجاهل أخطاء الكتابة في stdout/stderr (EPIPE) - تحدث عند إغلاق الطرفية
+// التي أطلقت التطبيق وتؤدي لاستثناء غير معالج يوقف العملية الرئيسية
+process.stdout?.on?.("error", (err) => {
+  if (err && err.code === "EPIPE") return;
+  throw err;
+});
+process.stderr?.on?.("error", (err) => {
+  if (err && err.code === "EPIPE") return;
+  throw err;
+});
+
+function safeConsoleLog(line) {
+  try {
+    console.log(line);
+  } catch {}
+}
+
+function safeConsoleError(line) {
+  try {
+    console.error(line);
+  } catch {}
+}
+
 function logMessage(...msg) {
   const line = `[${new Date().toISOString()}] ${msg.join(" ")}`;
   rotateLog(LOG_FILE);
   fs.appendFileSync(LOG_FILE, line + "\n");
-  console.log(line);
+  safeConsoleLog(line);
 }
 
 function logError(...msg) {
@@ -184,12 +301,62 @@ function logError(...msg) {
   rotateLog(ERROR_LOG_FILE);
   fs.appendFileSync(LOG_FILE, line + "\n");
   fs.appendFileSync(ERROR_LOG_FILE, line + "\n");
-  console.error(line);
+  safeConsoleError(line);
 }
 
 // ============================================================
 // 4. تنفيذ المفاتيح باستخدام robotjs (محاكاة ضغطات حقيقية)
 // ============================================================
+
+// تحويل أسماء مفاتيح التطبيق إلى أسماء robotjs وضغط الكومبو كضغطة حقيقية
+const ROBOT_MODIFIERS = { Ctrl: "control", Alt: "alt", Shift: "shift" };
+const ROBOT_KEY_MAP = {
+  Space: "space",
+  Enter: "enter",
+  Backspace: "backspace",
+  Tab: "tab",
+  Escape: "escape",
+  ArrowUp: "up",
+  ArrowDown: "down",
+  ArrowLeft: "left",
+  ArrowRight: "right",
+  Menu: "menu",
+  Win: "command",
+};
+
+function parseCombo(str) {
+  if (typeof str !== "string" || !str) return null;
+  const parts = str.split("+").map((p) => p.trim());
+  const key = parts.pop();
+  const modifiers = [];
+  for (const p of parts) {
+    const m = ROBOT_MODIFIERS[p];
+    if (!m) return null;
+    modifiers.push(m);
+  }
+  let robotKey = ROBOT_KEY_MAP[key];
+  if (!robotKey && /^[a-z]$/i.test(key)) robotKey = key.toLowerCase();
+  else if (!robotKey && /^\d$/.test(key)) robotKey = key;
+  else if (!robotKey && /^f([1-9]|1[0-2])$/i.test(key))
+    robotKey = key.toLowerCase();
+  if (!robotKey) return null;
+  return { key: robotKey, modifiers };
+}
+
+async function sendComboViaRobot(combo) {
+  try {
+    logMessage(
+      `⌨️ ضغط كومبو حقيقي: ${combo.modifiers.join("+")}${combo.modifiers.length ? "+" : ""}${combo.key}`,
+    );
+    robot.keyTap(combo.key, combo.modifiers);
+    logMessage("✅ تم تنفيذ الكومبو بنجاح");
+    return true;
+  } catch (err) {
+    logError("❌ فشل تنفيذ الكومبو:", err.message);
+    return false;
+  }
+}
+
 async function sendKeysViaRobot(text) {
   if (!text || text.length === 0) return false;
 
@@ -226,7 +393,10 @@ async function executeKeys(command, repeat = 1, interval = 500) {
     if (i > 0 && safeInterval > 0) {
       await new Promise((r) => setTimeout(r, safeInterval));
     }
-    await sendKeysViaRobot(keys);
+    // الكومبو (Ctrl+Alt+H مثلاً) يُضغط كضغطة حقيقية وليس كنص مكتوب
+    const combo = parseCombo(keys);
+    if (combo) await sendComboViaRobot(combo);
+    else await sendKeysViaRobot(keys);
     await new Promise((r) => setTimeout(r, 10));
   }
 }
@@ -503,12 +673,49 @@ function connectToServer() {
 // ============================================================
 // 7. IPC للتواصل مع الواجهة
 // ============================================================
-ipcMain.handle("get-agent-status", () => {
-  return {
+ipcMain.handle("get-agent-status", () => {  return {
     connected: currentSocket?.connected || false,
     server: config.serverUrl,
     hasSession: !!config.sessionToken,
   };
+});
+
+// ===== نافذة الدفع المعزولة (PayPal بدون أي صلاحيات Node) =====
+let paymentWindow = null;
+ipcMain.handle("open-payment-window", (event, token) => {
+  // التوكن يمر عبر الـ query فقط لهذه النافذة - لا صلاحيات Node فيها
+  const safeToken = String(token || "").replace(/[^a-zA-Z0-9._-]/g, "");
+  if (paymentWindow) {
+    paymentWindow.focus();
+    return { success: true };
+  }
+  paymentWindow = new BrowserWindow({
+    width: 620,
+    height: 680,
+    parent: mainWindow,
+    modal: true,
+    title: "اشتراك - Stream Moon",
+    autoHideMenuBar: true,
+    webPreferences: {
+      // معزولة تماماً: لا Node مهما حدث داخل صفحة PayPal
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  // صفحة الدفع تُقدَّم من الخادم - لا تدخل داخل حزمة التطبيق إطلاقاً
+  const paymentUrl = `${config.serverUrl.replace(/\/+$/, "")}/payment/index.html`;
+  paymentWindow.loadURL(
+    token ? `${paymentUrl}?token=${encodeURIComponent(safeToken)}` : paymentUrl,
+  );
+  paymentWindow.on("closed", () => {
+    paymentWindow = null;
+    // إعلام النافذة الرئيسية لتحديث حالة الاشتراك
+    if (mainWindow) {
+      mainWindow.webContents.send("payment-closed");
+    }
+  });
+  return { success: true };
 });
 
 ipcMain.handle("bind-agent-session", async (event, userToken) => {
@@ -557,6 +764,22 @@ ipcMain.handle("bind-agent-session", async (event, userToken) => {
 // ============================================================
 let hotkeyListeners = {}; // { combo: { commandId, commandType } }
 let uiohookStarted = false;
+// تتبع حالة المعدلات المضغوطة - أعلام الحدث (altKey...) غير موثوقة على Windows
+const pressedModifiers = new Set(); // "Ctrl" | "Alt" | "Shift"
+
+const MODIFIER_KEYS = {
+  Ctrl: ["Ctrl", "CtrlRight"],
+  Alt: ["Alt", "AltRight"],
+  Shift: ["Shift", "ShiftRight"],
+};
+
+function getModifierName(keyName) {
+  if (!keyName) return null;
+  for (const [mod, names] of Object.entries(MODIFIER_KEYS)) {
+    if (names.includes(keyName)) return mod;
+  }
+  return null;
+}
 
 function getKeyName(keycode) {
   for (const [name, code] of Object.entries(UiohookKey)) {
@@ -568,13 +791,28 @@ function getKeyName(keycode) {
 function startUiohook() {
   if (uiohookStarted) return;
   uiohookStarted = true;
+
+  // تحديث حالة المعدلات عند رفع المفتاح
+  uIOhook.on("keyup", (e) => {
+    const mod = getModifierName(getKeyName(e.keycode));
+    if (mod) pressedModifiers.delete(mod);
+  });
+
   uIOhook.on("keydown", (e) => {
     const keyName = getKeyName(e.keycode);
     if (!keyName) return;
+
+    // تحديث حالة المعدلات: علم الحدث أو التتبع اليدوي (أيهما متاح)
+    const mod = getModifierName(keyName);
+    if (mod) {
+      pressedModifiers.add(mod);
+      return; // الضغط على المعدل وحده لا ينفذ اختصاراً
+    }
+    const ctrl = e.ctrlKey || pressedModifiers.has("Ctrl");
+    const alt = e.altKey || pressedModifiers.has("Alt");
+    const shift = e.shiftKey || pressedModifiers.has("Shift");
+
     // بناء الـ combo مع المعدلات
-    const ctrl = e.ctrlKey || false;
-    const alt = e.altKey || false;
-    const shift = e.shiftKey || false;
     let combo = "";
     if (ctrl) combo += "Ctrl+";
     if (alt) combo += "Alt+";
@@ -651,7 +889,30 @@ function initAutoUpdater() {
   autoUpdater.on("update-available", (info) => {
     logMessage(`🔄 يتوفر تحديث جديد (${info.version})، جاري التحميل...`);
     if (mainWindow) {
-      mainWindow.webContents.send("update-available", info);
+      mainWindow.webContents.send("update-available", {
+        version: info.version,
+      });
+    }
+    // إشعار نظام غير معطِّل ليعرف المستخدم أن التحديث بدأ
+    try {
+      if (Notification.isSupported()) {
+        new Notification({
+          title: "Stream Moon - تحديث جديد",
+          body: `جاري تحميل الإصدار ${info.version} وسيتم تثبيته تلقائياً…`,
+          silent: true,
+        }).show();
+      }
+    } catch {}
+  });
+
+  autoUpdater.on("download-progress", (progress) => {
+    const percent = Math.round(progress.percent || 0);
+    logMessage(`⬇️ تحميل التحديث: ${percent}%`);
+    if (mainWindow) {
+      mainWindow.webContents.send("update-progress", {
+        percent,
+        bytesPerSecond: progress.bytesPerSecond || 0,
+      });
     }
   });
 
@@ -660,23 +921,26 @@ function initAutoUpdater() {
   });
 
   autoUpdater.on("update-downloaded", (info) => {
-    logMessage(`✅ تم تحميل التحديث (${info.version}).`);
+    logMessage(`✅ تم تحميل التحديث (${info.version}) - تثبيت تلقائي الآن.`);
+    // إعلام المستخدم بدون سؤال ثم إعادة تشغيل وتثبيت تلقائياً
     if (mainWindow) {
-      dialog
-        .showMessageBox(mainWindow, {
-          type: "info",
-          title: "تحديث جاهز",
-          message: `تم تحميل تحديث جديد (الإصدار ${info.version}). هل تريد إعادة تشغيل التطبيق الآن لتثبيته؟`,
-          buttons: ["إعادة التشغيل الآن", "لاحقاً"],
-          defaultId: 0,
-          cancelId: 1,
-        })
-        .then(({ response }) => {
-          if (response === 0) {
-            autoUpdater.quitAndInstall();
-          }
-        });
+      mainWindow.webContents.send("update-installing", {
+        version: info.version,
+      });
     }
+    try {
+      if (Notification.isSupported()) {
+        new Notification({
+          title: "Stream Moon - جاري التثبيت",
+          body: `سيُثبَّت الإصدار ${info.version} الآن وسيعود التطبيق تلقائياً خلال لحظات.`,
+          silent: true,
+        }).show();
+      }
+    } catch {}
+    // مهلة قصيرة ليرى المستخدم الإشعار قبل إعادة التشغيل
+    setTimeout(() => {
+      autoUpdater.quitAndInstall(true, true);
+    }, 4000);
   });
 
   autoUpdater.on("error", (err) => {
@@ -695,11 +959,31 @@ function createWindow() {
     menu: null,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
+      // مطلوب لتشغيل كود الواجهة من bytecode (main.jsc) داخل الصفحة
+      contextIsolation: false,
+      nodeIntegration: true,
+      sandbox: false,
     },
   });
-  mainWindow.loadFile("index.html");
+  mainWindow.loadURL("app://s/index.html");
+
+  // ===== حماية: منع أي تنقل خارجي أو فتح نوافذ/iframe من داخل الصفحة =====
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (!url.startsWith("app://") && !url.startsWith("file://"))
+      event.preventDefault();
+  });
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    // أي رابط خارجي يُفتح في متصفح النظام وليس داخل التطبيق
+    if (!url.startsWith("file://")) {
+      require("electron").shell.openExternal(url);
+      return { action: "deny" };
+    }
+    return { action: "deny" };
+  });
+  // منع صفحة الواجهة من إنشاء نوافذ WebContents جديدة (window.open)
+  mainWindow.webContents.on("did-attach-webview", (event, wc) => {
+    wc.setWindowOpenHandler(() => ({ action: "deny" }));
+  });
 
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -739,6 +1023,7 @@ app.whenReady().then(async () => {
     logMessage("⏳ في انتظار ربط الجلسة من الواجهة...");
   }
 
+  registerAppProtocol();
   createWindow();
   initAutoUpdater();
 
@@ -760,6 +1045,7 @@ app.on("window-all-closed", () => {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     // إلغاء جميع اختصارات hotkey
     hotkeyListeners = {};
+    pressedModifiers.clear();
     if (uiohookStarted) {
       try {
         uIOhook.stop();

@@ -1,0 +1,29 @@
+
+> StreamMoon@1.0.1 dist
+> npm run compile && node scripts/encrypt.js && electron-builder
+
+
+> StreamMoon@1.0.1 compile
+> electron scripts/compile.js
+
+
+✅ main.js → main.jsc (222320 bytes)
+✅ electron-main.js → electron-main.jsc (38928 bytes)
+✅ preload-src.js → preload.jsc (2608 bytes)
+✅ res-key.js → res-key.jsc (496 bytes)
+🎉 تم تحويل كل الملفات إلى bytecode
+🔐 index.html (47486 bytes)
+🔐 css/normalize.css (6513 bytes)
+🔐 css/style.css (40441 bytes)
+🔐 css/all.min.css (74356 bytes)
+🔐 vendor/fontawesome/all.min.css (102554 bytes)
+🔐 vendor/Sortable.min.js (44164 bytes)
+🎉 تم تشفير كل الأصول
+  • electron-builder  version=24.13.3 os=10.0.26200
+  • loaded configuration  file=package.json ("build" field)
+  • rebuilding native dependencies  dependencies=robotjs@0.9.1, uiohook-napi@1.5.5 platform=win32 arch=x64
+  • packaging       platform=win32 arch=x64 electron=28.3.3 appOutDir=build\win-unpacked
+🛡️ Electron Fuses applied to: H:\stream_moon\SteamMoonElectron - full\frontend\build\win-unpacked\StreamMoon.exe
+  • building        target=nsis file=build\StreamMoon-Setup-1.0.1.exe archs=x64 oneClick=true perMachine=false
+  • building block map  blockMapFile=build\StreamMoon-Setup-1.0.1.exe.blockmap
+EXIT=0

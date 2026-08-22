@@ -7,6 +7,14 @@ const API_BASE = window.API_BASE || "";
 const GIFT_API = `${API_BASE}/api/gift-commands`;
 const INTERACT_API = `${API_BASE}/api/interaction-commands`;
 
+// socket.io محلي من node_modules بدل CDN (أمان: لا سكربتات خارجية)
+let io;
+try {
+  io = require("socket.io-client").io;
+} catch {
+  io = window.io; // fallback لمتصفح التطوير فقط
+}
+
 // ============================================================
 // المتغيرات العامة
 // ============================================================
@@ -18,6 +26,8 @@ let pendingUsername = null;
 let profileNames = {};
 let currentCommandModalMode = null;
 let importedCommands = [];
+let importedHotkeys = []; // اختصارات ملف .tfc عند "اضافة البروفايل"
+let currentProfileHotkeys = []; // اختصارات البروفايل الحالي (للكشف عن المكرر)
 let duplicateCommands = [];
 let nonDuplicateCommands = [];
 let audioUploadInProgress = false;
@@ -82,6 +92,9 @@ function getCookie(name) {
   return null;
 }
 
+// ============================================================
+// تنقية HTML محسّنة - استخدام textContent أفضل، لكن للضرورة استخدم هذه الدالة
+// ============================================================
 function escapeHtml(str) {
   if (!str) return "";
   return String(str)
@@ -89,7 +102,9 @@ function escapeHtml(str) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+    .replaceAll("'", "&#039;")
+    .replaceAll("/", "&#x2F;") // منع هجمات close tag
+    .replaceAll("`", "&#x60;"); // منع template literals
 }
 
 function showMessage(msg) {
@@ -100,10 +115,60 @@ function showMessage(msg) {
 }
 
 function fetchWithAuth(url, options = {}) {
-  return fetch(url, {
-    ...options,
-    credentials: "include",
-  });
+  const token = getAuthToken();
+  const headers = { ...(options.headers || {}) };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  // نقوم بتنفيذ الطلب مع إعادة المحاولة في حالة 401
+  const executeRequest = async () => {
+    let res = await fetch(url, {
+      ...options,
+      headers,
+      credentials: "include",
+    });
+
+    if (res.status === 401) {
+      try {
+        const refreshRes = await fetch(`${API_BASE}/api/auth/refresh`, {
+          method: "POST",
+          credentials: "include",
+        });
+        if (refreshRes.ok) {
+          const newToken = getCookie("token");
+          if (newToken) {
+            saveAuthToken(newToken);
+            headers["Authorization"] = `Bearer ${newToken}`;
+            // إعادة المحاولة
+            res = await fetch(url, {
+              ...options,
+              headers,
+              credentials: "include",
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("⚠️ فشل تجديد التوكن:", err.message);
+      }
+    }
+    return res;
+  };
+
+  return executeRequest();
+}
+
+function getAuthToken() {
+  try {
+    return localStorage.getItem("sm_token") || getCookie("token");
+  } catch {
+    return getCookie("token");
+  }
+}
+
+function saveAuthToken(token) {
+  try {
+    if (token) localStorage.setItem("sm_token", token);
+    else localStorage.removeItem("sm_token");
+  } catch {}
 }
 
 function getSelectedProfileId() {
@@ -120,6 +185,48 @@ function updateClearShortcutButton() {
     clearBtn.style.display =
       shortcutValue && shortcutValue.trim() !== "" ? "inline-block" : "none";
   }
+}
+
+// ============================================================
+// شريط حالة التحديث التلقائي (التثبيت تلقائي بدون سؤال)
+// ============================================================
+function ensureUpdateBanner() {
+  let banner = document.getElementById("updateStatusBanner");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "updateStatusBanner";
+    banner.style.cssText = `position:fixed;top:0;left:0;right:0;z-index:99999;
+      background:linear-gradient(90deg,#0d47a1,#1976d2);color:#fff;
+      padding:10px 20px;text-align:center;font-weight:bold;font-size:14px;
+      box-shadow:0 2px 10px rgba(0,0,0,0.5);display:none`;
+    document.body.appendChild(banner);
+  }
+  return banner;
+}
+
+function showUpdateBanner(html) {
+  const banner = ensureUpdateBanner();
+  banner.innerHTML = html;
+  banner.style.display = "block";
+}
+
+if (window.electronAPI) {
+  const ipc = require("electron").ipcRenderer;
+  ipc.on("update-available", (_, info) => {
+    showUpdateBanner(
+      `🔄 يتوفر تحديث جديد (${escapeHtml(info.version || "")}) - جاري التحميل…`,
+    );
+  });
+  ipc.on("update-progress", (_, p) => {
+    showUpdateBanner(
+      `⬇️ جاري تحميل التحديث… ${p.percent || 0}% - سيُثبَّت تلقائياً`,
+    );
+  });
+  ipc.on("update-installing", (_, info) => {
+    showUpdateBanner(
+      `⚙️ جاري تثبيت التحديث (${escapeHtml(info.version || "")}) - سيعود التطبيق تلقائياً خلال لحظات، لا تغلقه…`,
+    );
+  });
 }
 
 // ============================================================
@@ -221,10 +328,66 @@ async function updateAuthUI() {
 
   let isLoggedIn = false;
   try {
-    const res = await fetch(`${API_BASE}/api/auth/me`, {
+    const meHeaders = {};
+    const savedToken = getAuthToken();
+    if (savedToken) meHeaders["Authorization"] = `Bearer ${savedToken}`;
+    let res = await fetch(`${API_BASE}/api/auth/me`, {
       credentials: "include",
+      headers: meHeaders,
     });
-    const data = await res.json();
+    let data = await res.json().catch(() => ({}));
+
+    // توافق مع الإصدارات الأقدم من الخادم: /api/auth/me غير موجود (404)
+    if (res.status === 404) {
+      const probe = await fetch(`${API_BASE}/api/profiles`, {
+        credentials: "include",
+        headers: meHeaders,
+      });
+      if (probe.ok) {
+        isLoggedIn = true;
+        // حفظ التوكن من الكوكيز إلى localStorage لضمان استمراره
+        const token = getCookie("token");
+        if (token) saveAuthToken(token);
+        // ربط الـ Agent
+        await bindAgent(token);
+        // تحديث البيانات الأساسية
+        currentUserPlan = "paid";
+        currentUserRole = "user";
+        currentUserId = null;
+        data = { success: true, user: {}, subscription: { status: "active" } };
+        try {
+          await loadRconConfig();
+          await loadProfiles();
+          await initHotkey();
+        } catch (err) {
+          console.warn("⚠️ فشل تحميل بعض البيانات:", err.message);
+        }
+        // تحديث الأزرار
+        if (loginBtn) loginBtn.style.display = "none";
+        if (registerBtn) registerBtn.style.display = "none";
+        if (logoutBtn) logoutBtn.style.display = "inline-flex";
+        if (deleteBtn) deleteBtn.style.display = "inline-flex";
+        if (deleteAllBtn) deleteAllBtn.style.display = "inline-flex";
+        if (upgradeBtn) upgradeBtn.style.display = "none";
+        if (statusEl) {
+          let emailLabel = "مسجل الدخول";
+          try {
+            const payload = JSON.parse(
+              atob(
+                (savedToken || "")
+                  .split(".")[1]
+                  .replace(/-/g, "+")
+                  .replace(/_/g, "/"),
+              ),
+            );
+            if (payload.email) emailLabel = payload.email;
+          } catch {}
+          statusEl.innerHTML = `<i class="fas fa-user-circle"></i> مرحباً ${emailLabel}`;
+        }
+        return;
+      }
+    }
+
     if (data.success) {
       isLoggedIn = true;
       const user = data.user;
@@ -1246,6 +1409,11 @@ function _showAddCard(commandData = null) {
   const typeSelect = document.getElementById("actionType");
   const giftSection = document.getElementById("giftChooserSection");
 
+  // ✅ السماح بتغيير النوع دائماً (حتى في وضع التعديل)
+  typeSelect.disabled = false;
+  typeSelect.style.opacity = 1;
+  typeSelect.title = "";
+
   if (!typeSelect._hasChangeListener) {
     typeSelect.addEventListener("change", () => {
       giftSection.style.display =
@@ -1269,6 +1437,7 @@ function _showAddCard(commandData = null) {
       currentShortcutCombo = commandData.combo;
     }
 
+    // تعيين النوع من البيانات
     const givenType =
       commandData.__type === "gift"
         ? "gift"
@@ -1481,9 +1650,11 @@ async function confirmAdd(event) {
   const interval = parseInt(document.getElementById("interval").value) || 100;
   const delayBefore =
     parseInt(document.getElementById("delayBefore").value) || 0;
-  const audioFile = document.getElementById("audioSelect").value;
+  const audioFile =
+    tempUploadedFiles.audio || document.getElementById("audioSelect").value;
+  const videoFile =
+    tempUploadedFiles.video || document.getElementById("video").value;
   const volume = parseInt(document.getElementById("volume").value) || 100;
-  const videoFile = document.getElementById("video").value;
   const videoVolume =
     parseInt(document.getElementById("videoVolume").value) || 100;
   const screen = parseInt(document.getElementById("screen").value) || 1;
@@ -1520,33 +1691,32 @@ async function confirmAdd(event) {
   const profileId = getSelectedProfileId();
   if (profileId) baseCommand.profile = profileId;
 
+  const isEditing = !!(editingId && editingType);
+  const oldEditingId = editingId;
+  const oldEditingType = editingType;
+
+  // ✅ إذا كان التعديل وتغير النوع، نحذف القديم وننشئ جديداً
+  const typeChanged =
+    isEditing &&
+    actionType !==
+      (oldEditingType === "gift"
+        ? "gift"
+        : oldEditingType === "interaction"
+          ? "interaction"
+          : "gift");
+
   hideAddCard();
 
   try {
-    if (editingId && editingType) {
-      let url, bodyData;
-      if (editingType === "gift") {
-        url = `${GIFT_API}/${editingId}`;
-        bodyData = { ...baseCommand, giftId, giftName };
-      } else {
-        url = `${INTERACT_API}/${editingId}`;
-        bodyData = { ...baseCommand, type: actionType, keyword, threshold };
-        if (actionType === "like") bodyData.threshold = threshold;
-        if (actionType === "comment") bodyData.keyword = keyword;
-      }
+    if (isEditing && typeChanged) {
+      // 1️⃣ حذف الأمر القديم
+      const deleteUrl =
+        oldEditingType === "gift"
+          ? `${GIFT_API}/${oldEditingId}`
+          : `${INTERACT_API}/${oldEditingId}`;
+      await fetchWithAuth(deleteUrl, { method: "DELETE" });
 
-      const res = await fetchWithAuth(url, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(bodyData),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || "فشل التحديث");
-      }
-      showMessage("✅ تم تحديث الأمر");
-    } else {
+      // 2️⃣ إنشاء أمر جديد بالنوع الجديد
       let url, bodyData;
       if (actionType === "gift") {
         if (!giftId) {
@@ -1570,15 +1740,68 @@ async function confirmAdd(event) {
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || "فشل الإضافة");
+        const details = errorData.message || `فشل الإضافة (${res.status})`;
+        throw new Error(details);
+      }
+      showMessage("✅ تم تغيير نوع الأمر بنجاح");
+    } else if (isEditing) {
+      // تحديث عادي (نفس النوع)
+      let url, bodyData;
+      if (oldEditingType === "gift") {
+        url = `${GIFT_API}/${oldEditingId}`;
+        bodyData = { ...baseCommand, giftId, giftName };
+      } else {
+        url = `${INTERACT_API}/${oldEditingId}`;
+        bodyData = { ...baseCommand, type: actionType, keyword, threshold };
+        if (actionType === "like") bodyData.threshold = threshold;
+        if (actionType === "comment") bodyData.keyword = keyword;
+      }
+
+      const res = await fetchWithAuth(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bodyData),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        const details = errorData.message || `فشل التحديث (${res.status})`;
+        throw new Error(details);
+      }
+      showMessage("✅ تم تحديث الأمر");
+    } else {
+      // إنشاء جديد
+      let url, bodyData;
+      if (actionType === "gift") {
+        if (!giftId) {
+          showMessage("⚠️ يرجى اختيار هدية");
+          return;
+        }
+        url = GIFT_API;
+        bodyData = { ...baseCommand, giftId, giftName };
+      } else {
+        url = INTERACT_API;
+        bodyData = { ...baseCommand, type: actionType, keyword, threshold };
+        if (actionType === "like") bodyData.threshold = threshold;
+        if (actionType === "comment") bodyData.keyword = keyword;
+      }
+
+      const res = await fetchWithAuth(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bodyData),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        const details = errorData.message || `فشل الإضافة (${res.status})`;
+        throw new Error(details);
       }
       showMessage("✅ تم إضافة الأمر");
     }
 
     tempUploadedFiles.audio = null;
     tempUploadedFiles.video = null;
-    editingId = null;
-    editingType = null;
     await loadCommands();
   } catch (err) {
     console.error(err);
@@ -1589,6 +1812,7 @@ async function confirmAdd(event) {
 
 async function loadCommands(profileIdParam = null, noCache = false) {
   try {
+    // إلغاء المؤقتات القديمة
     for (const [id, timer] of autoSaveTimers) {
       clearTimeout(timer);
     }
@@ -1684,7 +1908,10 @@ async function loadCommands(profileIdParam = null, noCache = false) {
       let giftCellContent = "";
 
       if (cmd.__type === "gift") {
-        giftCellContent = `<img src="${getGiftImage(cmd.giftId)}" style="width:30px;height:30px;object-fit:cover;border-radius:4px;vertical-align:middle;" onerror="this.style.display='none'" title="${escapeHtml(cmd.giftName || cmd.name || "")}">`;
+        const rawImgUrl = getGiftImage(cmd.giftId);
+        const safeImg = safeImageUrl(rawImgUrl);
+        const safeTitle = escapeHtml(cmd.giftName || cmd.name || "");
+        giftCellContent = `<img src="${safeImg}" style="width:30px;height:30px;object-fit:cover;border-radius:4px;vertical-align:middle;" onerror="this.style.display='none'" title="${safeTitle}">`;
       } else {
         let iconFile = "";
         const actionType = cmd.type || "";
@@ -1713,32 +1940,40 @@ async function loadCommands(profileIdParam = null, noCache = false) {
       const hasCombo = cmd.combo && cmd.combo.trim() !== "";
 
       if (hasCommand) {
-        commandCellContent = `<textarea class="input-like-textarea" data-field="command" rows="1" placeholder="/Command (ضع أمرًا في كل سطر)" ${isDisabled ? "disabled" : ""}>${escapeHtml(cmd.command)}</textarea>`;
+        const safeCommand = escapeHtml(cmd.command);
+        commandCellContent = `<textarea class="input-like-textarea" data-field="command" rows="1" placeholder="/Command (ضع أمرًا في كل سطر)" ${isDisabled ? "disabled" : ""}>${safeCommand}</textarea>`;
       } else if (hasWebhook) {
-        commandCellContent = `<div style="font-size:12px; color:#1dd9e6e1; word-break:break-all;">🔗 ${escapeHtml(cmd.webhookUrl)}</div>`;
+        const safeWebhook = escapeHtml(cmd.webhookUrl);
+        commandCellContent = `<div style="font-size:12px; color:#1dd9e6e1; word-break:break-all;">🔗 ${safeWebhook}</div>`;
       } else if (hasCombo) {
-        commandCellContent = `<div style="font-size:12px; color:#ff9800;">⌨️ ${escapeHtml(cmd.combo)}</div>`;
+        const safeCombo = escapeHtml(cmd.combo);
+        commandCellContent = `<div style="font-size:12px; color:#ff9800;">⌨️ ${safeCombo}</div>`;
       } else {
         commandCellContent = `<div style="font-size:12px; color:#888;">—</div>`;
       }
 
+      const safeName = escapeHtml(displayName);
+      const safeAudio = escapeHtml(audioValue);
+      const safeVideo = escapeHtml(videoValue);
+
+      // ===== بناء الصف مع الحقول الجديدة =====
       tr.innerHTML = `
-<td class="drag-handle" style="text-align: center; width: 50px; vertical-align: middle; padding: 2px 10px;">
-  <div style="display: flex; flex-direction: row; align-items: center; gap: 6px; justify-content: center; direction: ltr;">
-    <button class="move-btn" onclick="moveRowUp(this.closest('tr'))" title="نقل لأعلى" 
-      style="background: linear-gradient(145deg, #2a2a2a, #1a1a1a); border: none; border-radius: 8px; color: #1dd9e6e1; cursor: pointer; font-size: 14px; width: 31px; height: 31px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05); transition: all 0.2s ease;">
-      <i class="fas fa-chevron-up"></i>
-    </button>
-    <span class="drag-icon" 
-      style="cursor: grab; font-size: 14px; line-height: 1; user-select: none; background: linear-gradient(145deg, #2a2a2a, #1a1a1a); border: none; border-radius: 8px; padding: 8px 6px; color: #888; box-shadow: 0 2px 6px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05);">
-      <i class="fas fa-grip-vertical"></i>
-    </span>
-    <button class="move-btn" onclick="moveRowDown(this.closest('tr'))" title="نقل لأسفل" 
-      style="background: linear-gradient(145deg, #2a2a2a, #1a1a1a); border: none; border-radius: 8px; color: #ff9800; cursor: pointer; font-size: 14px; width: 31px; height: 31px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05); transition: all 0.2s ease;">
-      <i class="fas fa-chevron-down"></i>
-    </button>
-  </div>
-</td>
+        <td class="drag-handle" style="text-align: center; width: 50px; vertical-align: middle; padding: 2px 10px;">
+          <div style="display: flex; flex-direction: row; align-items: center; gap: 6px; justify-content: center; direction: ltr;">
+            <button class="move-btn" onclick="moveRowUp(this.closest('tr'))" title="نقل لأعلى" 
+              style="background: linear-gradient(145deg, #2a2a2a, #1a1a1a); border: none; border-radius: 8px; color: #1dd9e6e1; cursor: pointer; font-size: 14px; width: 31px; height: 31px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05); transition: all 0.2s ease;">
+              <i class="fas fa-chevron-up"></i>
+            </button>
+            <span class="drag-icon" 
+              style="cursor: grab; font-size: 14px; line-height: 1; user-select: none; background: linear-gradient(145deg, #2a2a2a, #1a1a1a); border: none; border-radius: 8px; padding: 8px 6px; color: #888; box-shadow: 0 2px 6px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05);">
+              <i class="fas fa-grip-vertical"></i>
+            </span>
+            <button class="move-btn" onclick="moveRowDown(this.closest('tr'))" title="نقل لأسفل" 
+              style="background: linear-gradient(145deg, #2a2a2a, #1a1a1a); border: none; border-radius: 8px; color: #ff9800; cursor: pointer; font-size: 14px; width: 31px; height: 31px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05); transition: all 0.2s ease;">
+              <i class="fas fa-chevron-down"></i>
+            </button>
+          </div>
+        </td>
         <td style="vertical-align: middle; text-align: center;">
           <input type="checkbox" class="active-checkbox" data-field="active" ${isActiveChecked} ${isDisabled ? "disabled" : ""} style="margin: 0;">
         </td>
@@ -1747,22 +1982,35 @@ async function loadCommands(profileIdParam = null, noCache = false) {
           <button class="edit-btn" type="button" ${isDisabled ? "disabled" : ""} style="background: none; border: none; cursor: pointer; color: #1dd9e6e1; font-size: 18px; display: inline-block; margin: 0 2px;"><i class="fas fa-edit"></i></button>
           <button class="execute-btn" type="button" ${isDisabled ? "disabled" : ""} style="background: none; border: none; cursor: pointer; color: #2196f3; font-size: 18px; display: inline-block; margin: 0 2px;"><i class="fas fa-play"></i></button>
         </td>
-        <td><input type="text" value="${escapeHtml(displayName)}" data-field="name" ${isDisabled ? "disabled" : ""}></td>
+        <td><input type="text" value="${safeName}" data-field="name" ${isDisabled ? "disabled" : ""}></td>
         <td style="text-align: center; vertical-align: middle;">${commandCellContent}</td>
         <td><input type="number" value="${cmd.screen || 1}" data-field="screen" ${isDisabled ? "disabled" : ""}></td>
         <td><input type="number" value="${cmd.repeat || 1}" data-field="repeat" ${isDisabled ? "disabled" : ""}></td>
         <td><input type="number" value="${cmd.interval || 500}" data-field="interval" ${isDisabled ? "disabled" : ""}></td>
         <td><input type="number" value="${cmd.delayBefore || 0}" data-field="delayBefore" ${isDisabled ? "disabled" : ""}></td>
-        <td><input type="hidden" data-field="audio" value="${escapeHtml(audioValue)}"><input type="checkbox" class="play-sound-checkbox" data-field="playSound" ${playSoundChecked} ${isDisabled ? "disabled" : ""}></td>
-        <td><input type="hidden" data-field="video" value="${escapeHtml(videoValue)}"><input type="checkbox" class="video-checkbox" data-field="playVideo" ${playVideoChecked} ${isDisabled ? "disabled" : ""}></td>
-        <td class="fathertd"><input type="range" min="0" max="100" step="1" value="${cmd.volume || 100}" data-field="volume" oninput="this.nextElementSibling.textContent = this.value" style="width:100px;" ${isDisabled ? "disabled" : ""}><span class="numvolume">${cmd.volume || 100}</span></td>
-        <td class="fathertd"><input type="range" min="0" max="100" step="1" value="${cmd.videoVolume || 100}" data-field="videoVolume" oninput="this.nextElementSibling.textContent = this.value" style="width:100px;" ${isDisabled ? "disabled" : ""}><span class="numvolume">${cmd.videoVolume || 100}</span></td>
+        <td>
+          <input type="hidden" data-field="audio" value="${safeAudio}">
+          <input type="checkbox" class="play-sound-checkbox" data-field="playSound" ${playSoundChecked} ${isDisabled ? "disabled" : ""}>
+        </td>
+        <td>
+          <input type="hidden" data-field="video" value="${safeVideo}">
+          <input type="checkbox" class="video-checkbox" data-field="playVideo" ${playVideoChecked} ${isDisabled ? "disabled" : ""}>
+        </td>
+        <td class="fathertd">
+          <input type="range" min="0" max="100" step="1" value="${cmd.volume || 100}" data-field="volume" oninput="this.nextElementSibling.textContent = this.value" style="width:100px;" ${isDisabled ? "disabled" : ""}>
+          <span class="numvolume">${cmd.volume || 100}</span>
+        </td>
+        <td class="fathertd">
+          <input type="range" min="0" max="100" step="1" value="${cmd.videoVolume || 100}" data-field="videoVolume" oninput="this.nextElementSibling.textContent = this.value" style="width:100px;" ${isDisabled ? "disabled" : ""}>
+          <span class="numvolume">${cmd.videoVolume || 100}</span>
+        </td>
         <td class="gift-cell" style="text-align:center;">${giftCellContent}</td>
-      `;
+`;
 
       if (isDisabled) tr.classList.add("disabled-row");
       tbody.appendChild(tr);
 
+      // ربط الأحداث للأزرار والحقول
       if (!isDisabled) {
         tr.querySelector(".edit-btn").addEventListener("click", () =>
           showAddCard(cmd),
@@ -1836,11 +2084,18 @@ async function saveRowFromTr(tr) {
     if (!field) return;
     if (inp.type === "checkbox") body[field] = !!inp.checked;
     else if (inp.type === "range" || inp.type === "number") {
-      if (field === "threshold")
-        body[field] = inp.value === "" ? null : parseInt(inp.value, 10) || 0;
-      else body[field] = parseInt(inp.value, 10) || 0;
-    } else body[field] = inp.value;
+      if (field === "threshold" || field === "duration") {
+        body[field] = parseInt(inp.value, 10) || 0;
+      } else {
+        body[field] = parseInt(inp.value, 10) || 0;
+      }
+    } else if (field === "combo") {
+      body[field] = inp.value.trim() || null;
+    } else {
+      body[field] = inp.value;
+    }
   });
+  // التأكد من الحقول الأساسية
   body.giftId = tr.dataset.giftId || body.giftId || null;
   body.giftName = tr.dataset.giftName || body.giftName || "Unknown Gift";
   if (
@@ -1857,6 +2112,7 @@ async function saveRowFromTr(tr) {
   }
   const profileId = getSelectedProfileId();
   if (profileId) body.profile = profileId;
+
   try {
     if (rowType === "gift") {
       await fetchWithAuth(`${GIFT_API}/${id}`, {
@@ -2320,12 +2576,131 @@ async function refreshExistingCommands() {
   }
 }
 
+// ============================================================
+// جدول اختصارات البروفايل في مودال الأوامر (نسخ/اضافة البروفايل)
+// ============================================================
+async function loadCurrentProfileHotkeys() {
+  const profileId = getSelectedProfileId();
+  if (!profileId) {
+    currentProfileHotkeys = [];
+    return;
+  }
+  try {
+    const res = await fetchWithAuth(
+      `${API_BASE}/api/hotkey?profile=${profileId}`,
+    );
+    const data = await res.json();
+    currentProfileHotkeys = data.success && data.hotkeys ? data.hotkeys : [];
+  } catch (err) {
+    console.warn("فشل تحميل اختصارات البروفايل", err);
+    currentProfileHotkeys = [];
+  }
+}
+
+// وصف الأمر المرتبط بالاختصار حسب مصدره (قاعدة البيانات أو ملف .tfc)
+function describeHotkeyCommand(hk) {
+  if (hk.__fromFile) {
+    const ref = hk.ref || {};
+    if (hk.commandType === "gift")
+      return `هدية #${ref.giftId ?? ""} ${ref.name || ""}`.trim();
+    const parts = [ref.type || "تفاعل"];
+    if (ref.keyword) parts.push(`كلمة: ${ref.keyword}`);
+    if (ref.threshold) parts.push(`عدد: ${ref.threshold}`);
+    if (ref.combo) parts.push(`⌨️ ${ref.combo}`);
+    return parts.join(" - ");
+  }
+  const cmd = (window.currentCommandsList || []).find(
+    (c) => c._id && String(c._id) === String(hk.commandId),
+  );
+  return cmd ? cmd.name || cmd.giftName || "بدون اسم" : "أمر محذوف";
+}
+
+function buildHotkeySelectionTable(hotkeys, mode) {
+  const area = document.getElementById("hotkeysSelectionArea");
+  const tbody = document.getElementById("hotkeysSelectionTbody");
+  if (!area || !tbody) return;
+  tbody.innerHTML = "";
+
+  if (!hotkeys || hotkeys.length === 0) {
+    area.style.display = "none";
+    return;
+  }
+
+  const existingKeys = new Set(currentProfileHotkeys.map((h) => h.key));
+
+  hotkeys.forEach((hk, index) => {
+    const tr = document.createElement("tr");
+
+    const tdCheck = document.createElement("td");
+    const check = document.createElement("input");
+    check.type = "checkbox";
+    check.className = "hotkey-checkbox";
+    check.dataset.index = index;
+    check.checked = true;
+    tdCheck.appendChild(check);
+    tr.appendChild(tdCheck);
+
+    const tdKey = document.createElement("td");
+    tdKey.style.color = "#ff9800";
+    tdKey.textContent = hk.key || "";
+    tr.appendChild(tdKey);
+
+    const tdCmd = document.createElement("td");
+    tdCmd.style.textAlign = "right";
+    const div = document.createElement("div");
+    div.style.maxWidth = "250px";
+    div.style.whiteSpace = "nowrap";
+    div.style.overflow = "hidden";
+    div.style.textOverflow = "ellipsis";
+    div.textContent = describeHotkeyCommand(hk);
+    tdCmd.appendChild(div);
+    tr.appendChild(tdCmd);
+
+    const tdType = document.createElement("td");
+    tdType.textContent = hk.commandType === "gift" ? "هدية" : "تفاعل";
+    tr.appendChild(tdType);
+
+    const tdStatus = document.createElement("td");
+    if (mode === "import" && existingKeys.has(hk.key)) {
+      const badge = document.createElement("span");
+      badge.style.color = "#ff9800";
+      badge.textContent = "مكرر — سيُستبدل";
+      tdStatus.appendChild(badge);
+    } else {
+      tdStatus.textContent = hk.active === false ? "متوقف" : "نشط";
+    }
+    tr.appendChild(tdStatus);
+
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById("select-all-hotkeys").checked = true;
+  area.style.display = "block";
+}
+
+function setupHotkeySelectAll() {
+  const selectAll = document.getElementById("select-all-hotkeys");
+  if (!selectAll) return;
+  selectAll.onchange = function () {
+    document
+      .querySelectorAll("#hotkeysSelectionTbody .hotkey-checkbox")
+      .forEach((cb) => (cb.checked = this.checked));
+  };
+}
+
+function hideHotkeysSelectionArea() {
+  const area = document.getElementById("hotkeysSelectionArea");
+  if (area) area.style.display = "none";
+}
+
 async function showExportModal() {
   currentCommandModalMode = "export";
+  document.getElementById("copyTargetWrap").style.display = "none";
   document.getElementById("select-all-label").textContent = "تحديد الكل";
   document.getElementById("commandModalTitle").textContent = "تصدير الأوامر";
   document.getElementById("confirmCommandAction").textContent = "تحميل";
   document.getElementById("duplicateCommandsArea").style.display = "none";
+  hideHotkeysSelectionArea();
 
   const profileId = getSelectedProfileId();
   if (!profileId) {
@@ -2363,13 +2738,16 @@ async function showExportModal() {
 
 async function showImportModal() {
   currentCommandModalMode = "import";
+  document.getElementById("copyTargetWrap").style.display = "none";
   document.getElementById("select-all-label").textContent = "استبدال الكل";
   document.getElementById("commandModalTitle").textContent = "استيراد الأوامر";
   document.getElementById("confirmCommandAction").textContent = "إضافة";
   document.getElementById("duplicateCommandsArea").style.display = "none";
   document.getElementById("duplicateTableBody").innerHTML = "";
+  hideHotkeysSelectionArea();
 
   await refreshExistingCommands();
+  await loadCurrentProfileHotkeys();
 
   nonDuplicateCommands = [];
   duplicateCommands = [];
@@ -2398,6 +2776,17 @@ async function showImportModal() {
     document.getElementById("duplicateCommandsArea").style.display = "block";
     buildDuplicateTable(duplicateCommands);
   }
+
+  // جدول اختصارات الملف
+  document.getElementById("hotkeysAreaTitle").textContent =
+    "اختصارات الملف — حدد ما تريد استيراده";
+  document.getElementById("select-all-hotkeys-label").textContent =
+    "تحديد الكل";
+  buildHotkeySelectionTable(
+    importedHotkeys.map((h) => ({ ...h, __fromFile: true })),
+    "import",
+  );
+  setupHotkeySelectAll();
 
   const selectAll = document.getElementById("select-all-commands");
   selectAll.onchange = null;
@@ -2436,34 +2825,9 @@ async function showImportModal() {
 }
 
 async function downloadJSON(jsonStr, defaultFilename) {
-  if (window.showSaveFilePicker) {
-    try {
-      const blob = new Blob([jsonStr], { type: "application/json" });
-      const handle = await window.showSaveFilePicker({
-        suggestedName: defaultFilename,
-        types: [
-          {
-            description: "TikTok Flow Commands",
-            accept: { "application/json": [".tfc"] },
-          },
-        ],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-      showMessage("✅ تم حفظ الملف بنجاح");
-    } catch (err) {
-      if (err.name === "AbortError" || err.name === "UserAbortError") {
-        showMessage("❌ تم إلغاء الحفظ");
-      } else {
-        console.error(err);
-        showMessage("❌ فشل حفظ الملف، جارٍ استخدام الطريقة البديلة");
-        fallbackDownload(jsonStr, defaultFilename);
-      }
-    }
-  } else {
-    fallbackDownload(jsonStr, defaultFilename);
-  }
+  // حفظ واحد فقط عبر رابط Blob - showSaveFilePicker كان يسبب إنشاء ملف فارغ
+  // ثم إعادة الحفظ مرة ثانية في Electron
+  fallbackDownload(jsonStr, defaultFilename);
 }
 
 function fallbackDownload(jsonStr, filename) {
@@ -2479,32 +2843,103 @@ function fallbackDownload(jsonStr, filename) {
   showMessage("✅ تم التحميل إلى مجلد التنزيلات");
 }
 
-document
-  .getElementById("copy-profile-btn")
-  .addEventListener("click", async () => await showExportModal());
-document.getElementById("add-profile-btn").addEventListener("click", () => {
+// --- نسخ البروفايل (الواجهة القديمة: يعمل تلقائياً على البروفايل الحالي) ---
+// مثل الأصل تماماً: يفتح قائمة أوامر البروفايل الحالي وتحمّل الملف المشفر
+async function showCopyProfileModal() {
+  const sourceId = getSelectedProfileId();
+  if (!sourceId) {
+    showMessage("⚠️ اختر بروفايل أولاً");
+    return;
+  }
+  currentCommandModalMode = "copy";
+  document.getElementById("copyTargetWrap").style.display = "none";
+  document.getElementById("select-all-label").textContent = "تحديد الكل";
+  document.getElementById("commandModalTitle").textContent = "تصدير الأوامر";
+  document.getElementById("confirmCommandAction").textContent = "تحميل";
+  document.getElementById("duplicateCommandsArea").style.display = "none";
+
+  try {
+    const [giftsRes, interactRes] = await Promise.all([
+      fetchWithAuth(`${GIFT_API}?profile=${sourceId}`).then((r) => r.json()),
+      fetchWithAuth(`${INTERACT_API}?profile=${sourceId}`).then((r) =>
+        r.json(),
+      ),
+    ]);
+    const giftCommands = giftsRes.gifts || [];
+    const interactCommands = interactRes.list || [];
+    const allCommands = [
+      ...giftCommands.map((c) => ({ ...c, __type: "gift" })),
+      ...interactCommands.map((c) => ({ ...c, __type: "interaction" })),
+    ];
+    if (allCommands.length === 0) {
+      showMessage("⚠️ لا توجد أوامر في هذا البروفايل لنسخها");
+      return;
+    }
+    buildCommandSelectionTable(allCommands, true);
+
+    const selectAll = document.getElementById("select-all-commands");
+    selectAll.onchange = function () {
+      document
+        .querySelectorAll("#commandSelectionTableBody .command-checkbox")
+        .forEach((cb) => (cb.checked = this.checked));
+    };
+
+    // جدول اختصارات البروفايل لتحديد ما يُصدَّر مع الملف
+    await loadCurrentProfileHotkeys();
+    document.getElementById("hotkeysAreaTitle").textContent =
+      "اختصارات البروفايل — حدد ما يُضمَّن في الملف";
+    document.getElementById("select-all-hotkeys-label").textContent =
+      "تحديد الكل";
+    buildHotkeySelectionTable(currentProfileHotkeys, "copy");
+    setupHotkeySelectAll();
+
+    document.getElementById("commandSelectionModal").style.display = "flex";
+  } catch (err) {
+    console.error(err);
+    showMessage("❌ فشل تحميل الأوامر");
+  }
+}
+
+// --- اضافة البروفايل (الواجهة القديمة: مودال اختيار الأوامر مع كشف المكررات) ---
+// الملف يُقرأ ويُفك تشفيره في الباك اند ثم تُعرض الأوامر في مودال الاستيراد
+function showAddProfileFromFile() {
   const fileInput = document.createElement("input");
   fileInput.type = "file";
   fileInput.accept = ".tfc";
-  fileInput.onchange = (e) => {
+  fileInput.onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const commands = JSON.parse(event.target.result);
-        if (!Array.isArray(commands))
-          throw new Error("الملف يجب أن يحتوي على مصفوفة أوامر");
-        importedCommands = commands;
-        showImportModal();
-      } catch (err) {
-        showMessage("❌ خطأ في قراءة الملف: " + err.message);
+    showMessage("⏳ جارٍ قراءة الملف من الخادم...");
+    try {
+      const formData = new FormData();
+      formData.append("tfcFile", file);
+      const res = await fetchWithAuth(`${API_BASE}/api/profiles/parse-file`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!data.success || !Array.isArray(data.commands)) {
+        showMessage("❌ " + (data.message || "ملف غير صالح"));
+        return;
       }
-    };
-    reader.readAsText(file);
+      showMessage(`✅ تم قراءة ${data.commands.length} أمر من الملف`);
+      importedCommands = data.commands;
+      importedHotkeys = Array.isArray(data.hotkeys) ? data.hotkeys : [];
+      showImportModal();
+    } catch (err) {
+      console.error(err);
+      showMessage("❌ خطأ في الاتصال أثناء قراءة الملف");
+    }
   };
   fileInput.click();
-});
+}
+
+document
+  .getElementById("copy-profile-btn")
+  .addEventListener("click", showCopyProfileModal);
+document
+  .getElementById("add-profile-btn")
+  .addEventListener("click", showAddProfileFromFile);
 
 document
   .getElementById("confirmCommandAction")
@@ -2515,30 +2950,105 @@ document
       btn.style.opacity = "0.6";
       btn.style.pointerEvents = "none";
 
-      if (currentCommandModalMode === "export") {
+      if (currentCommandModalMode === "copy") {
+        // مثل القديم: يعمل تلقائياً على البروفايل الحالي - تصدير الأوامر المحددة
+        const sourceId = getSelectedProfileId();
+        if (!sourceId) {
+          showMessage("⚠️ لا يوجد بروفايل محدد");
+          return;
+        }
+        const checkedIndices = Array.from(
+          document.querySelectorAll(
+            "#commandSelectionTableBody .command-checkbox:checked",
+          ),
+        ).map((cb) => parseInt(cb.dataset.index));
+        const selectedCommands = checkedIndices.map(
+          (i) => window.currentCommandsList[i],
+        );
+        if (selectedCommands.length === 0) {
+          showMessage("⚠️ لم تختر أي أمر");
+          return;
+        }
+        const commandIds = selectedCommands
+          .map((c) => (c._id ? String(c._id) : null))
+          .filter(Boolean);
+
+        // اختصارات محددة للتصدير (فارغ = كل اختصارات الأوامر المحددة)
+        const checkedHotkeyIndices = Array.from(
+          document.querySelectorAll(
+            "#hotkeysSelectionTbody .hotkey-checkbox:checked",
+          ),
+        ).map((cb) => parseInt(cb.dataset.index));
+        const hotkeyIds = checkedHotkeyIndices
+          .map((i) =>
+            currentProfileHotkeys[i] && currentProfileHotkeys[i]._id
+              ? String(currentProfileHotkeys[i]._id)
+              : null,
+          )
+          .filter(Boolean);
+
+        // تصدير ملف .tfc مشفر من الباك اند للمشاركة مع الآخرين
+        try {
+          const res = await fetchWithAuth(
+            `${API_BASE}/api/profiles/export-file/${sourceId}?commandIds=${encodeURIComponent(commandIds.join(","))}` +
+              (hotkeyIds.length > 0
+                ? `&hotkeyIds=${encodeURIComponent(hotkeyIds.join(","))}`
+                : ""),
+          );
+          if (!res.ok) {
+            let msg = "";
+            try {
+              msg = (await res.json()).message || "";
+            } catch {}
+            showMessage("❌ فشل تصدير الملف: " + msg);
+            return;
+          }
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `profile_${sourceId}_commands.tfc`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          showMessage(
+            "✅ تم تحميل الملف المشفر — أرسله لمن تريد، لا يُفتح إلا داخل التطبيق",
+          );
+          document.getElementById("commandSelectionModal").style.display =
+            "none";
+        } catch (err) {
+          console.error(err);
+          showMessage("❌ خطأ في الاتصال أثناء التصدير");
+        }
+      } else if (currentCommandModalMode === "export") {
         const profileId = getSelectedProfileId();
         if (!profileId) {
           showMessage("⚠️ لا يوجد بروفايل محدد");
           return;
         }
+        // التصدير يتم من الباك اند: ملف .tfc مشفر بالكامل (AES-256-GCM)
         const res = await fetchWithAuth(
-          `${API_BASE}/api/profiles/export/${profileId}`,
+          `${API_BASE}/api/profiles/export-file/${profileId}`,
         );
-        const data = await res.json();
-        if (!data.success) {
-          showMessage("❌ فشل تصدير البروفايل: " + (data.message || ""));
+        if (!res.ok) {
+          let msg = "";
+          try {
+            msg = (await res.json()).message || "";
+          } catch {}
+          showMessage("❌ فشل تصدير البروفايل: " + msg);
           return;
         }
-        const allCommands = [
-          ...(data.data.gifts || []).map((c) => ({ ...c, __type: "gift" })),
-          ...(data.data.interactions || []).map((c) => ({
-            ...c,
-            __type: "interaction",
-          })),
-        ];
-        const jsonStr = JSON.stringify(allCommands, null, 2);
-        const fileName = `profile_${profileId}_commands.tfc`;
-        downloadJSON(jsonStr, fileName);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `profile_${profileId}_commands.tfc`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showMessage("✅ تم تحميل البروفايل المشفر (.tfc)");
         document.getElementById("commandSelectionModal").style.display = "none";
       } else if (currentCommandModalMode === "import") {
         const selectedNonDuplicateIndices = Array.from(
@@ -2559,9 +3069,20 @@ document
           (i) => duplicateCommands[i],
         );
 
+        // الاختصارات المحددة من ملف .tfc
+        const selectedHotkeyIndices = Array.from(
+          document.querySelectorAll(
+            "#hotkeysSelectionTbody .hotkey-checkbox:checked",
+          ),
+        ).map((cb) => parseInt(cb.dataset.index));
+        const selectedHotkeys = selectedHotkeyIndices
+          .map((i) => importedHotkeys[i])
+          .filter(Boolean);
+
         if (
           selectedNonDuplicate.length === 0 &&
-          selectedDuplicate.length === 0
+          selectedDuplicate.length === 0 &&
+          selectedHotkeys.length === 0
         ) {
           showMessage("⚠️ لم تختر أي أمر");
           return;
@@ -2571,7 +3092,7 @@ document
 
         if (window.isSharedExport) {
           const allSelected = [...selectedNonDuplicate, ...selectedDuplicate];
-          if (allSelected.length === 0) {
+          if (allSelected.length === 0 && selectedHotkeys.length === 0) {
             showMessage("⚠️ لم تختر أي أمر");
             return;
           }
@@ -2589,7 +3110,7 @@ document
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  data: { gifts, interactions },
+                  data: { gifts, interactions, hotkeys: selectedHotkeys },
                   targetProfile: profileId,
                 }),
               },
@@ -2600,6 +3121,8 @@ document
                 "✅ تم استيراد البروفايل المشترك بنجاح (مع رفع الوسائط)",
               );
               await loadCommands(true);
+              await loadHotkeyCommands();
+              await applyHotkeySettings();
             } else {
               showMessage(
                 "❌ فشل استيراد البروفايل المشترك: " +
@@ -2612,6 +3135,7 @@ document
           }
         } else {
           let importSuccess = true;
+          let hotkeysSent = selectedHotkeys.length === 0;
           try {
             if (selectedNonDuplicate.length > 0) {
               const res = await fetchWithAuth(
@@ -2623,14 +3147,40 @@ document
                     commands: selectedNonDuplicate,
                     replace: false,
                     profile: profileId,
+                    hotkeys: selectedHotkeys,
                   }),
                 },
               );
+              hotkeysSent = true;
               const data = await res.json();
               if (!data.success) {
                 importSuccess = false;
                 showMessage(
                   "❌ فشل استيراد الأوامر الجديدة: " +
+                    (data.message || "خطأ غير معروف"),
+                );
+              }
+            } else if (selectedHotkeys.length > 0) {
+              // استيراد اختصارات فقط بدون أوامر
+              const res = await fetchWithAuth(
+                `${API_BASE}/api/profiles/import`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    commands: [],
+                    replace: false,
+                    profile: profileId,
+                    hotkeys: selectedHotkeys,
+                  }),
+                },
+              );
+              hotkeysSent = true;
+              const data = await res.json();
+              if (!data.success) {
+                importSuccess = false;
+                showMessage(
+                  "❌ فشل استيراد الاختصارات: " +
                     (data.message || "خطأ غير معروف"),
                 );
               }
@@ -2645,6 +3195,7 @@ document
                     commands: selectedDuplicate,
                     replace: true,
                     profile: profileId,
+                    hotkeys: hotkeysSent ? [] : selectedHotkeys,
                   }),
                 },
               );
@@ -2665,6 +3216,8 @@ document
           if (importSuccess) {
             showMessage("✅ تم الاستيراد بنجاح");
             await loadCommands(true);
+            await loadHotkeyCommands();
+            await applyHotkeySettings();
           }
         }
         document.getElementById("commandSelectionModal").style.display = "none";
@@ -2853,11 +3406,13 @@ async function loadScreens() {
     let html = '<div class="screens-grid">';
     for (let i = 1; i <= 10; i++) {
       const screenUrl = `${baseUrl}/screens/${token}/${i}.html`;
+      // تنقية الرابط باستخدام escapeHtml
+      const safeUrl = escapeHtml(screenUrl);
       html += `
         <div class="screen-card">
           <div class="screen-number">${i}</div>
-          <div class="screen-url" dir="ltr">${escapeHtml(screenUrl)}</div>
-          <button class="copy-url-btn" data-url="${escapeHtml(screenUrl)}">📋 نسخ الرابط</button>
+          <div class="screen-url" dir="ltr">${safeUrl}</div>
+          <button class="copy-url-btn" data-url="${safeUrl}">📋 نسخ الرابط</button>
         </div>
       `;
     }
@@ -2872,7 +3427,7 @@ async function loadScreens() {
       });
     });
   } catch (err) {
-    container.innerHTML = `<div class="error-message">❌ فشل تحميل الروابط: ${err.message}</div>`;
+    container.innerHTML = `<div class="error-message">❌ فشل تحميل الروابط: ${escapeHtml(err.message)}</div>`;
   }
 }
 
@@ -3200,10 +3755,13 @@ function attachAdminButtonEvents() {
 
 // ============================================================
 // دوال Overlay
-// ============================================================
-function loadOverlayTab(tab) {
+// ============================================================\
+
+async function loadOverlayTab(tab) {
   const overlayContainer = document.getElementById("overlayDashboardContainer");
   if (!overlayContainer) return;
+
+  overlayContainer.innerHTML = `<div style="display:flex;justify-content:center;align-items:center;height:300px;color:#888;font-size:18px;"><i class="fas fa-spinner fa-spin" style="margin-left:10px;"></i> جاري تحميل لوحة التحكم...</div>`;
 
   document.querySelectorAll(".overlay-tab-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.tab === tab);
@@ -3216,97 +3774,159 @@ function loadOverlayTab(tab) {
     }
   });
 
-  let src =
-    tab === "main" ? API_BASE + "/dashboard" : API_BASE + "/wins-dashboard";
+  // تحديد الرابط مع المجلد overlay/
+  const url =
+    tab === "main"
+      ? API_BASE + "/overlay/dashboard.html"
+      : API_BASE + "/overlay/wins-dashboard.html";
 
-  overlayContainer.innerHTML = `
-    <iframe 
-      src="${src}" 
-      style="width: 100%; height: 90vh; min-height: 600px; border: none; border-radius: 12px; background: #0a0a0f; box-shadow: 0 4px 20px rgba(0,0,0,0.5);"
-      allow="clipboard-read; clipboard-write; cookies"
-      sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
-    ></iframe>
-  `;
+  try {
+    const response = await fetch(url, { credentials: "include" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const html = await response.text();
+
+    // معالجة الروابط النسبية لتصبح مطلقة مع الحفاظ على المجلد overlay/
+    const baseUrl = API_BASE + "/overlay/";
+    const fixedHtml = html.replace(
+      /(src|href)=["'](?!https?:\/\/)([^"']*)["']/g,
+      (match, attr, value) => {
+        // تجاهل الروابط التي تبدأ بـ data: أو javascript: أو ما شابه
+        if (value.startsWith("data:") || value.startsWith("javascript:"))
+          return match;
+        // إذا كان المسار يبدأ بـ / نزيله لتجنب التكرار
+        if (value.startsWith("/")) value = value.slice(1);
+        // إذا كان المسار يبدأ بـ overlay/ بالفعل، لا نضيفه مرة أخرى
+        if (value.startsWith("overlay/")) {
+          return `${attr}="${API_BASE}/${value}"`;
+        }
+        return `${attr}="${baseUrl}${value}"`;
+      },
+    );
+
+    overlayContainer.innerHTML = fixedHtml;
+
+    // إعادة تنفيذ السكربتات المضمنة
+    const scripts = overlayContainer.querySelectorAll("script");
+    scripts.forEach((oldScript) => {
+      const newScript = document.createElement("script");
+      for (let attr of oldScript.attributes) {
+        newScript.setAttribute(attr.name, attr.value);
+      }
+      if (oldScript.src) {
+        newScript.src = oldScript.src;
+      } else {
+        newScript.textContent = oldScript.textContent;
+      }
+      oldScript.parentNode.replaceChild(newScript, oldScript);
+    });
+  } catch (err) {
+    overlayContainer.innerHTML = `
+      <div style="text-align:center;padding:40px;color:#f44336;">
+        <i class="fas fa-exclamation-triangle"></i> ❌ فشل تحميل لوحة التحكم: ${err.message}
+      </div>
+    `;
+    console.error("❌ فشل تحميل الـ Overlay:", err);
+  }
 }
 
 // ============================================================
 // دوال HOTKEY (النظام الكامل)
 // ============================================================
 
-// دالة التحقق من صحة المفتاح
+// دالة التحقق من صحة المفتاح (تدعم المعدلات: Ctrl+Alt+Shift+F1 مثلاً)
+const HOTKEY_VALID_KEYS = [
+  "F1",
+  "F2",
+  "F3",
+  "F4",
+  "F5",
+  "F6",
+  "F7",
+  "F8",
+  "F9",
+  "F10",
+  "F11",
+  "F12",
+  "Space",
+  "Enter",
+  "Backspace",
+  "Tab",
+  "Escape",
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "Shift",
+  "Ctrl",
+  "Alt",
+  "Win",
+  "Menu",
+  "A",
+  "B",
+  "C",
+  "D",
+  "E",
+  "F",
+  "G",
+  "H",
+  "I",
+  "J",
+  "K",
+  "L",
+  "M",
+  "N",
+  "O",
+  "P",
+  "Q",
+  "R",
+  "S",
+  "T",
+  "U",
+  "V",
+  "W",
+  "X",
+  "Y",
+  "Z",
+  "0",
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+];
+
 function isValidHotkeyKey(key) {
   if (!key) return false;
-  const validKeys = [
-    "F1",
-    "F2",
-    "F3",
-    "F4",
-    "F5",
-    "F6",
-    "F7",
-    "F8",
-    "F9",
-    "F10",
-    "F11",
-    "F12",
-    "Space",
-    "Enter",
-    "Backspace",
-    "Tab",
-    "Escape",
-    "ArrowUp",
-    "ArrowDown",
-    "ArrowLeft",
-    "ArrowRight",
-    "Shift",
-    "Ctrl",
-    "Alt",
-    "Win",
-    "Menu",
-    "A",
-    "B",
-    "C",
-    "D",
-    "E",
-    "F",
-    "G",
-    "H",
-    "I",
-    "J",
-    "K",
-    "L",
-    "M",
-    "N",
-    "O",
-    "P",
-    "Q",
-    "R",
-    "S",
-    "T",
-    "U",
-    "V",
-    "W",
-    "X",
-    "Y",
-    "Z",
-    "0",
-    "1",
-    "2",
-    "3",
-    "4",
-    "5",
-    "6",
-    "7",
-    "8",
-    "9",
-  ];
-  return validKeys.includes(key);
+  const parts = String(key)
+    .split("+")
+    .map((p) => p.trim());
+  const actualKey = parts.pop();
+  const modifiers = new Set(["Ctrl", "Alt", "Shift"]);
+  for (const part of parts) {
+    if (!modifiers.has(part)) return false;
+    // لا تكرار لنفس المعدل
+    if (parts.filter((p) => p === part).length > 1) return false;
+  }
+  return HOTKEY_VALID_KEYS.includes(actualKey);
+}
+
+// باراميتر البروفايل الحالي لنداءات hotkey (فارغ إذا لم يحدد)
+function hotkeyProfileQuery(prefix = "?") {
+  const p = getSelectedProfileId();
+  return p ? `${prefix}profile=${p}` : "";
 }
 
 // تحميل إعدادات Hotkey
 async function loadHotkeySettings() {
   try {
-    const res = await fetchWithAuth(`${API_BASE}/api/hotkey`);
+    const res = await fetchWithAuth(
+      `${API_BASE}/api/hotkey${hotkeyProfileQuery()}`,
+    );
     const data = await res.json();
 
     if (data.success && data.hotkeys && data.hotkeys.length > 0) {
@@ -3346,7 +3966,10 @@ async function saveHotkeySettingsToServer(settings) {
     const res = await fetchWithAuth(`${API_BASE}/api/hotkey`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(settings),
+      body: JSON.stringify({
+        ...settings,
+        profile: getSelectedProfileId() || undefined,
+      }),
     });
     const data = await res.json();
     if (data.success) {
@@ -3371,7 +3994,9 @@ async function updateHotkeyRegistration() {
 
   try {
     await window.electronAPI.hotkey.unregisterAll();
-    const res = await fetchWithAuth(`${API_BASE}/api/hotkey`);
+    const res = await fetchWithAuth(
+      `${API_BASE}/api/hotkey${hotkeyProfileQuery()}`,
+    );
     const data = await res.json();
     if (!data.success || !data.hotkeys) return true;
 
@@ -3514,8 +4139,10 @@ async function saveHotkeySettings() {
   }
 
   try {
-    // ✅ جلب جميع الاختصارات من السيرفر
-    const res = await fetchWithAuth(`${API_BASE}/api/hotkey`);
+    // ✅ جلب جميع اختصارات البروفايل الحالي من السيرفر
+    const res = await fetchWithAuth(
+      `${API_BASE}/api/hotkey${hotkeyProfileQuery()}`,
+    );
     const data = await res.json();
 
     if (data.success && data.hotkeys) {
@@ -3555,7 +4182,13 @@ async function saveHotkeySettings() {
         }
 
         // ✅ إرسال طلب PUT لتحديث الاختصار
-        const settings = { key: newKey, commandId, commandType, active };
+        const settings = {
+          key: newKey,
+          commandId,
+          commandType,
+          active,
+          profile: getSelectedProfileId() || undefined,
+        };
 
         console.log(`📝 تحديث Hotkey: "${oldKey}" → "${newKey}"`);
         console.log(`📝 بيانات التحديث:`, settings);
@@ -3611,7 +4244,13 @@ async function saveHotkeySettings() {
     }
 
     // ✅ إنشاء Hotkey جديد
-    const settings = { key: newKey, commandId, commandType, active };
+    const settings = {
+      key: newKey,
+      commandId,
+      commandType,
+      active,
+      profile: getSelectedProfileId() || undefined,
+    };
     hotkeySettings = settings;
 
     const saved = await saveHotkeySettingsToServer(settings);
@@ -3723,94 +4362,111 @@ async function renderHotkeysList() {
   const tbody = document.getElementById("hotkeysTbody");
   if (!tbody) return;
 
-  try {
-    const res = await fetchWithAuth(`${API_BASE}/api/hotkey`);
-    const data = await res.json();
-    let hotkeys = data.success ? data.hotkeys : [];
+  const emptyRow = (text) => {
+    tbody.innerHTML = "";
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 7;
+    td.style.textAlign = "center";
+    td.style.padding = "20px";
+    td.style.color = "#888";
+    td.textContent = text;
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+  };
 
-    if (hotkeys.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-muted);">❌ لا توجد اختصارات مسجلة</td></tr>`;
+  try {
+    const res = await fetchWithAuth(
+      `${API_BASE}/api/hotkey${hotkeyProfileQuery()}`,
+    );
+    const data = await res.json();
+    if (!data.success || !Array.isArray(data.hotkeys)) {
+      emptyRow("❌ فشل تحميل الاختصارات");
+      return;
+    }
+    window.currentHotkeys = data.hotkeys;
+    if (data.hotkeys.length === 0) {
+      emptyRow("لا توجد اختصارات مسجلة في هذا البروفايل");
       return;
     }
 
-    const profileId = getSelectedProfileId();
-    let allCommands = [];
-    if (profileId) {
-      try {
-        const [giftsRes, interactRes] = await Promise.all([
-          fetchWithAuth(`${GIFT_API}?profile=${profileId}`).then((r) =>
-            r.json(),
-          ),
-          fetchWithAuth(`${INTERACT_API}?profile=${profileId}`).then((r) =>
-            r.json(),
-          ),
-        ]);
-        const gifts = giftsRes.gifts || [];
-        const interactions = interactRes.list || [];
-        allCommands = [
-          ...gifts.map((c) => ({ ...c, __type: "gift" })),
-          ...interactions.map((c) => ({ ...c, __type: "interaction" })),
-        ];
-      } catch (err) {
-        console.warn("⚠️ فشل تحميل الأوامر لعرض الهوت كي", err);
-      }
-    }
+    tbody.innerHTML = "";
+    data.hotkeys.forEach((hk, index) => {
+      const tr = document.createElement("tr");
+      if (hotkeySettings.key === hk.key) tr.className = "current-hotkey";
 
-    let html = "";
-    hotkeys.forEach((hk, index) => {
-      const cmd = allCommands.find((c) => c._id === hk.commandId);
-      const name = cmd?.name || cmd?.giftName || "⚠️ أمر محذوف";
-      let giftImg = "";
-      if (cmd?.__type === "gift" && cmd?.giftId) {
-        giftImg = getGiftImage(cmd.giftId);
-      }
-      const typeLabel = hk.commandType === "gift" ? "🎁 هدية" : "⚡ تفاعل";
-      const isChecked = hk.active !== false ? "checked" : "";
-      const isCurrent =
-        hotkeySettings.key === hk.key &&
-        hotkeySettings.commandId === hk.commandId;
+      const tdNum = document.createElement("td");
+      tdNum.style.textAlign = "center";
+      tdNum.textContent = index + 1;
+      tr.appendChild(tdNum);
 
-      html += `
-  <tr data-key="${escapeHtml(hk.key)}" class="${isCurrent ? "current-hotkey" : ""}">
-    <td style="text-align:center;">${index + 1}</td>
-    <td style="text-align:center;">
-      <kbd style="background:#1e2a36;padding:4px 12px;border-radius:4px;border:1px solid #444;font-family:monospace;font-weight:bold;color:var(--primary-color);">${escapeHtml(hk.key)}</kbd>
-      ${isCurrent ? ' <span style="font-size:10px;color:#4caf50;">✓ نشط</span>' : ""}
-    </td>
-    <td>${escapeHtml(name)}</td>
-    <td style="text-align:center;">${typeLabel}</td>
-    <td style="text-align:center;">
-      ${giftImg ? `<img src="${giftImg}" style="width:30px;height:30px;object-fit:cover;border-radius:4px;" onerror="this.style.display='none'">` : "—"}
-    </td>
-    <td style="text-align:center;">
-      <input type="checkbox" class="hotkey-toggle" data-key="${escapeHtml(hk.key)}" ${isChecked} style="width:20px;height:20px;accent-color:var(--primary-color);cursor:pointer;">
-    </td>
-    <td style="text-align:center; white-space: nowrap;">
-      <button class="hotkey-edit-btn" 
-              data-key="${escapeHtml(hk.key)}" 
-              data-id="${hk.commandId}" 
-              data-type="${hk.commandType}" 
-              data-active="${hk.active !== false ? "true" : "false"}"
-              style="padding:4px 10px;font-size:12px;background:green;color:white;border:none;border-radius:4px;cursor:pointer;margin-right:4px;transition:var(--transition);">
-        ✏️ تعديل
-      </button>
-      <button class="hotkey-delete-btn" 
-              data-key="${escapeHtml(hk.key)}" 
-              style="padding:4px 10px;font-size:12px;background:#f44336;color:white;border:none;border-radius:4px;cursor:pointer;transition:var(--transition);">
-        🗑️ حذف
-      </button>
-    </td>
-  </tr>
-`;
+      const tdKey = document.createElement("td");
+      tdKey.style.textAlign = "center";
+      const kbd = document.createElement("kbd");
+      kbd.textContent = hk.key;
+      tdKey.appendChild(kbd);
+      tr.appendChild(tdKey);
+
+      const tdName = document.createElement("td");
+      const cmd = (window.currentCommandsList || []).find(
+        (c) =>
+          c._id &&
+          String(c._id) === String(hk.commandId) &&
+          (c.__type || "gift") === hk.commandType,
+      );
+      tdName.textContent = cmd
+        ? cmd.name || cmd.giftName || "بدون اسم"
+        : "أمر غير موجود في البروفايل";
+      tr.appendChild(tdName);
+
+      const tdType = document.createElement("td");
+      tdType.style.textAlign = "center";
+      tdType.textContent = hk.commandType === "gift" ? "هدية" : "تفاعل";
+      tr.appendChild(tdType);
+
+      const tdGift = document.createElement("td");
+      tdGift.style.textAlign = "center";
+      tdGift.textContent = cmd && cmd.giftId ? `🎁 ${cmd.giftId}` : "";
+      tr.appendChild(tdGift);
+
+      const tdActive = document.createElement("td");
+      tdActive.style.textAlign = "center";
+      const toggle = document.createElement("input");
+      toggle.type = "checkbox";
+      toggle.className = "hotkey-toggle";
+      toggle.dataset.key = hk.key;
+      toggle.checked = hk.active !== false;
+      tdActive.appendChild(toggle);
+      tr.appendChild(tdActive);
+
+      const tdActions = document.createElement("td");
+      tdActions.style.textAlign = "center";
+      const editBtn = document.createElement("button");
+      editBtn.className = "hotkey-edit-btn";
+      editBtn.textContent = "✏️";
+      editBtn.title = "تعديل";
+      editBtn.dataset.key = hk.key;
+      editBtn.dataset.id = hk.commandId;
+      editBtn.dataset.type = hk.commandType;
+      editBtn.dataset.active = String(hk.active !== false);
+      tdActions.appendChild(editBtn);
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "hotkey-delete-btn";
+      deleteBtn.textContent = "🗑️";
+      deleteBtn.title = "حذف";
+      deleteBtn.dataset.key = hk.key;
+      tdActions.appendChild(deleteBtn);
+      tr.appendChild(tdActions);
+
+      tbody.appendChild(tr);
     });
-    tbody.innerHTML = html;
 
     attachHotkeyToggleEvents(tbody);
     attachHotkeyDeleteEvents(tbody);
     attachHotkeyEditEvents(tbody);
   } catch (err) {
-    console.error("فشل عرض قائمة الهوت كي", err);
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:#f44336;">❌ خطأ في تحميل البيانات</td></tr>`;
+    console.warn("⚠️ فشل عرض قائمة الاختصارات", err);
+    emptyRow("❌ فشل تحميل الاختصارات");
   }
 }
 
@@ -3827,7 +4483,9 @@ async function handleToggleChange(e) {
   const active = cb.checked;
 
   try {
-    const res = await fetchWithAuth(`${API_BASE}/api/hotkey`);
+    const res = await fetchWithAuth(
+      `${API_BASE}/api/hotkey${hotkeyProfileQuery()}`,
+    );
     const data = await res.json();
     const hk = data.hotkeys.find((h) => h.key === key);
     if (!hk) {
@@ -3841,6 +4499,7 @@ async function handleToggleChange(e) {
       commandId: hk.commandId,
       commandType: hk.commandType,
       active: active,
+      profile: getSelectedProfileId() || undefined,
     };
     const saveRes = await fetchWithAuth(`${API_BASE}/api/hotkey`, {
       method: "POST",
@@ -3954,7 +4613,7 @@ async function handleDeleteClick(e) {
 
   try {
     const res = await fetchWithAuth(
-      `${API_BASE}/api/hotkey/${encodeURIComponent(key)}`,
+      `${API_BASE}/api/hotkey/${encodeURIComponent(key)}${hotkeyProfileQuery()}`,
       { method: "DELETE" },
     );
 
@@ -3999,20 +4658,27 @@ function handleSaveShortcut() {
     return;
   }
 
+  // ✅ بناء الـ combo مع المعدلات ليتطابق مع ما تبنيه العملية الرئيسية في electron-main
+  let combo = "";
+  if (ctrl) combo += "Ctrl+";
+  if (alt) combo += "Alt+";
+  if (shift) combo += "Shift+";
+  combo += key;
+
   // ✅ تعيين المفتاح في حقل Hotkey
   const hotkeyKeyInput = document.getElementById("hotkeyKey");
   const hotkeyDisplay = document.getElementById("hotkeyDisplay");
 
   if (hotkeyKeyInput) {
-    hotkeyKeyInput.value = key;
+    hotkeyKeyInput.value = combo;
   }
   if (hotkeyDisplay) {
-    hotkeyDisplay.textContent = key;
+    hotkeyDisplay.textContent = combo;
   }
 
   // ✅ إغلاق المودال
   closeKeyboardShortcutModal();
-  showMessage(`✅ تم اختيار المفتاح: ${key}`);
+  showMessage(`✅ تم اختيار المفتاح: ${combo}`);
 }
 
 // ===== ربط أحداث Hotkey =====
@@ -4192,6 +4858,65 @@ async function init() {
   // ✅ ربط القوائم المنسدلة
   setupCustomSelects();
 
+  // ===== إضافة مستمع رفع الصوت =====
+  document
+    .getElementById("audioUploadInput")
+    .addEventListener("change", async function (e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const formData = new FormData();
+      formData.append("audio", file);
+      showMessage("⏳ جاري رفع الصوت...");
+      try {
+        const res = await fetchWithAuth(`${API_BASE}/api/upload-audio`, {
+          method: "POST",
+          body: formData,
+        });
+        const data = await res.json();
+        if (data.success) {
+          tempUploadedFiles.audio = data.filename;
+          // تحديث القائمة المنسدلة
+          await loadAudios();
+          document.querySelector("#audioDropdown .selected").textContent =
+            data.filename;
+          document.getElementById("audioSelect").value = data.filename;
+          showMessage("✅ تم رفع الصوت بنجاح");
+        } else {
+          showMessage("❌ فشل رفع الصوت: " + (data.message || ""));
+        }
+      } catch (err) {
+        showMessage("❌ خطأ في الاتصال");
+      }
+    });
+
+  // ===== إضافة مستمع رفع الفيديو =====
+  document
+    .getElementById("videoInput")
+    .addEventListener("change", async function (e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const formData = new FormData();
+      formData.append("video", file);
+      showMessage("⏳ جاري رفع الفيديو...");
+      try {
+        const res = await fetchWithAuth(`${API_BASE}/api/upload-video`, {
+          method: "POST",
+          body: formData,
+        });
+        const data = await res.json();
+        if (data.success) {
+          tempUploadedFiles.video = data.filename;
+          document.getElementById("video").value = data.filename;
+          document.getElementById("videoFileName").textContent = data.filename;
+          showMessage("✅ تم رفع الفيديو بنجاح");
+        } else {
+          showMessage("❌ فشل رفع الفيديو: " + (data.message || ""));
+        }
+      } catch (err) {
+        showMessage("❌ خطأ في الاتصال");
+      }
+    });
+
   await connectFrontendSocket();
   await initHotkey();
 }
@@ -4344,6 +5069,7 @@ if (hotkeyNav && startSectionHotkey) {
     startSection.style.display = "none";
     startSection2.style.display = "none";
     startSection3.style.display = "none";
+    if (startSection5) startSection5.style.display = "none"; // ← أضف
     if (startSection4) startSection4.style.display = "none";
     startSectionHotkey.style.display = "block";
     document
@@ -4357,10 +5083,27 @@ if (hotkeyNav && startSectionHotkey) {
 
 if (allNav) {
   allNav.onclick = function () {
+    // إعادة ضبط أي تعديلات قد تكون حدثت من Overlay
+    document.body.style.overflow = "";
+    document.documentElement.style.overflow = "";
+    document.body.style.margin = "";
+    document.documentElement.style.margin = "";
+    document.body.style.height = "";
+    document.documentElement.style.height = "";
+    // إعادة ضبط أي container خاص بالـ overlay إن وجد
+    const overlayContainer = document.getElementById(
+      "overlayDashboardContainer",
+    );
+    if (overlayContainer) {
+      overlayContainer.style.overflow = "";
+      overlayContainer.style.height = "";
+    }
+
     startSection.style.display = "block";
     startSection2.style.display = "block";
     startSection3.style.display = "block";
     if (startSectionHotkey) startSectionHotkey.style.display = "none";
+    if (startSection5) startSection5.style.display = "none";
     if (currentUserRole === "admin") {
       startSection4.style.display = "block";
       if (typeof loadAdminDashboard === "function") loadAdminDashboard();
@@ -4394,6 +5137,7 @@ if (startNav) {
     startSection2.style.display = "none";
     startSection3.style.display = "none";
     if (startSectionHotkey) startSectionHotkey.style.display = "none";
+    if (startSection5) startSection5.style.display = "none"; // ← أضف
     if (startSection4) startSection4.style.display = "none";
     document
       .querySelectorAll(".button-select-slide")
@@ -4408,6 +5152,7 @@ if (actionNav) {
     startSection2.style.display = "block";
     startSection3.style.display = "none";
     if (startSectionHotkey) startSectionHotkey.style.display = "none";
+    if (startSection5) startSection5.style.display = "none"; // ← أضف
     if (startSection4) startSection4.style.display = "none";
     document
       .querySelectorAll(".button-select-slide")
@@ -4422,6 +5167,7 @@ if (screensNav) {
     startSection2.style.display = "none";
     startSection3.style.display = "block";
     if (startSectionHotkey) startSectionHotkey.style.display = "none";
+    if (startSection5) startSection5.style.display = "none"; // ← أضف
     if (startSection4) startSection4.style.display = "none";
     document
       .querySelectorAll(".button-select-slide")
@@ -4452,11 +5198,14 @@ if (overlaysNav) {
   };
 }
 
+// استماع للأحداث القادمة من المحتوى المحمّل (تبويبات الـ Overlay)
 document.addEventListener("click", function (e) {
   const tabBtn = e.target.closest(".overlay-tab-btn");
   if (tabBtn) {
     const tab = tabBtn.dataset.tab;
-    loadOverlayTab(tab);
+    if (tab) {
+      loadOverlayTab(tab);
+    }
   }
 });
 
@@ -4471,7 +5220,7 @@ async function connectFrontendSocket() {
       frontendSocket = null;
     }
 
-    const token = getCookie("token");
+    const token = getAuthToken();
     frontendSocket = io(API_BASE, {
       withCredentials: true,
       transports: ["websocket", "polling"],
@@ -4499,21 +5248,20 @@ async function connectFrontendSocket() {
       lastPlayedSoundId = payload.id;
       try {
         if (!payload || !payload.filename) return;
-        let audioUrl = payload.filename;
-        if (audioUrl.startsWith("/audios/")) {
-          audioUrl = API_BASE + audioUrl;
-        } else if (
-          !audioUrl.startsWith("http://") &&
-          !audioUrl.startsWith("https://")
-        ) {
-          audioUrl = API_BASE + "/audios/" + encodeURIComponent(audioUrl);
+
+        // ========== إصلاح أمني: تنقية رابط الصوت ==========
+        const finalUrl = safeMediaUrl(payload.filename, "audio");
+        if (!finalUrl) {
+          console.warn("⚠️ تم تجاهل رابط صوت غير آمن:", payload.filename);
+          return;
         }
+
         await tryUnlockAudio();
-        const audio = new Audio(audioUrl);
+        const audio = new Audio(finalUrl);
         audio.volume = Math.min(1, Math.max(0, (payload.volume || 100) / 100));
         audio.crossOrigin = "anonymous";
         await audio.play();
-        console.log(`🔊 تم تشغيل الصوت في الفرونت: ${audioUrl}`);
+        console.log(`🔊 تم تشغيل الصوت في الفرونت: ${finalUrl}`);
       } catch (err) {
         console.warn("❌ فشل تشغيل الصوت في الفرونت:", err.message);
       }
@@ -4956,6 +5704,12 @@ document.querySelectorAll(".plan-card").forEach((card) => {
 });
 
 document.getElementById("upgrade-btn").onclick = () => {
+  // داخل Electron: الدفع في نافذة معزولة بدون صلاحيات Node (أمان PayPal)
+  if (window.electronAPI && window.electronAPI.openPaymentWindow) {
+    window.electronAPI.openPaymentWindow(getAuthToken());
+    return;
+  }
+  // fallback للمتصفح فقط: النافذة القديمة داخل التطبيق
   paymentModal.style.display = "flex";
   selectedPlan = null;
   selectedPlanId = null;
@@ -4966,10 +5720,64 @@ document.getElementById("upgrade-btn").onclick = () => {
   document.getElementById("payment-message").textContent = "";
 };
 
-document.getElementById("login-submit").onclick = async () => {
+// بعد إغلاق نافذة الدفع المعزولة: تحديث حالة الاشتراك تلقائياً
+if (window.electronAPI) {
+  try {
+    require("electron").ipcRenderer.on("payment-closed", async () => {
+      await updateAuthUI();
+      showMessage("🔄 تم تحديث حالة الاشتراك");
+    });
+  } catch {}
+}
+
+// --- التحقق من قوة كلمة المرور (نفس قواعد الباك اند) ---
+function validatePasswordStrength(password) {
+  if (typeof password !== "string" || password.length === 0)
+    return { valid: false, message: "أدخل كلمة المرور" };
+  if (password.length < 8)
+    return { valid: false, message: "❌ يجب أن تكون 8 أحرف على الأقل" };
+  if (!/[a-z]/.test(password))
+    return { valid: false, message: "❌ أضف حرفاً صغيراً (a-z)" };
+  if (!/[A-Z]/.test(password))
+    return { valid: false, message: "❌ أضف حرفاً كبيراً (A-Z)" };
+  if (!/\d/.test(password))
+    return { valid: false, message: "❌ أضف رقماً (0-9)" };
+  if (!/[^A-Za-z0-9]/.test(password))
+    return { valid: false, message: "❌ أضف رمزاً خاصاً (!@#$%...)" };
+  return { valid: true, message: "✅ كلمة المرور قوية" };
+}
+
+const registerPasswordInput = document.getElementById("register-password");
+const registerSubmitBtn = document.getElementById("register-submit");
+const registerMsg = document.getElementById("register-message");
+
+if (registerPasswordInput) {
+  registerPasswordInput.addEventListener("input", () => {
+    const result = validatePasswordStrength(registerPasswordInput.value);
+    registerMsg.textContent = result.message;
+    registerMsg.style.color = result.valid ? "#4caf50" : "#ff6b6b";
+  });
+}
+
+function setBtnBusy(btn, busy, busyText) {
+  if (!btn) return;
+  btn.disabled = busy;
+  btn.style.opacity = busy ? "0.6" : "1";
+  btn.style.pointerEvents = busy ? "none" : "auto";
+  if (busy) {
+    btn.dataset.originalText = btn.textContent;
+    btn.textContent = busyText || "⏳ جارٍ المعالجة...";
+  } else if (btn.dataset.originalText) {
+    btn.textContent = btn.dataset.originalText;
+  }
+}
+
+document.getElementById("login-submit").onclick = async function () {
+  const btn = this;
   const email = document.getElementById("login-email").value;
   const password = document.getElementById("login-password").value;
   const msg = document.getElementById("login-message");
+  setBtnBusy(btn, true, "⏳ جارٍ تسجيل الدخول...");
   try {
     const res = await fetch(`${API_BASE}/api/auth/login`, {
       method: "POST",
@@ -4979,7 +5787,10 @@ document.getElementById("login-submit").onclick = async () => {
     });
     const data = await res.json();
     if (data.success) {
-      const token = data.token || getCookie("token");
+      // إزالة توكن الحساب السابق أولاً حتى لا تختلط الحسابات عند تعددها
+      saveAuthToken(null);
+      saveAuthToken(data.token || getCookie("token"));
+      const token = getAuthToken();
       if (token) {
         await bindAgent(token);
         console.log("✅ تم ربط الـ Agent بالتوكن");
@@ -4992,14 +5803,24 @@ document.getElementById("login-submit").onclick = async () => {
       msg.textContent = data.message || "فشل تسجيل الدخول";
     }
   } catch (err) {
-    msg.textContent = "خطأ في الاتصال";
+    msg.textContent = "خطأ في الاتصال بالخادم";
+  } finally {
+    setBtnBusy(btn, false);
   }
 };
 
-document.getElementById("register-submit").onclick = async () => {
+document.getElementById("register-submit").onclick = async function () {
+  const btn = this;
   const email = document.getElementById("register-email").value;
   const password = document.getElementById("register-password").value;
   const msg = document.getElementById("register-message");
+  const strength = validatePasswordStrength(password);
+  if (!strength.valid) {
+    msg.style.color = "#ff6b6b";
+    msg.textContent = strength.message;
+    return;
+  }
+  setBtnBusy(btn, true, "⏳ جارٍ إنشاء الحساب...");
   try {
     const res = await fetch(`${API_BASE}/api/auth/register`, {
       method: "POST",
@@ -5009,8 +5830,10 @@ document.getElementById("register-submit").onclick = async () => {
     });
     const data = await res.json();
     if (data.success) {
-      const tokenFromCookie = getCookie("token");
-      const token = tokenFromCookie || data.token;
+      // إزالة توكن الحساب السابق أولاً حتى لا تختلط الحسابات عند تعددها
+      saveAuthToken(null);
+      saveAuthToken(data.token || getCookie("token"));
+      const token = getAuthToken();
       if (token) {
         bindAgent(token);
         console.log("✅ تم ربط الـ Agent بالتوكن");
@@ -5020,42 +5843,40 @@ document.getElementById("register-submit").onclick = async () => {
       msg.textContent = "";
       window.location.reload();
     } else {
+      msg.style.color = "#ff6b6b";
       msg.textContent = data.message || "فشل إنشاء الحساب";
     }
   } catch (err) {
-    msg.textContent = "خطأ في الاتصال";
+    msg.style.color = "#ff6b6b";
+    msg.textContent = "خطأ في الاتصال بالخادم";
+  } finally {
+    setBtnBusy(btn, false);
   }
 };
 
 document.getElementById("logout-btn").onclick = async function () {
   const btn = this;
+  btn.disabled = true;
+  btn.textContent = "⏳ جاري الخروج...";
+  // نداء الخروج من الخادم - ولو فشل نكمل التنظيف محلياً في كل الأحوال
+  // حتى لا يعود التطبيق لفتح الحساب السابق عند تعدد الحسابات
   try {
-    btn.disabled = true;
-    btn.textContent = "⏳ جاري الخروج...";
-    const res = await fetch(`${API_BASE}/api/auth/logout`, {
+    await fetch(`${API_BASE}/api/auth/logout`, {
       method: "POST",
       credentials: "include",
     });
-    const data = await res.json();
-    if (data.success) {
-      bindAgent(null);
-      await updateAuthUI();
-      window.location.reload();
-    } else {
-      document.cookie =
-        "token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-      await updateAuthUI();
-      window.location.reload();
-    }
   } catch (err) {
-    console.error("❌ خطأ في تسجيل الخروج:", err);
-    document.cookie = "token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-    await updateAuthUI();
-    window.location.reload();
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "تسجيل الخروج";
+    console.warn(
+      "⚠️ تعذر الوصول للخادم أثناء الخروج - تنظيف محلي:",
+      err.message,
+    );
   }
+  try {
+    document.cookie = "token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+  } catch {}
+  saveAuthToken(null); // إزالة التوكن المخزن دائماً - أساسي لفصل الحسابات
+  bindAgent(null);
+  window.location.reload();
 };
 
 document.getElementById("delete-account-btn").onclick = async () => {
@@ -5152,50 +5973,114 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // ربط القوائم المنسدلة المخصصة (Custom Select) لأنواع الأوامر
 function setupCustomSelects() {
-  document.querySelectorAll('.custom-select .selected').forEach(selected => {
-    selected.removeEventListener('click', handleSelectClick);
-    selected.addEventListener('click', handleSelectClick);
+  document.querySelectorAll(".custom-select .selected").forEach((selected) => {
+    selected.removeEventListener("click", handleSelectClick);
+    selected.addEventListener("click", handleSelectClick);
   });
 
-  document.querySelectorAll('.custom-select .options li').forEach(li => {
-    li.removeEventListener('click', handleOptionClick);
-    li.addEventListener('click', handleOptionClick);
+  document.querySelectorAll(".custom-select .options li").forEach((li) => {
+    li.removeEventListener("click", handleOptionClick);
+    li.addEventListener("click", handleOptionClick);
   });
 
   // إغلاق القائمة عند النقر خارجها
-  document.removeEventListener('click', closeCustomSelects);
-  document.addEventListener('click', closeCustomSelects);
+  document.removeEventListener("click", closeCustomSelects);
+  document.addEventListener("click", closeCustomSelects);
 }
 
 function handleSelectClick(e) {
   e.stopPropagation();
-  const parent = this.closest('.custom-select');
+  const parent = this.closest(".custom-select");
   if (parent) {
-    parent.classList.toggle('open');
+    parent.classList.toggle("open");
   }
 }
 
 function handleOptionClick(e) {
-  const parent = this.closest('.custom-select');
+  const parent = this.closest(".custom-select");
   if (parent) {
-    const selectedSpan = parent.querySelector('.selected span');
+    const selectedSpan = parent.querySelector(".selected span");
     if (selectedSpan) {
       selectedSpan.textContent = this.textContent;
     }
-    const hiddenInput = document.getElementById('actionType');
+    const hiddenInput = document.getElementById("actionType");
     if (hiddenInput) {
       hiddenInput.value = this.dataset.value;
     }
     // تحديث حقول الإدخال حسب النوع
     updateInputsForType(this.dataset.value);
-    parent.classList.remove('open');
+    parent.classList.remove("open");
   }
 }
 
 function closeCustomSelects(e) {
-  document.querySelectorAll('.custom-select.open').forEach(el => {
+  document.querySelectorAll(".custom-select.open").forEach((el) => {
     if (!el.contains(e.target)) {
-      el.classList.remove('open');
+      el.classList.remove("open");
     }
   });
 }
+
+// ============================================================
+// دالة تنقية روابط الصور - منع XSS عبر javascript: و data:text/html
+// ============================================================
+function safeImageUrl(url) {
+  if (!url) return "";
+  const trimmed = String(url).trim();
+  // السماح فقط بروابط http/https أو data:image (صور base64)
+  if (/^(https?:\/\/|data:image\/)/i.test(trimmed)) {
+    return trimmed;
+  }
+  // رفض أي رابط آخر (javascript:, vbscript:, data:text/html, etc.)
+  console.warn("⚠️ تم رفض رابط صورة غير آمن:", trimmed.substring(0, 50));
+  return "images/default.jpg"; // رابط افتراضي آمن
+}
+
+// ============================================================
+// دالة تنقية روابط الصوت والفيديو - منع XSS عبر Audio/Video
+// ============================================================
+function safeMediaUrl(url, type = "audio") {
+  if (!url) return "";
+  const trimmed = String(url).trim();
+
+  // السماح بمسارات /audios/ و /videos/ الخاصة بالتطبيق
+  if (type === "audio" && trimmed.startsWith("/audios/")) {
+    return API_BASE + trimmed;
+  }
+  if (type === "video" && trimmed.startsWith("/videos/")) {
+    return API_BASE + trimmed;
+  }
+
+  // السماح بروابط http/https فقط
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  console.warn(`⚠️ تم رفض رابط ${type} غير آمن:`, trimmed.substring(0, 50));
+  return "";
+}
+
+// ============================================================
+// تصدير الدوال المستخدمة في onclick داخل HTML إلى النطاق العام
+// (بعد التحويل للـ bytecode أصبح الكود يعمل كـ module وليس script)
+// ============================================================
+[
+  showAddCard,
+  hideAddCard,
+  confirmAdd,
+  checkForChangesAndClose,
+  clearAudio,
+  clearVideo,
+  closeModal,
+  deleteAll,
+  confirmDeleteAll,
+  confirmDisconnect,
+  closeDisconnectModal,
+  closeKeyboardShortcutModal,
+  moveRowUp,
+  moveRowDown,
+  showMessage,
+  typeof loadOverlayTab !== "undefined" ? loadOverlayTab : null,
+].forEach((fn) => {
+  if (typeof fn === "function") window[fn.name] = fn;
+});
