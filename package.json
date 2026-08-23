@@ -1,0 +1,78 @@
+{
+  "name": "StreamMoon",
+  "version": "2.0.1",
+  "description": "Stream Moon - TikTok LIVE Controller",
+  "main": "boot.js",
+  "scripts": {
+    "start": "electron .",
+    "compile": "electron scripts/compile.js",
+    "dist": "npm run compile && node scripts/encrypt.js && electron-builder",
+    "dist:portable": "npm run compile && electron-packager . StreamMoon --platform=win32 --arch=x64 --out=release-build --overwrite --icon=icon.ico"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@electron/fuses": "^2.1.3",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.13.3",
+    "electron-packager": "^17.1.2"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "bytenode": "^1.6.0",
+    "electron-updater": "^6.8.9",
+    "express": "^4.18.2",
+    "robotjs": "^0.9.1",
+    "socket.io-client": "^4.7.1",
+    "uiohook-napi": "^1.5.5",
+    "winston": "^3.11.0"
+  },
+  "build": {
+    "appId": "com.streammoon.app",
+    "productName": "StreamMoon",
+    "forceCodeSigning": false,
+    "directories": {
+      "output": "build"
+    },
+    "files": [
+      "boot.js",
+      "electron-main.jsc",
+      "main.jsc",
+      "preload.js",
+      "preload.jsc",
+      "res-key.jsc",
+      "enc/**/*",
+      "vendor/webfonts/**/*",
+      "images/**/*",
+      "favicon_io/**/*",
+      "resources/**/*"
+    ],
+    "afterPack": "./scripts/fuses.js",
+    "win": {
+      "target": "nsis",
+      "executableName": "StreamMoon",
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "publisherName": "StreamMoon",
+      "icon": "icon.ico",
+      "verifyUpdateCodeSignature": false
+    },
+    "nsis": {
+      "guid": "a8f3b2e1-4c5d-6e7f-8a9b-0c1d2e3f4a5b",
+      "perMachine": false,
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "StreamMoon",
+      "uninstallDisplayName": "StreamMoon"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "captenblank1",
+        "repo": "Stream-Moon-Program"
+      }
+    ]
+  }
+}
