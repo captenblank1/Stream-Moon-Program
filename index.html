@@ -1,0 +1,2308 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' https:; connect-src 'self' https: wss:; object-src 'none'; frame-src 'self' http: https:; base-uri 'none'"
+    />
+    <meta
+      name="description"
+      content="Stream Moon - منصة تفاعل مع TikTok LIVE وماينكرافت، إدارة أوامر الهدايا والتفاعلات بسهولة."
+    />
+    <title>Stream Moon</title>
+    <link rel="stylesheet" href="css/normalize.css" />
+
+    <link rel="stylesheet" href="vendor/fontawesome/all.min.css" />
+    <link rel="stylesheet" href="css/style.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&family=Fredoka+One&family=Press+Start+2P&family=Orbitron:wght@900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap"
+      rel="stylesheet"
+      media="print"
+      onload="this.media = 'all'"
+    />
+
+    <script src="vendor/Sortable.min.js"></script>
+    <style>
+      @font-face {
+        font-family: "Open Sans";
+        font-display: swap;
+        src: local("Open Sans");
+      }
+      /* ===== تنسيق جدول Hotkey ===== */
+      #hotkeysListTable {
+        width: 100%;
+        border-collapse: collapse;
+        background: #1a1a1a;
+        border-radius: 8px;
+        overflow: hidden;
+        font-size: 14px;
+      }
+      #hotkeysListTable th {
+        background: #2a2a2a;
+        color: #1dd9e6e1;
+        padding: 12px 8px;
+        text-align: center;
+        border-bottom: 2px solid #333;
+      }
+      #hotkeysListTable td {
+        padding: 10px 8px;
+        border-bottom: 1px solid #333;
+        vertical-align: middle;
+        text-align: center;
+      }
+      #hotkeysListTable tr:hover {
+        background: #252525;
+      }
+      #hotkeysListTable .current-hotkey {
+        background: #1a2a2a;
+        border-left: 3px solid #1dd9e6e1;
+      }
+      #hotkeysListTable kbd {
+        background: #1e2a36;
+        padding: 4px 12px;
+        border-radius: 4px;
+        border: 1px solid #444;
+        font-family: monospace;
+        font-weight: bold;
+        color: #1dd9e6e1;
+      }
+      .hotkey-edit-btn {
+        padding: 4px 10px;
+        font-size: 12px;
+        background: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-right: 4px;
+        transition: all 0.3s ease;
+      }
+      .hotkey-edit-btn:hover {
+        background: #388e3c;
+        transform: scale(1.05);
+      }
+      .hotkey-delete-btn {
+        padding: 4px 10px;
+        font-size: 12px;
+        background: #f44336;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+      .hotkey-delete-btn:hover {
+        background: #d32f2f;
+        transform: scale(1.05);
+      }
+      .hotkey-toggle {
+        width: 20px;
+        height: 20px;
+        accent-color: #1dd9e6e1;
+        cursor: pointer;
+      }
+      /* ===== نهاية تنسيق Hotkey ===== */
+    </style>
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="favicon_io/apple-touch-icon.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="favicon_io/favicon-32x32.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="favicon_io/favicon-16x16.png"
+    />
+    <link rel="manifest" href="favicon_io/site.webmanifest" />
+  </head>
+  <body>
+    <!-- ===== شريط المصادقة ===== -->
+    <div class="auth-header">
+      <div id="auth-status"></div>
+      <div class="auth-buttons">
+        <button id="login-btn" class="btn btn-secondary">
+          <i class="fas fa-sign-in-alt"></i> تسجيل الدخول
+        </button>
+        <button id="register-btn" class="btn btn-secondary">
+          <i class="fas fa-user-plus"></i> إنشاء حساب
+        </button>
+        <button id="logout-btn" class="btn btn-secondary" style="display: none">
+          <i class="fas fa-sign-out-alt"></i> تسجيل الخروج
+        </button>
+        <button
+          id="delete-account-btn"
+          class="btn btn-danger"
+          style="display: none"
+        >
+          <i class="fas fa-trash-alt"></i> حذف الحساب
+        </button>
+        <button
+          id="delete-all-profile-btn"
+          class="btn btn-danger"
+          onclick="confirmDeleteAll()"
+        >
+          <i class="fas fa-trash"></i> حذف البروفايل
+        </button>
+        <div class="profile-actions">
+          <button
+            id="add-profile-btn"
+            class="btn btn-secondary"
+            title="استيراد أوامر من ملف JSON"
+          >
+            <i class="fas fa-upload"></i> اضافه البروفايل
+          </button>
+          <button
+            id="copy-profile-btn"
+            class="btn btn-secondary"
+            title="تصدير الأوامر إلى ملف JSON"
+          >
+            <i class="fas fa-download"></i> نسخ البروفايل
+          </button>
+        </div>
+        <button id="upgrade-btn" class="btn btn-warning" style="display: none">
+          <i class="fas fa-crown"></i> اشتراك فى خطه
+        </button>
+      </div>
+    </div>
+
+    <div
+      id="subscription-notification"
+      class="notification-bar"
+      style="display: none"
+    ></div>
+    <div
+      id="storage-notification"
+      class="notification-bar storage-warning"
+      style="display: none"
+    ></div>
+
+    <!-- Login Modal -->
+    <div id="login-modal" class="modal">
+      <div class="modal-content">
+        <span class="close-modal" id="close-login">&times;</span>
+        <h2>تسجيل الدخول</h2>
+        <input type="email" id="login-email" placeholder="البريد الإلكتروني" />
+        <div style="position: relative">
+          <input
+            type="password"
+            id="login-password"
+            placeholder="كلمة المرور"
+            style="padding-right: 44px"
+          />
+          <span
+            id="login-password-toggle"
+            title="إظهار / إخفاء كلمة المرور"
+            style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; user-select: none; font-size: 16px;"
+            >👁</span
+          >
+        </div>
+        <button id="login-submit" class="btn btn-primary btn-block">
+          دخول
+        </button>
+        <p id="login-message" style="color: #ff6b6b; margin-top: 10px"></p>
+      </div>
+    </div>
+    <div id="register-modal" class="modal">
+      <div class="modal-content">
+        <span class="close-modal" id="close-register">&times;</span>
+        <h2>إنشاء حساب جديد</h2>
+        <input
+          type="email"
+          id="register-email"
+          placeholder="البريد الإلكتروني"
+        />
+        <div style="position: relative; margin-top: 10px">
+          <input
+            type="password"
+            id="register-password"
+            placeholder="كلمة المرور"
+            style="padding-right: 44px"
+          />
+        <span
+          id="register-password-toggle"
+          title="إظهار / إخفاء كلمة المرور"
+          style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; user-select: none; font-size: 16px;"
+          >👁</span
+        >
+        </div>
+        <input
+          type="password"
+          id="register-confirm-password"
+          placeholder="تأكيد كلمة المرور"
+          style="margin-top: 10px"
+        />
+        <button id="register-submit" class="btn btn-primary btn-block">
+          تسجيل
+        </button>
+        <p id="register-message" style="color: #ff6b6b; margin-top: 10px"></p>
+      </div>
+    </div>
+    <div id="paymentModal" class="modal" style="display: none">
+      <div class="modal-content" style="max-width: 750px; width: 95%">
+        <span class="close-modal" id="close-payment">&times;</span>
+        <h2>اختر خطة الاشتراك</h2>
+        <div
+          class="plans-container"
+          style="display: flex; gap: 20px; margin: 20px 0"
+        >
+          <div
+            class="plan-card"
+            data-plan="monthly"
+            data-plan-id="P-898771483X2672024NHABVBA"
+            style="
+              flex: 1;
+              background: #1e1e1e;
+              padding: 15px;
+              border-radius: 12px;
+              text-align: center;
+              border: 2px solid #333;
+            "
+          >
+            <h3 style="color: #1dd9e6e1">شهري</h3>
+            <div style="font-size: 28px; font-weight: bold">$10</div>
+            <div>لمدة 30 يوم</div>
+            <div
+              style="
+                margin-top: 10px;
+                font-size: 12px;
+                color: #aaa;
+                text-align: center;
+              "
+            >
+              ✅ جميع المزايا<br />✅ لا حد للأوامر<br />✅ جميع البروفايلات<br />✅
+              أولوية الدعم
+            </div>
+          </div>
+          <div
+            class="plan-card"
+            data-plan="yearly"
+            data-plan-id="P-8KC35364B18105910NHABXQY"
+            style="
+              flex: 1;
+              background: #1e1e1e;
+              padding: 15px;
+              border-radius: 12px;
+              text-align: center;
+              border: 2px solid #333;
+            "
+          >
+            <h3 style="color: #ff9800">سنوي</h3>
+            <div style="font-size: 28px; font-weight: bold">$90</div>
+            <div>توفير 30%</div>
+            <div
+              style="
+                margin-top: 10px;
+                font-size: 12px;
+                color: #aaa;
+                text-align: center;
+              "
+            >
+              ✅ جميع المزايا<br />✅ لا حد للأوامر<br />✅ جميع البروفايلات<br />✅
+              أولوية الدعم<br />✅ خصم 30%
+            </div>
+          </div>
+        </div>
+        <div id="paypal-button-container"></div>
+        <div
+          id="payment-message"
+          style="margin-top: 10px; color: #ff6b6b; text-align: center"
+        ></div>
+      </div>
+    </div>
+
+    <!-- ===== القائمة الجانبية ===== -->
+    <aside>
+      <div class="logo after"><h1>Stream Moon</h1></div>
+      <div class="connected-profile after">
+        <img
+          id="liveOwnerImg2"
+          src="images/img1.jpg"
+          loading="lazy"
+          alt="صورة البروفايل"
+        />
+        <div class="text">
+          <h2 id="tiktok-display">username</h2>
+          <p id="connect-text">Disconnected</p>
+        </div>
+        <div id="connect-profile-aside"></div>
+      </div>
+      <div class="all button-select-slide"><p>All</p></div>
+      <div class="start button-select-slide"><p>Start</p></div>
+      <div class="action button-select-slide"><p>Action</p></div>
+      <div class="screens button-select-slide"><p>Screens</p></div>
+      <div class="hotkey button-select-slide"><p>Hotkey</p></div>
+      <div class="overlays button-select-slide"><p>Overlays</p></div>
+      <div class="admin button-select-slide" style="display: none">
+        <p>Admin</p>
+      </div>
+    </aside>
+
+    <!-- ===== المحتوى الرئيسي ===== -->
+    <div class="start-section section-css">
+      <div class="account">
+        <img
+          id="liveOwnerImg1"
+          loading="lazy"
+          src="images/img1.jpg"
+          alt="صورة الحساب"
+        />
+        <p id="liveOwnerText">Stream Moon</p>
+        <div class="text">
+          <p>Your TikTok Username <span>(Required!)</span></p>
+          <input id="user-tiktok" type="text" placeholder="@Username TikTok" />
+        </div>
+        <button
+          type="button"
+          id="send-usertik"
+          class="btn btn-primary btn-block"
+        >
+          Connect to TikTok LIVE
+        </button>
+        <p id="result"></p>
+      </div>
+      <div class="minecraft-properties">
+        <input id="player-name" type="text" placeholder="Player Name" />
+        <input id="player-ip" type="text" placeholder="IP" />
+        <input id="player-port" type="text" placeholder="Port" />
+        <input id="player-password" type="text" placeholder="Password" />
+        <button
+          type="button"
+          id="send-minecraft-properties"
+          class="btn btn-primary btn-block"
+        >
+          Send
+        </button>
+        <p
+          id="plugin-status"
+          style="font-size: 0.8rem; margin: 6px 0 0; display: none"
+        ></p>
+        <div id="plugin-pair-area" style="display: none">
+          <input
+            id="plugin-pair-code"
+            type="text"
+            inputmode="numeric"
+            maxlength="6"
+            placeholder="كود البلوجن من كونسول الماينكرافت"
+          />
+          <button
+            type="button"
+            id="plugin-pair-btn"
+            class="btn btn-primary btn-block"
+          >
+            🔗 ربط البلوجن بحسابي
+          </button>
+        </div>
+        <p id="result2"></p>
+      </div>
+    </div>
+
+    <div class="start-section-2 section-css">
+      <main>
+        <div
+          style="display: flex; gap: 15px; flex-wrap: wrap; align-items: center"
+        >
+          <div
+            id="select-profile"
+            class="action-select profile-select"
+            aria-haspopup="listbox"
+            aria-expanded="false"
+          >
+            <div
+              class="selected"
+              tabindex="0"
+              role="button"
+              aria-controls="profile-options"
+              aria-label="Select profile"
+            >
+              <span class="label">Profile:</span
+              ><span id="current-profile-name-display"></span>
+            </div>
+            <ul
+              id="profile-options"
+              class="options"
+              role="listbox"
+              aria-labelledby="current-profile-label"
+            ></ul>
+            <span id="current-profile-label" style="display: none"
+              >Profile 1</span
+            >
+          </div>
+          <button class="add-btn btn btn-primary" onclick="showAddCard()">
+            Create Action
+          </button>
+        </div>
+        <div id="commandLimitWarning" class="command-limit-warning">
+          ⚠️ لقد وصلت للحد الأقصى للأوامر (7) في النسخة المجانية. قم بالترقية
+          لإضافة المزيد.
+        </div>
+        <div
+          class="storage-status"
+          style="margin: 10px 0; display: flex; gap: 20px; flex-wrap: wrap"
+        >
+          <div
+            id="audio-storage"
+            style="
+              flex: 1;
+              background: #1e1e1e;
+              padding: 10px;
+              border-radius: 8px;
+            "
+          >
+            <h4>🎵 مساحة الصوت</h4>
+            <progress
+              id="audio-progress"
+              value="0"
+              max="50"
+              style="width: 100%; height: 20px"
+            ></progress>
+            <span id="audio-storage-text">0 / 50 ميجا</span>
+          </div>
+          <div
+            id="video-storage"
+            style="
+              flex: 1;
+              background: #1e1e1e;
+              padding: 10px;
+              border-radius: 8px;
+            "
+          >
+            <h4>🎬 مساحة الفيديو</h4>
+            <progress
+              id="video-progress"
+              value="0"
+              max="500"
+              style="width: 100%; height: 20px"
+            ></progress>
+            <span id="video-storage-text">0 / 500 ميجا</span>
+          </div>
+        </div>
+
+        <div class="card" id="addCard" style="display: none">
+          <input
+            type="text"
+            id="actionName"
+            placeholder="Name Action"
+            required
+          />
+          <div class="custom-select action-select">
+            <div class="selected"><span>🎁 Gift</span></div>
+            <ul class="options">
+              <li data-value="gift">🎁 Gift</li>
+              <li data-value="follow">Follow</li>
+              <li data-value="like">Like</li>
+              <li data-value="comment">Comment</li>
+              <li data-value="share">Share</li>
+            </ul>
+          </div>
+          <input type="hidden" id="actionType" value="gift" />
+          <div class="stylenone">
+            <div id="giftChooserSection">
+              <div id="giftDropdown" class="gift-dropdown">
+                <div class="selected">Choose a gift...</div>
+                <div class="options"></div>
+              </div>
+              <input type="hidden" id="giftSelect" />
+              <input type="hidden" id="giftName" />
+            </div>
+          </div>
+          <div class="webhook-field">
+            <label for="webhookUrl"
+              >Webhook URL يمكنك وضع عدة روابط في سطور منفصلة مع دعم or و
+              delay</label
+            >
+            <textarea
+              id="webhookUrl"
+              placeholder="https://example.com/webhook"
+              rows="4"
+              style="
+                width: 100%;
+                padding: 8px;
+                border-radius: 6px;
+                background: #1e1e1e;
+                color: #fff;
+                border: 1px solid #444;
+                resize: vertical;
+              "
+            ></textarea>
+          </div>
+          <label style="text-align: center" for="keyword"
+            >Write a comment to execute the command or leave the field blank for
+            all comments.</label
+          >
+          <input
+            type="text"
+            id="keyword"
+            placeholder="Write a comment, for example: Game name"
+          />
+          <label for="threshold">Number of likes</label>
+          <input type="number" id="threshold" placeholder="0" value="0" />
+          <label for="targetUser">Enter a username or leave it as all</label>
+          <input
+            type="text"
+            id="targetUser"
+            placeholder="مثال: all أو username"
+            value="all"
+          />
+          <label for="command"
+            >يمكنك وضع عدة اوامر في سطور منفصلة مع دعم or و delay</label
+          >
+          <textarea
+            id="command"
+            placeholder="/Command (ضع أمرًا في كل سطر)"
+            rows="3"
+          ></textarea>
+          <div style="margin-top: 8px; margin-bottom: 12px">
+            <div style="display: flex; gap: 8px; align-items: center">
+              <button
+                type="button"
+                id="openKeyboardShortcutBtn"
+                class="btn btn-secondary"
+                style="flex: 1"
+              >
+                <i class="fas fa-keyboard"></i> تعيين زر كيبورد
+              </button>
+              <span
+                id="shortcutDisplay"
+                style="
+                  background: #1e2a36;
+                  padding: 8px 16px;
+                  border-radius: 8px;
+                  font-family: monospace;
+                  color: #1dd9e6e1;
+                  min-width: 120px;
+                  text-align: center;
+                "
+                >لم يتم التعيين</span
+              >
+              <button
+                type="button"
+                id="clearShortcutBtn"
+                style="
+                  display: none;
+                  background: none;
+                  border: none;
+                  color: #ff4444;
+                  font-size: 20px;
+                  cursor: pointer;
+                  padding: 0 4px;
+                  line-height: 1;
+                "
+                title="إلغاء الاختصار"
+              >
+                <i class="fas fa-times-circle"></i>
+              </button>
+            </div>
+          </div>
+          <input type="hidden" id="shortcutData" value="" />
+          <label for="repeat">Count</label>
+          <input type="number" id="repeat" placeholder="1" value="1" />
+          <label for="interval">interval (ms)</label>
+          <input
+            type="number"
+            id="interval"
+            placeholder="الفاصل بالمللي ثانية"
+            value="100"
+          />
+          <label for="delayBefore">delay Before (ms)</label>
+          <input
+            type="number"
+            id="delayBefore"
+            placeholder="التأخير قبل التنفيذ"
+            value="0"
+          />
+          <input type="checkbox" id="oncePerLive" /><label for="oncePerLive"
+            >One-time execution in live</label
+          >
+          <div class="audio-section">
+            <h4>Choose a voice</h4>
+            <div id="audioDropdown" class="gift-dropdown">
+              <div class="selected">اختر صوت...</div>
+              <div class="options"></div>
+            </div>
+            <input type="hidden" id="audioSelect" />
+            <button
+              type="button"
+              class="btn btn-danger btn-sm"
+              onclick="clearAudio()"
+            >
+              🗑️ إزالة الصوت
+            </button>
+            <div style="margin-top: 5px">
+              <input
+                type="file"
+                id="audioUploadInput"
+                accept="audio/*"
+                style="display: none"
+              />
+              <button
+                type="button"
+                class="btn btn-secondary btn-sm"
+                onclick="document.getElementById('audioUploadInput').click()"
+              >
+                📁 رفع صوت من الكمبيوتر
+              </button>
+            </div>
+            <div
+              id="audioProgressContainer"
+              class="progress-container"
+              style="display: none"
+            >
+              <progress id="audioProgress" value="0" max="100"></progress>
+              <span id="audioProgressPercent" class="progress-percent">0%</span>
+            </div>
+          </div>
+          <label for="volume">Sound Volume</label>
+          <input
+            style="border: none"
+            type="range"
+            id="volume"
+            min="0"
+            max="100"
+            step="1"
+            value="100"
+            oninput="
+              document.getElementById('volumeValue').textContent = this.value
+            "
+          />
+          <span id="volumeValue">100</span>
+          <div class="video-section">
+            <label class="custom-upload" for="videoInput">🎬 Select File</label>
+            <input type="file" id="videoInput" accept="video/*" />
+            <div id="videoPreview"></div>
+            <input type="hidden" id="video" />
+            <button
+              type="button"
+              class="btn btn-danger btn-sm"
+              onclick="clearVideo()"
+            >
+              🗑️ إزالة الفيديو
+            </button>
+            <span
+              id="videoFileName"
+              style="margin-left: 10px; color: #aaa"
+            ></span>
+            <div
+              id="videoProgressContainer"
+              class="progress-container"
+              style="display: none"
+            >
+              <progress id="videoProgress" value="0" max="100"></progress>
+              <span id="videoProgressPercent" class="progress-percent">0%</span>
+            </div>
+            <label for="videoVolume">Video Volume</label>
+            <input
+              type="range"
+              id="videoVolume"
+              min="0"
+              max="100"
+              step="1"
+              value="100"
+              oninput="
+                document.getElementById('videoVolumeValue').textContent =
+                  this.value
+              "
+            />
+            <span id="videoVolumeValue">100</span>
+          </div>
+          <label for="screen">Screens</label>
+          <input type="number" id="screen" placeholder="رقم الشاشة" value="1" />
+          <div class="form-group">
+            <label
+              ><input type="checkbox" id="showOverlayCheckbox" /> إظهار تراكب
+              على الشاشة</label
+            >
+          </div>
+          <div class="form-group" id="overlayTextGroup" style="display: none">
+            <label for="overlayTextInput">نص التراكب</label>
+            <input
+              type="text"
+              id="overlayTextInput"
+              placeholder="النص الذي سيظهر تحت اسم الداعم"
+            />
+          </div>
+          <div class="form-group">
+            <label for="durationInput">Display duration (seconds)</label>
+            <input
+              type="number"
+              id="durationInput"
+              value="5"
+              min="1"
+              max="60"
+              step="1"
+            />
+          </div>
+          <div class="actions">
+            <button
+              class="confirm-btn btn btn-primary"
+              type="button"
+              onclick="confirmAdd(event)"
+            >
+              Save
+            </button>
+            <button
+              class="cancel-btn btn btn-secondary"
+              onclick="checkForChangesAndClose()"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+
+
+        <table class="commands-table">
+            <tr>
+              <th style="width: 3%">☰</th>
+              <th style="width: 4%">Active</th>
+              <th style="width: 5%">Options</th>
+              <th style="width: 15%">Name</th>
+              <th style="width: 25%">Command</th>
+              <th style="width: 7%">Screen</th>
+              <th style="width: 7%">Count</th>
+              <th style="width: 7%">Interval</th>
+              <th style="width: 9%">Delay</th>
+              <th style="width: 3%">Sound</th>
+              <th style="width: 3%">Video</th>
+              <th style="width: 2%">Vol</th>
+              <th style="width: 2%">V.Vol</th>
+              <th style="width: 5%">Interaction</th>
+            </tr>
+          </thead>
+          <tbody id="commandsTable"></tbody>
+        </table>
+      </main>
+      <div id="message"></div>
+
+      <div class="modal" id="deleteModal">
+        <div class="modal-content">
+          <p>هل تريد حذف كل الأوامر؟</p>
+          <button class="btn btn-danger" onclick="deleteAll()">نعم</button>
+          <button class="btn btn-secondary" onclick="closeModal()">
+            إلغاء
+          </button>
+        </div>
+      </div>
+      <div class="modal" id="disconnectModal">
+        <div class="modal-content">
+          <p id="disconnectMessage">هل تريد قطع الاتصال بالبث المباشر؟</p>
+          <button class="btn btn-danger" onclick="confirmDisconnect()">
+            نعم
+          </button>
+          <button class="btn btn-secondary" onclick="closeDisconnectModal()">
+            إلغاء
+          </button>
+        </div>
+      </div>
+      <div class="modal" id="commandSelectionModal">
+        <div
+          class="modal-content command-table-modal"
+          style="display: flex; flex-direction: column; overflow: hidden"
+        >
+          <span class="close-modal" id="close-command-modal">&times;</span>
+          <h2 id="commandModalTitle">اختر الأوامر</h2>
+          <div
+            style="
+              display: flex;
+              gap: 10px;
+              align-items: center;
+              margin: 10px 0;
+              flex-wrap: wrap;
+            "
+          >
+            <label style="display: flex; align-items: center; gap: 5px">
+              <input type="checkbox" id="select-all-commands" />
+              <span style="cursor: pointer" id="select-all-label"
+                >تحديد الكل</span
+              >
+            </label>
+            <label
+              id="copyTargetWrap"
+              style="display: none; align-items: center; gap: 5px"
+            >
+              <span>الوجهة:</span>
+              <select
+                id="copyTargetProfile"
+                style="
+                  padding: 4px 8px;
+                  background: #1a1a1a;
+                  color: #fff;
+                  border: 1px solid #444;
+                  border-radius: 6px;
+                "
+              ></select>
+            </label>
+            <div style="flex: 1"></div>
+            <button id="confirmCommandAction" class="btn btn-primary">
+              تأكيد
+            </button>
+            <button id="cancelCommandAction" class="btn btn-secondary">
+              إلغاء
+            </button>
+          </div>
+          <div
+            style="
+              flex: 1;
+              overflow-y: auto;
+              border: 1px solid #444;
+              background: #1a1a1a;
+            "
+          >
+            <table class="command-table" id="commandSelectionTable">
+              <thead>
+                <tr>
+                  <th style="width: 30px">اختيار</th>
+                  <th style="width: 15%">الاسم</th>
+                  <th>الامر</th>
+                  <th style="width: 7%">الشاشة</th>
+                  <th style="width: 7%">التكرار</th>
+                  <th style="width: 7%">الفاصل</th>
+                  <th style="width: 9%">تأخير</th>
+                  <th style="width: 5%">صوت</th>
+                  <th style="width: 5%">فيديو</th>
+                  <th style="width: 5%">صوت الفيديو</th>
+                </tr>
+              </thead>
+              <tbody id="commandSelectionTableBody"></tbody>
+            </table>
+          </div>
+          <div
+            id="duplicateCommandsArea"
+            style="margin-top: 10px; overflow-y: auto; display: none"
+          >
+            <h3 style="color: #ff9800">أوامر هدايا مكررة - اختر الاستبدال</h3>
+            <table class="command-table" id="duplicateTable">
+              <thead>
+                <tr>
+                  <th style="width: 30px">استبدال</th>
+                  <th style="width: 15%">الاسم</th>
+                  <th>الأمر / Webhook</th>
+                  <th style="width: 7%">الشاشة</th>
+                  <th style="width: 7%">التكرار</th>
+                  <th style="width: 7%">الفاصل</th>
+                  <th style="width: 9%">تأخير</th>
+                  <th style="width: 5%">صوت</th>
+                  <th style="width: 5%">فيديو</th>
+                  <th style="width: 5%">صوت الفيديو</th>
+                </tr>
+              </thead>
+              <tbody id="duplicateTableBody"></tbody>
+            </table>
+            <div style="margin-top: 5px"></div>
+          </div>
+          <div
+            id="hotkeysSelectionArea"
+            style="margin-top: 10px; overflow-y: auto; display: none"
+          >
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-bottom: 5px;
+              "
+            >
+              <h3 style="color: #1dd9e6" id="hotkeysAreaTitle">
+                اختصارات البروفايل
+              </h3>
+              <label style="display: flex; align-items: center; gap: 5px">
+                <input type="checkbox" id="select-all-hotkeys" />
+                <span style="cursor: pointer" id="select-all-hotkeys-label"
+                  >تحديد الكل</span
+                >
+              </label>
+            </div>
+            <table class="command-table" id="hotkeysSelectionTable">
+              <thead>
+                <tr>
+                  <th style="width: 40px" id="hotkeySelectTh">اختيار</th>
+                  <th style="width: 20%">المفتاح</th>
+                  <th>الأمر</th>
+                  <th style="width: 12%">النوع</th>
+                  <th style="width: 10%">الحالة</th>
+                </tr>
+              </thead>
+              <tbody id="hotkeysSelectionTbody"></tbody>
+            </table>
+            <div style="margin-top: 5px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="start-section-3 section-css"
+      id="startSection3"
+      style="display: none"
+    >
+      <div class="screens-header">
+        <h2><i class="fas fa-tv"></i> شاشات OBS الخاصة بك</h2>
+        <p>استخدم الروابط التالية كمصدر متصفح (Browser Source) في OBS</p>
+      </div>
+      <div id="screensContainer" class="screens-container">
+        <div class="loading-screens">جاري تحميل الروابط...</div>
+      </div>
+      <div class="obs-instructions">
+        <h3>📌 تعليمات الإضافة في OBS:</h3>
+        <ul>
+          <li>أضف مصدر جديد من نوع <strong>متصفح (Browser)</strong></li>
+          <li>الصق أي رابط من الروابط أعلاه</li>
+          <li>
+            اضبط العرض: <strong>1920</strong> والارتفاع: <strong>1080</strong>
+          </li>
+          <li>
+            فعّل خيار <strong>"استخدام معدل إطارات مخصص"</strong> = 60
+            إطار/ثانية
+          </li>
+          <li>ستظهر الشاشة شفافة وتعرض محتوى الفيديو والصوت تلقائياً</li>
+        </ul>
+      </div>
+    </div>
+
+    <div
+      class="start-section-4 section-css"
+      id="startSection4"
+      style="display: none"
+    >
+      <div class="dashboard-header">
+        <h2><i class="fas fa-chart-line"></i> لوحة التحكم - المشرف</h2>
+        <p>إحصائيات النظام وإدارة المستخدمين</p>
+      </div>
+      <div id="adminDashboardContainer">
+        <div class="loading-dashboard">⏳ جاري تحميل البيانات...</div>
+      </div>
+    </div>
+
+    <div
+      class="start-section-5 section-css"
+      id="startSection5"
+      style="display: none"
+    >
+      <div class="overlays-header">
+        <div
+          style="
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+          "
+        >
+          <h2 style="margin: 0">
+            <i class="fas fa-layer-group"></i> لوحات الـ Overlay
+          </h2>
+          <div
+            style="
+              display: flex;
+              gap: 8px;
+              background: #1e1e1e;
+              padding: 4px;
+              border-radius: 8px;
+            "
+          >
+            <button
+              class="overlay-tab-btn active"
+              data-tab="main"
+              style="
+                padding: 8px 18px;
+                border: none;
+                border-radius: 6px;
+                background: #1dd9e6e1;
+                color: #000;
+                cursor: pointer;
+                font-weight: bold;
+              "
+            >
+              🏆 قائمة الأساطير
+            </button>
+            <button
+              class="overlay-tab-btn"
+              data-tab="wins"
+              style="
+                padding: 8px 18px;
+                border: none;
+                border-radius: 6px;
+                background: transparent;
+                color: #aaa;
+                cursor: pointer;
+                font-weight: bold;
+              "
+            >
+              🏆 عداد الفوز/الخسارة
+            </button>
+          </div>
+        </div>
+      </div>
+      <!-- لوحة قوائم الأوفرلاى الأصلية (بدون حقن خارجي) -->
+      <div
+        id="listsPanelNative"
+        dir="rtl"
+        style="display: none; width: 100%; background: #12131c; border-radius: 16px; padding: 20px; font-family: 'Cairo', 'Open Sans', sans-serif"
+      >
+        <h2 style="margin: 0 0 16px; color: #1dd9e6; font-size: 1.3rem">
+          🎛️ لوحة تحكم الـ Overlays
+        </h2>
+        <div class="sml-grid" id="smlGrid">
+          <div class="sml-panel">
+            <h3>🎮 القائمة الأولى</h3>
+            <div class="sml-linkbox">
+              <label>🔗 رابط OBS:</label>
+              <span class="sml-url" id="smlLink1">تحميل...</span>
+              <button class="sml-copy" data-overlay="1">📋 نسخ</button>
+            </div>
+            <label class="sml-label">العنوان</label>
+            <input type="text" id="smlTitle1" value="🏆 قائمة الأساطير" class="sml-input" />
+            <label class="sml-label">الأسماء (كل اسم في سطر)</label>
+            <textarea id="smlNames1" rows="4" placeholder="اكتب الأسماء..." class="sml-input"></textarea>
+            <label class="sml-label">تحديد التاج 👑</label>
+            <div class="sml-crowns" id="smlCrowns1"></div>
+            <label class="sml-label">الثيم</label>
+            <select id="smlTheme1" class="sml-input">
+              <option value="theme-neon">⚡ نيون سايبر</option>
+              <option value="theme-gold">👑 VIP ذهبي</option>
+              <option value="theme-purple">💜 بنفسجي</option>
+            </select>
+            <div style="display: flex; gap: 14px; margin-top: 10px; align-items: center">
+              <div style="display: flex; flex-direction: column; align-items: center">
+                <input type="color" id="smlGlow1" value="#00ffe1" />
+                <span class="sml-mini">التوهج</span>
+              </div>
+              <div style="display: flex; flex-direction: column; align-items: center">
+                <input type="color" id="smlBadge1" value="#ff0055" />
+                <span class="sml-mini">الأرقام</span>
+              </div>
+              <div style="flex: 1">
+                <span class="sml-mini">العرض (px)</span>
+                <input type="number" id="smlWidth1" value="285" min="100" max="600" class="sml-input" />
+              </div>
+              <div style="flex: 1">
+                <span class="sml-mini">الارتفاع (px)</span>
+                <input type="number" id="smlHeight1" value="500" min="200" max="1000" class="sml-input" />
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px; margin-top: 12px">
+              <button class="sml-reset" data-overlay="1">🗑️ مسح الأسماء</button>
+              <span class="sml-status" id="smlStatus1"></span>
+            </div>
+          </div>
+          <div class="sml-panel">
+            <h3>⭐ القائمة الثانية</h3>
+            <div class="sml-linkbox">
+              <label>🔗 رابط OBS:</label>
+              <span class="sml-url" id="smlLink2">تحميل...</span>
+              <button class="sml-copy" data-overlay="2">📋 نسخ</button>
+            </div>
+            <label class="sml-label">العنوان</label>
+            <input type="text" id="smlTitle2" value="🔥 كبار الداعمين" class="sml-input" />
+            <label class="sml-label">الأسماء (كل اسم في سطر)</label>
+            <textarea id="smlNames2" rows="4" placeholder="اكتب الأسماء..." class="sml-input"></textarea>
+            <label class="sml-label">تحديد التاج 👑</label>
+            <div class="sml-crowns" id="smlCrowns2"></div>
+            <label class="sml-label">الثيم</label>
+            <select id="smlTheme2" class="sml-input">
+              <option value="theme-gold">👑 VIP ذهبي</option>
+              <option value="theme-neon">⚡ نيون سايبر</option>
+              <option value="theme-purple">💜 بنفسجي</option>
+            </select>
+            <div style="display: flex; gap: 14px; margin-top: 10px; align-items: center">
+              <div style="display: flex; flex-direction: column; align-items: center">
+                <input type="color" id="smlGlow2" value="#ffcc00" />
+                <span class="sml-mini">التوهج</span>
+              </div>
+              <div style="display: flex; flex-direction: column; align-items: center">
+                <input type="color" id="smlBadge2" value="#a855f7" />
+                <span class="sml-mini">الأرقام</span>
+              </div>
+              <div style="flex: 1">
+                <span class="sml-mini">العرض (px)</span>
+                <input type="number" id="smlWidth2" value="285" min="100" max="600" class="sml-input" />
+              </div>
+              <div style="flex: 1">
+                <span class="sml-mini">الارتفاع (px)</span>
+                <input type="number" id="smlHeight2" value="500" min="200" max="1000" class="sml-input" />
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px; margin-top: 12px">
+              <button class="sml-reset" data-overlay="2">🗑️ مسح الأسماء</button>
+              <span class="sml-status" id="smlStatus2"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- لوحة العداد الأصلية (بدون حقن خارجي) -->
+      <div
+        id="winsPanelNative"
+        dir="rtl"
+        style="
+          display: none;
+          width: 100%;
+          font-family: 'Cairo', 'Open Sans', sans-serif;
+        "
+      >
+        <div
+          style="
+            display: grid;
+            grid-template-columns: 360px 1fr;
+            gap: 20px;
+            align-items: start;
+          "
+          class="smw-layout"
+        >
+          <div
+            style="
+              background: #12131c;
+              border: 1px solid #26283b;
+              border-radius: 16px;
+              padding: 20px;
+              display: flex;
+              flex-direction: column;
+              gap: 14px;
+            "
+          >
+            <div
+              style="
+                background: rgba(29, 217, 230, 0.06);
+                border: 1px dashed #1dd9e6;
+                border-radius: 10px;
+                padding: 10px 12px;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+              "
+            >
+              <label
+                style="
+                  font-size: 0.8rem;
+                  font-weight: 700;
+                  color: #a0a0c0;
+                "
+                >🔗 رابط OBS (الصقه في المتصفح داخل OBS):</label
+              >
+              <div style="display: flex; gap: 8px; align-items: center">
+                <input
+                  type="text"
+                  id="smwLinkUrl"
+                  readonly
+                  value="جاري تحميل الرابط..."
+                  onclick="this.select()"
+                  style="
+                    flex: 1;
+                    min-width: 0;
+                    padding: 8px 10px;
+                    background: #090a0f;
+                    border: 1px solid #26283b;
+                    border-radius: 8px;
+                    color: #1dd9e6;
+                    font-size: 0.72rem;
+                    font-family: monospace;
+                    direction: ltr;
+                    text-align: left;
+                  "
+                />
+                <button
+                  id="smwCopyLink"
+                  style="
+                    background: #1dd9e6;
+                    color: #000;
+                    padding: 9px 16px;
+                    border-radius: 8px;
+                    border: none;
+                    font-weight: 900;
+                    cursor: pointer;
+                    font-size: 0.85rem;
+                    white-space: nowrap;
+                  "
+                >
+                  📋 نسخ
+                </button>
+              </div>
+            </div>
+            <div
+              style="
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+              "
+            >
+              <div
+                style="
+                  background: #1b1d2a;
+                  padding: 12px;
+                  border-radius: 10px;
+                  text-align: center;
+                  border: 2px solid #10b981;
+                "
+              >
+                <input
+                  type="text"
+                  id="smwWinLabel"
+                  placeholder="اسم خانة الفوز"
+                  style="
+                    width: 100%;
+                    padding: 6px 10px;
+                    background: #090a0f;
+                    border: 1px solid #374151;
+                    border-radius: 8px;
+                    color: #fff;
+                    font-size: 0.85rem;
+                  "
+                />
+                <div
+                  id="smwWinVal"
+                  style="font-size: 1.8rem; font-weight: 900; margin: 8px 0"
+                >
+                  0
+                </div>
+                <div style="display: flex; gap: 4px">
+                  <button
+                    id="smwWinPlus"
+                    style="
+                      flex: 1;
+                      padding: 6px;
+                      border: none;
+                      border-radius: 6px;
+                      background: #10b981;
+                      color: #000;
+                      font-weight: bold;
+                      cursor: pointer;
+                    "
+                  >
+                    +
+                  </button>
+                  <button
+                    id="smwWinMinus"
+                    style="
+                      flex: 1;
+                      padding: 6px;
+                      border: none;
+                      border-radius: 6px;
+                      background: #374151;
+                      color: #fff;
+                      font-weight: bold;
+                      cursor: pointer;
+                    "
+                  >
+                    -
+                  </button>
+                </div>
+              </div>
+              <div
+                style="
+                  background: #1b1d2a;
+                  padding: 12px;
+                  border-radius: 10px;
+                  text-align: center;
+                  border: 2px solid #ef4444;
+                "
+              >
+                <input
+                  type="text"
+                  id="smwLossLabel"
+                  placeholder="اسم خانة الخسارة"
+                  style="
+                    width: 100%;
+                    padding: 6px 10px;
+                    background: #090a0f;
+                    border: 1px solid #374151;
+                    border-radius: 8px;
+                    color: #fff;
+                    font-size: 0.85rem;
+                  "
+                />
+                <div
+                  id="smwLossVal"
+                  style="font-size: 1.8rem; font-weight: 900; margin: 8px 0"
+                >
+                  0
+                </div>
+                <div style="display: flex; gap: 4px">
+                  <button
+                    id="smwLossPlus"
+                    style="
+                      flex: 1;
+                      padding: 6px;
+                      border: none;
+                      border-radius: 6px;
+                      background: #ef4444;
+                      color: #fff;
+                      font-weight: bold;
+                      cursor: pointer;
+                    "
+                  >
+                    +
+                  </button>
+                  <button
+                    id="smwLossMinus"
+                    style="
+                      flex: 1;
+                      padding: 6px;
+                      border: none;
+                      border-radius: 6px;
+                      background: #374151;
+                      color: #fff;
+                      font-weight: bold;
+                      cursor: pointer;
+                    "
+                  >
+                    -
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div>
+              <label
+                style="
+                  font-size: 0.85rem;
+                  color: #a0a0c0;
+                  display: block;
+                  margin-bottom: 4px;
+                "
+                >🎨 اختر الشكل:</label
+              >
+              <select
+                id="smwTheme"
+                style="
+                  width: 100%;
+                  padding: 8px 12px;
+                  background: #090a0f;
+                  border: 1px solid #374151;
+                  border-radius: 8px;
+                  color: #fff;
+                  font-size: 0.85rem;
+                "
+              >
+                <option value="pscontroller">🎮 إطار دراع بلايستيشن</option>
+                <option value="headset">🎧 إطار سماعة جيمنج</option>
+                <option value="shield">🛡️ إطار درع الحرب</option>
+                <option value="cyber">⚡ جيمنج نيون</option>
+                <option value="dragon">🐉 التنين الأحمر</option>
+                <option value="toxic">☣️ سام نيون</option>
+                <option value="mouse">🖱️ إطار ماوس جيمنج</option>
+                <option value="royale">👑 فخامة VIP</option>
+                <option value="fireice">🔥 نار وثلج</option>
+                <option value="arcade">👾 ريترو أركيد</option>
+                <option value="kitty">🐱 إطار القطة كيتي</option>
+                <option value="bunny">🐰 إطار الأرنب</option>
+                <option value="magicstar">✨ النجمة السحرية</option>
+                <option value="purpleneon">🔮 بنفسجي تويتش</option>
+                <option value="minimal">✨ مينيمال بسيط</option>
+              </select>
+            </div>
+            <div>
+              <label
+                style="
+                  font-size: 0.85rem;
+                  color: #a0a0c0;
+                  display: block;
+                  margin-bottom: 4px;
+                "
+                >📐 العرض (px):</label
+              >
+              <input
+                type="number"
+                id="smwWidth"
+                value="285"
+                min="100"
+                max="600"
+                style="
+                  width: 100%;
+                  padding: 8px 12px;
+                  background: #090a0f;
+                  border: 1px solid #374151;
+                  border-radius: 8px;
+                  color: #fff;
+                  font-size: 0.85rem;
+                "
+              />
+            </div>
+            <button
+              id="smwReset"
+              style="
+                background: #dc2626;
+                color: #fff;
+                padding: 8px;
+                border: none;
+                border-radius: 8px;
+                cursor: pointer;
+                font-weight: bold;
+              "
+            >
+              🗑️ تصفير العداد
+            </button>
+          </div>
+          <div
+            style="
+              background: #12131c;
+              border: 1px dashed #1dd9e6;
+              border-radius: 16px;
+              min-height: 320px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              position: relative;
+            "
+          >
+            <span
+              style="
+                position: absolute;
+                top: 10px;
+                right: 15px;
+                font-size: 0.8rem;
+                color: #1dd9e6;
+                background: rgba(0, 0, 0, 0.6);
+                padding: 2px 8px;
+                border-radius: 4px;
+              "
+              >👁️ معاينة حية</span
+            >
+            <div class="smw-box pscontroller" id="smwPreview">
+              <div class="smw-kitty-bow" id="smwKittyBow" style="display: none">🎀</div>
+              <div class="smw-item smw-w">
+                <span class="lbl" id="smwPrevWLabel">WIN</span>
+                <span id="smwPrevWNum">0</span>
+              </div>
+              <div class="smw-line"></div>
+              <div class="smw-item smw-l">
+                <span class="lbl" id="smwPrevLLabel">LOSE</span>
+                <span id="smwPrevLNum">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <style>
+      /* ستايلات لوحة قوائم الأوفرلاى — محصورة في بادئة sml- */
+      #listsPanelNative,
+      #listsPanelNative * {
+        box-sizing: border-box;
+        font-family: "Cairo", "Open Sans", sans-serif;
+        text-align: right;
+      }
+      #listsPanelNative .sml-url {
+        text-align: left;
+      }
+      .sml-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+      .sml-panel {
+        background: #1b1d2a;
+        border: 1px solid #26283b;
+        border-radius: 14px;
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .sml-panel h3 {
+        margin: 0 0 6px;
+        color: #1dd9e6;
+        font-size: 1.05rem;
+      }
+      .sml-linkbox {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        background: #090a0f;
+        border: 1px solid #26283b;
+        border-radius: 8px;
+        padding: 8px 10px;
+        margin-bottom: 6px;
+      }
+      .sml-url {
+        direction: ltr;
+        font-size: 0.75rem;
+        color: #1dd9e6;
+        word-break: break-all;
+        flex: 1;
+      }
+      .sml-copy,
+      .sml-reset {
+        padding: 6px 12px;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: bold;
+        font-size: 0.8rem;
+        color: #000;
+        background: #1dd9e6;
+      }
+      .sml-reset {
+        background: #dc2626;
+        color: #fff;
+      }
+      .sml-label {
+        font-size: 0.8rem;
+        color: #a0a0c0;
+        margin-top: 4px;
+      }
+      .sml-input {
+        width: 100%;
+        padding: 7px 10px;
+        background: #090a0f;
+        border: 1px solid #374151;
+        border-radius: 8px;
+        color: #fff;
+        font-size: 0.85rem;
+      }
+      .sml-mini {
+        font-size: 0.7rem;
+        color: #a0a0c0;
+      }
+      .sml-crowns {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        max-height: 110px;
+        overflow-y: auto;
+        background: #090a0f;
+        border: 1px solid #26283b;
+        border-radius: 8px;
+        padding: 8px;
+      }
+      .sml-crown-btn {
+        background: #1b1d2a;
+        border: 1px solid #374151;
+        color: #ccc;
+        border-radius: 20px;
+        padding: 4px 10px;
+        font-size: 0.78rem;
+        cursor: pointer;
+      }
+      .sml-crown-btn.active {
+        background: #ffd700;
+        color: #000;
+        border-color: #ffd700;
+        font-weight: bold;
+      }
+      .sml-status {
+        font-size: 0.78rem;
+        color: #4caf50;
+      }
+      @media (max-width: 900px) {
+        .sml-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+
+    <style>
+      /* ستايلات عداد الفوز/الخسارة — محصورة في بادئة smw- */
+      #winsPanelNative,
+      #winsPanelNative * {
+        box-sizing: border-box;
+        font-family: "Cairo", "Open Sans", sans-serif;
+      }
+      /* مطابق تماماً لصفحة OBS (wins.html) — نفس الأشكال والألوان والخطوط */
+      .smw-box {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        padding: 12px 28px;
+        border-radius: 50px;
+        position: relative;
+        transition: all 0.3s ease;
+        width: auto;
+        background: rgba(18, 24, 38, 0.95);
+        border: 3px solid #3b82f6;
+        box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+      }
+      .smw-box * {
+        font-size: 1.4rem !important;
+      }
+      .smw-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 1.4rem;
+        font-weight: 900;
+      }
+      .smw-line {
+        width: 2px;
+        height: 24px;
+        background: rgba(255, 255, 255, 0.2);
+      }
+      .smw-box .lbl {
+        font-size: 1.4rem;
+        font-weight: 900;
+      }
+      .pscontroller {
+        background: rgba(18, 24, 38, 0.95);
+        border: 3px solid #3b82f6;
+        border-radius: 40px 40px 20px 20px;
+        box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+        padding: 16px 36px;
+      }
+      .pscontroller::before {
+        content: "🎮";
+        position: absolute;
+        top: -16px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 1.2rem;
+        background: #3b82f6;
+        border-radius: 50%;
+        padding: 2px 6px;
+      }
+      .pscontroller .smw-w {
+        color: #60a5fa;
+        font-family: "Orbitron", sans-serif;
+      }
+      .pscontroller .smw-l {
+        color: #f43f5e;
+        font-family: "Orbitron", sans-serif;
+      }
+      .pscontroller .smw-line {
+        background: rgba(255, 255, 255, 0.2);
+      }
+      .headset {
+        background: rgba(15, 23, 42, 0.95);
+        border: 2px solid #10b981;
+        border-radius: 25px;
+        box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
+        margin-top: 10px;
+      }
+      .headset::before {
+        content: "";
+        position: absolute;
+        top: -14px;
+        left: 15px;
+        right: 15px;
+        height: 14px;
+        border: 3px solid #10b981;
+        border-bottom: none;
+        border-radius: 20px 20px 0 0;
+      }
+      .headset .smw-w {
+        color: #34d399;
+      }
+      .headset .smw-l {
+        color: #f87171;
+      }
+      .headset .smw-line {
+        background: rgba(255, 255, 255, 0.2);
+      }
+      .shield {
+        background: rgba(20, 20, 30, 0.95);
+        border: 3px solid #eab308;
+        border-radius: 10px 10px 40px 40px;
+        box-shadow: 0 0 15px rgba(234, 179, 8, 0.4);
+      }
+      .shield .smw-w {
+        color: #facc15;
+        font-family: "Orbitron", sans-serif;
+      }
+      .shield .smw-l {
+        color: #ef4444;
+        font-family: "Orbitron", sans-serif;
+      }
+      .shield .smw-line {
+        background: #eab308;
+      }
+      .cyber {
+        background: rgba(10, 15, 25, 0.92);
+        border: 2px solid #00ffe1;
+        box-shadow: 0 0 15px rgba(0, 255, 225, 0.4);
+      }
+      .cyber .smw-w {
+        color: #00ffe1;
+        text-shadow: 0 0 8px rgba(0, 255, 225, 0.6);
+      }
+      .cyber .smw-l {
+        color: #ff0055;
+        text-shadow: 0 0 8px rgba(255, 0, 85, 0.6);
+      }
+      .cyber .smw-line {
+        background: rgba(255, 255, 255, 0.2);
+      }
+      .dragon {
+        background: rgba(30, 10, 10, 0.95);
+        border: 2px solid #dc2626;
+        box-shadow: 0 0 18px rgba(220, 38, 38, 0.6);
+        border-radius: 15px 40px 15px 40px;
+      }
+      .dragon .smw-w {
+        color: #f87171;
+      }
+      .dragon .smw-l {
+        color: #fbbf24;
+      }
+      .dragon .smw-line {
+        background: #dc2626;
+      }
+      .toxic {
+        background: rgba(10, 25, 10, 0.95);
+        border: 2px solid #84cc16;
+        box-shadow: 0 0 15px rgba(132, 204, 22, 0.5);
+      }
+      .toxic .smw-w {
+        color: #a3e635;
+        text-shadow: 0 0 8px #a3e635;
+      }
+      .toxic .smw-l {
+        color: #f43f5e;
+      }
+      .toxic .smw-line {
+        background: #84cc16;
+      }
+      .mouse {
+        background: rgba(15, 15, 25, 0.95);
+        border: 2px solid #a855f7;
+        border-radius: 40px 40px 30px 30px;
+        box-shadow: 0 0 15px rgba(168, 85, 247, 0.4);
+      }
+      .mouse::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 2px;
+        height: 12px;
+        background: #a855f7;
+      }
+      .mouse .smw-w {
+        color: #c084fc;
+      }
+      .mouse .smw-l {
+        color: #f43f5e;
+      }
+      .mouse .smw-line {
+        background: rgba(255, 255, 255, 0.2);
+      }
+      .royale {
+        background: rgba(20, 16, 8, 0.95);
+        border: 2px solid #ffcc00;
+        box-shadow: 0 0 15px rgba(255, 204, 0, 0.3);
+      }
+      .royale .smw-w {
+        color: #ffcc00;
+        text-shadow: 0 0 8px rgba(255, 204, 0, 0.5);
+      }
+      .royale .smw-l {
+        color: #ef4444;
+      }
+      .royale .smw-line {
+        background: rgba(255, 204, 0, 0.3);
+      }
+      .fireice {
+        background: rgba(15, 15, 20, 0.9);
+        border: 2px solid #38bdf8;
+        box-shadow: 0 0 15px rgba(249, 115, 22, 0.4);
+      }
+      .fireice .smw-w {
+        color: #f97316;
+        text-shadow: 0 0 8px #f97316;
+      }
+      .fireice .smw-l {
+        color: #38bdf8;
+        text-shadow: 0 0 8px #38bdf8;
+      }
+      .fireice .smw-line {
+        background: rgba(255, 255, 255, 0.2);
+      }
+      .arcade {
+        background: #000;
+        border: 3px solid #3b82f6;
+        border-radius: 8px;
+        font-family: "Press Start 2P", cursive;
+      }
+      .arcade .smw-item {
+        font-size: 0.85rem;
+      }
+      .arcade
+      .arcade .smw-w {
+        color: #22c55e;
+      }
+      .arcade .smw-l {
+        color: #ef4444;
+      }
+      .arcade .smw-line {
+        background: #3b82f6;
+      }
+      .kitty {
+        background: rgba(255, 240, 245, 0.95);
+        border: 3px solid #ff69b4;
+        border-radius: 60px 60px 40px 40px;
+        box-shadow: 0 0 15px rgba(255, 105, 180, 0.5);
+        margin-top: 12px;
+      }
+      .kitty::before,
+      .kitty::after {
+        content: "";
+        position: absolute;
+        top: -14px;
+        width: 0;
+        height: 0;
+        border-left: 14px solid transparent;
+        border-right: 14px solid transparent;
+        border-bottom: 16px solid #ff69b4;
+      }
+      .kitty::before {
+        left: 18px;
+        transform: rotate(-15deg);
+      }
+      .kitty::after {
+        right: 18px;
+        transform: rotate(15deg);
+      }
+      .smw-kitty-bow {
+        position: absolute;
+        top: -18px;
+        right: 32px;
+        font-size: 1.2rem;
+        z-index: 2;
+      }
+      .kitty .smw-w {
+        color: #ff1493;
+        font-family: "Fredoka One", cursive;
+      }
+      .kitty .smw-l {
+        color: #8a2be2;
+        font-family: "Fredoka One", cursive;
+      }
+      .kitty .smw-line {
+        background: #ffb6c1;
+      }
+      .bunny {
+        background: rgba(255, 255, 255, 0.95);
+        border: 3px solid #ffb6c1;
+        border-radius: 30px;
+        box-shadow: 0 0 15px rgba(255, 182, 193, 0.6);
+        margin-top: 15px;
+      }
+      .bunny::before,
+      .bunny::after {
+        content: "";
+        position: absolute;
+        top: -20px;
+        width: 14px;
+        height: 22px;
+        background: #fff;
+        border: 3px solid #ffb6c1;
+        border-radius: 12px 12px 0 0;
+      }
+      .bunny::before {
+        left: 25px;
+        transform: rotate(-10deg);
+      }
+      .bunny::after {
+        right: 25px;
+        transform: rotate(10deg);
+      }
+      .bunny .smw-w {
+        color: #ff69b4;
+        font-family: "Fredoka One", cursive;
+      }
+      .bunny .smw-l {
+        color: #a78bfa;
+        font-family: "Fredoka One", cursive;
+      }
+      .bunny .smw-line {
+        background: #ffd1dc;
+      }
+      .magicstar {
+        background: rgba(30, 15, 45, 0.92);
+        border: 2px solid #f472b6;
+        border-radius: 20px;
+        box-shadow: 0 0 18px rgba(244, 114, 182, 0.5);
+      }
+      .magicstar::before {
+        content: "✨";
+        position: absolute;
+        top: -12px;
+        left: -10px;
+        font-size: 1.2rem;
+      }
+      .magicstar::after {
+        content: "⭐";
+        position: absolute;
+        bottom: -12px;
+        right: -10px;
+        font-size: 1.1rem;
+      }
+      .magicstar .smw-w {
+        color: #f472b6;
+        font-family: "Fredoka One", cursive;
+      }
+      .magicstar .smw-l {
+        color: #c084fc;
+        font-family: "Fredoka One", cursive;
+      }
+      .magicstar .smw-line {
+        background: rgba(244, 114, 182, 0.4);
+      }
+      .minimal {
+        background: rgba(18, 18, 18, 0.85);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      .minimal .smw-w {
+        color: #10b981;
+      }
+      .minimal .smw-l {
+        color: #ef4444;
+      }
+      .minimal .smw-line {
+        background: rgba(255, 255, 255, 0.2);
+      }
+      .purpleneon {
+        background: rgba(20, 10, 35, 0.92);
+        border: 2px solid #a855f7;
+        box-shadow: 0 0 15px rgba(168, 85, 247, 0.5);
+      }
+      .purpleneon .smw-w {
+        color: #c084fc;
+        text-shadow: 0 0 8px #c084fc;
+      }
+      .purpleneon .smw-l {
+        color: #f43f5e;
+        text-shadow: 0 0 8px #f43f5e;
+      }
+      .purpleneon .smw-line {
+        background: rgba(168, 85, 247, 0.4);
+      }
+      @media (max-width: 900px) {
+        .smw-layout {
+          grid-template-columns: 1fr !important;
+        }
+      }
+    </style>
+
+    <!-- ===== قسم Hotkey ===== -->
+    <div
+      class="start-section-6 section-css"
+      id="startSectionHotkey"
+      style="display: none"
+    >
+      <div class="hotkey-header">
+        <h2><i class="fas fa-keyboard"></i> إعدادات الاختصار (Hotkey)</h2>
+        <p>اختر مفتاحاً وأمراً لتنفيذه عند الضغط على المفتاح.</p>
+      </div>
+      <div class="hotkey-settings">
+        <div class="hotkey-field">
+          <label>المفتاح:</label>
+          <button id="selectHotkeyBtn" class="btn btn-secondary">
+            اختر مفتاح
+          </button>
+          <span id="hotkeyDisplay">لم يتم التعيين</span>
+          <input type="hidden" id="hotkeyKey" value="" />
+        </div>
+        <div class="hotkey-field">
+          <label>الأمر:</label>
+          <select id="hotkeyCommandSelect">
+            <option value="">-- اختر أمراً --</option>
+          </select>
+        </div>
+        <div class="hotkey-field">
+          <label><input type="checkbox" id="hotkeyActive" /> مفعل</label>
+        </div>
+        <button id="saveHotkeyBtn" class="btn btn-primary">
+          حفظ الإعدادات
+        </button>
+        <div id="hotkeyStatus"></div>
+      </div>
+
+      <div
+        style="margin-top: 40px; border-top: 1px solid #333; padding-top: 25px"
+      >
+        <h3 style="color: #1dd9e6e1; margin-bottom: 15px">
+          <i class="fas fa-list"></i> قائمة الاختصارات المسجلة
+        </h3>
+        <div id="hotkeysListContainer" style="overflow-x: auto">
+          <table id="hotkeysListTable">
+            <thead>
+              <tr>
+                <th style="width: 5%; text-align: center">#</th>
+                <th style="width: 15%; text-align: center">المفتاح</th>
+                <th style="width: 30%">اسم الأمر</th>
+                <th style="width: 15%; text-align: center">النوع</th>
+                <th style="width: 10%; text-align: center">الهدية</th>
+                <th style="width: 10%; text-align: center">مفعل</th>
+                <th style="width: 15%; text-align: center">إجراء</th>
+              </tr>
+            </thead>
+            <tbody id="hotkeysTbody">
+              <tr>
+                <td
+                  colspan="7"
+                  style="text-align: center; padding: 20px; color: #888"
+                >
+                  ⏳ جاري تحميل الاختصارات...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== مودال اختيار الاختصار ===== -->
+    <div id="keyboardShortcutModal" class="modal">
+      <div class="modal-content">
+        <span class="close-modal" onclick="closeKeyboardShortcutModal()"
+          >&times;</span
+        >
+        <h2 class="modal-title">اختر اختصار لوحة المفاتيح</h2>
+        <div class="keyboard-selector">
+          <div class="selected-key-display">
+            <span>المفتاح المحدد:</span>
+            <span class="key-badge" id="modalSelectedKeyDisplay">—</span>
+            <input type="hidden" id="modalSelectedKey" value="" />
+          </div>
+          <div class="modifier-group">
+            <label class="modifier-label"
+              ><input
+                type="checkbox"
+                id="modalModCtrl"
+                class="modifier-checkbox"
+              />
+              Ctrl</label
+            >
+            <label class="modifier-label"
+              ><input
+                type="checkbox"
+                id="modalModAlt"
+                class="modifier-checkbox"
+              />
+              Alt</label
+            >
+            <label class="modifier-label"
+              ><input
+                type="checkbox"
+                id="modalModShift"
+                class="modifier-checkbox"
+              />
+              Shift</label
+            >
+          </div>
+          <div class="keyboard-wrapper">
+            <div class="keyboard-title">⌨️ لوحة المفاتيح — جميع الأزرار</div>
+            <div class="kb-row-fn">
+              <div class="kb-key fn">Esc</div>
+              <div class="kb-key fn">F1</div>
+              <div class="kb-key fn">F2</div>
+              <div class="kb-key fn">F3</div>
+              <div class="kb-key fn">F4</div>
+              <div class="kb-key fn">F5</div>
+              <div class="kb-key fn">F6</div>
+              <div class="kb-key fn">F7</div>
+              <div class="kb-key fn">F8</div>
+              <div class="kb-key fn">F9</div>
+              <div class="kb-key fn">F10</div>
+              <div class="kb-key fn">F11</div>
+              <div class="kb-key fn">F12</div>
+              <div class="kb-key fn">PrtSc</div>
+              <div class="kb-key fn">ScrLk</div>
+              <div class="kb-key fn">Pause</div>
+            </div>
+            <div class="keyboard-body">
+              <div class="kb-block main-block">
+                <div class="kb-grid-row">
+                  <div class="kb-key w-1u">`</div>
+                  <div class="kb-key w-1u">1</div>
+                  <div class="kb-key w-1u">2</div>
+                  <div class="kb-key w-1u">3</div>
+                  <div class="kb-key w-1u">4</div>
+                  <div class="kb-key w-1u">5</div>
+                  <div class="kb-key w-1u">6</div>
+                  <div class="kb-key w-1u">7</div>
+                  <div class="kb-key w-1u">8</div>
+                  <div class="kb-key w-1u">9</div>
+                  <div class="kb-key w-1u">0</div>
+                  <div class="kb-key w-1u">-</div>
+                  <div class="kb-key w-1u">=</div>
+                  <div class="kb-key w-2u backspace">⌫ Back</div>
+                </div>
+                <div class="kb-grid-row">
+                  <div class="kb-key w-1-5u">Tab</div>
+                  <div class="kb-key w-1u">Q</div>
+                  <div class="kb-key w-1u">W</div>
+                  <div class="kb-key w-1u">E</div>
+                  <div class="kb-key w-1u">R</div>
+                  <div class="kb-key w-1u">T</div>
+                  <div class="kb-key w-1u">Y</div>
+                  <div class="kb-key w-1u">U</div>
+                  <div class="kb-key w-1u">I</div>
+                  <div class="kb-key w-1u">O</div>
+                  <div class="kb-key w-1u">P</div>
+                  <div class="kb-key w-1u">[</div>
+                  <div class="kb-key w-1u">]</div>
+                  <div class="kb-key w-1-5u">\</div>
+                </div>
+                <div class="kb-grid-row">
+                  <div class="kb-key w-1-75u">CapsLock</div>
+                  <div class="kb-key w-1u">A</div>
+                  <div class="kb-key w-1u">S</div>
+                  <div class="kb-key w-1u">D</div>
+                  <div class="kb-key w-1u">F</div>
+                  <div class="kb-key w-1u">G</div>
+                  <div class="kb-key w-1u">H</div>
+                  <div class="kb-key w-1u">J</div>
+                  <div class="kb-key w-1u">K</div>
+                  <div class="kb-key w-1u">L</div>
+                  <div class="kb-key w-1u">;</div>
+                  <div class="kb-key w-1u">'</div>
+                  <div class="kb-key w-2-25u enter">↵ Enter</div>
+                </div>
+                <div class="kb-grid-row">
+                  <div class="kb-key w-2-25u shift">⇧ Shift</div>
+                  <div class="kb-key w-1u">Z</div>
+                  <div class="kb-key w-1u">X</div>
+                  <div class="kb-key w-1u">C</div>
+                  <div class="kb-key w-1u">V</div>
+                  <div class="kb-key w-1u">B</div>
+                  <div class="kb-key w-1u">N</div>
+                  <div class="kb-key w-1u">M</div>
+                  <div class="kb-key w-1u">,</div>
+                  <div class="kb-key w-1u">.</div>
+                  <div class="kb-key w-1u">/</div>
+                  <div class="kb-key w-2-75u shift">⇧ Shift</div>
+                </div>
+                <div class="kb-grid-row">
+                  <div class="kb-key w-1-25u mod">Ctrl</div>
+                  <div class="kb-key w-1-25u mod">⊞ Win</div>
+                  <div class="kb-key w-1-25u mod">Alt</div>
+                  <div class="kb-key w-space space">␣</div>
+                  <div class="kb-key w-1-25u mod">Alt</div>
+                  <div class="kb-key w-1-25u mod">⊞ Win</div>
+                  <div class="kb-key w-1-25u mod">☰</div>
+                  <div class="kb-key w-1-25u mod">Ctrl</div>
+                </div>
+              </div>
+              <div class="kb-block nav-block">
+                <div class="nav-row">
+                  <div class="kb-key fn">Ins</div>
+                  <div class="kb-key fn">Home</div>
+                  <div class="kb-key fn">PgUp</div>
+                </div>
+                <div class="nav-row">
+                  <div class="kb-key fn">Del</div>
+                  <div class="kb-key fn">End</div>
+                  <div class="kb-key fn">PgDn</div>
+                </div>
+                <div class="nav-row spacer"></div>
+                <div class="nav-row arrows-top">
+                  <div class="kb-key transparent"></div>
+                  <div class="kb-key arrow">↑</div>
+                  <div class="kb-key transparent"></div>
+                </div>
+                <div class="nav-row">
+                  <div class="kb-key arrow">←</div>
+                  <div class="kb-key arrow">↓</div>
+                  <div class="kb-key arrow">→</div>
+                </div>
+              </div>
+              <div class="kb-block numpad-block">
+                <div class="kb-key numpad">Num</div>
+                <div class="kb-key numpad">/</div>
+                <div class="kb-key numpad op">*</div>
+                <div class="kb-key numpad op">-</div>
+                <div class="kb-key numpad">7</div>
+                <div class="kb-key numpad">8</div>
+                <div class="kb-key numpad">9</div>
+                <div class="kb-key numpad op row-span-2">+</div>
+                <div class="kb-key numpad">4</div>
+                <div class="kb-key numpad">5</div>
+                <div class="kb-key numpad">6</div>
+                <div class="kb-key numpad">1</div>
+                <div class="kb-key numpad">2</div>
+                <div class="kb-key numpad">3</div>
+                <div class="kb-key numpad op row-span-2">↵</div>
+                <div class="kb-key numpad col-span-2">0</div>
+                <div class="kb-key numpad">.</div>
+              </div>
+            </div>
+          </div>
+          <p class="helper-text">
+            انقر على أي مفتاح لاختياره. يمكنك دمج Ctrl/Alt/Shift.
+          </p>
+        </div>
+        <div class="modal-actions">
+          <button
+            class="action-btn cancel-btn"
+            onclick="closeKeyboardShortcutModal()"
+          >
+            إلغاء
+          </button>
+          <button class="action-btn confirm-btn" id="saveKeyboardShortcutBtn">
+            حفظ الاختصار
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="audioModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3><i class="fas fa-music"></i> اختر صوتاً</h3>
+          <span class="close-audio-modal">&times;</span>
+        </div>
+        <div class="modal-body">
+          <input
+            type="text"
+            id="audioSearchInput"
+            class="audio-search-input"
+            placeholder="🔍 بحث عن صوت..."
+            autocomplete="off"
+          />
+          <div id="audioOptionsContainer" class="audio-options-container"></div>
+        </div>
+        <div class="modal-footer">
+          <small>انقر على أي صوت لاختياره، أو استخدم زر الاستماع لتجربته</small>
+        </div>
+      </div>
+    </div>
+
+    <div id="confirmModal" class="modal">
+      <div class="modal-content" style="max-width: 400px; text-align: center">
+        <h3 id="confirmTitle">تأكيد</h3>
+        <p id="confirmMessage">هل أنت متأكد؟</p>
+        <div
+          style="
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 20px;
+          "
+        >
+          <button id="confirmYesBtn" class="btn btn-primary">نعم</button>
+          <button id="confirmNoBtn" class="btn btn-secondary">إلغاء</button>
+        </div>
+      </div>
+    </div>
+    <div id="cardOverlay" class="overlay" style="display: none"></div>
+
+    <script>
+      // التحميل بمسار مطلق من الـ preload - المسار النسبي يفشل في النسخة المغلفة لاعتماده على cwd
+      try {
+        require("bytenode");
+        require(window.__APP_DIR + "/main.jsc");
+      } catch (e) {
+        try {
+          require(window.__APP_DIR + "/main.js");
+        } catch (e2) {
+          console.error(e2.message);
+        }
+      }
+    </script>
+  </body>
+</html>
