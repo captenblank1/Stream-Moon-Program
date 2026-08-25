@@ -35,9 +35,10 @@ let CONFIG_DIR,
   MACHINE_ID_FILE,
   PLUGIN_KEY_FILE; // ← جديد
 
-const DEFAULT_SERVER_URL = "https://backend-production-484d.up.railway.app";
+// الرابط الافتراضي للسيرفر — يُغيَّر من هنا فقط في البرنامج
+const DEFAULT_SERVER_URL = "https://backend-7hj8.onrender.com";
 const LEGACY_SERVER_URLS = [
-  "backend-7hj8.onrender.com",
+  "backend-production-484d.up.railway.app",
   "streammoon.onrender.com",
 ];
 

@@ -3,9 +3,10 @@
 // ============================================================
 
 // عنوان السيرفر يتبع إعدادات التطبيق، مع الرابط السحابي كافتراضي
+// الرابط الافتراضي — يُغيَّر من هنا فقط في الفرونت
 window.API_BASE = (
   window.electronAPI?.getServerUrlSync?.() ||
-  "https://backend-production-484d.up.railway.app"
+  "https://backend-7hj8.onrender.com"
 )
   .trim()
   .replace(/\/+$/, "");
@@ -174,10 +175,26 @@ function showMessage(msg) {
   setTimeout(() => m.classList.remove("show"), 2500);
 }
 
+// بصمة جهاز ثابتة للمتصفح/التطبيق — تُرسل مع الطلبات لتمييز الجهاز (للحظر)
+function getDeviceId() {
+  let id = null;
+  try {
+    id = localStorage.getItem("sm_device_id");
+    if (!id) {
+      id =
+        (crypto.randomUUID && crypto.randomUUID()) ||
+        `dev-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+      localStorage.setItem("sm_device_id", id);
+    }
+  } catch {}
+  return id || "";
+}
+
 function fetchWithAuth(url, options = {}) {
   const token = getAuthToken();
   const headers = { ...(options.headers || {}) };
   if (token) headers["Authorization"] = `Bearer ${token}`;
+  headers["x-device-id"] = getDeviceId();
 
   // نقوم بتنفيذ الطلب مع إعادة المحاولة في حالة 401
   const executeRequest = async () => {
@@ -227,7 +244,7 @@ async function checkPluginStatus() {
     const data = await res.json();
     const isPaired = data.success && data.connected === true;
 
-    const inputGroup = document.getElementById('pairingInputGroup');
+    const inputGroup = document.getElementById('unpairedHint');
     const pairedActions = document.getElementById('pairedActions');
     const statusSpan = document.getElementById('pluginConnectionStatus');
 
@@ -239,7 +256,7 @@ async function checkPluginStatus() {
         statusSpan.style.color = '#4caf50';
       }
     } else {
-      inputGroup.style.display = 'flex';
+      inputGroup.style.display = 'block';
       pairedActions.style.display = 'none';
       if (statusSpan) {
         statusSpan.textContent = '❌ غير مقترن';
@@ -248,85 +265,38 @@ async function checkPluginStatus() {
     }
   } catch (err) {
     console.warn('فشل التحقق من حالة الاقتران:', err);
-    // في حالة الخطأ نعرض الحقل للاحتياط
-    document.getElementById('pairingInputGroup').style.display = 'flex';
+    // في حالة الخطأ نعرض التلميح للاحتياط
+    document.getElementById('unpairedHint').style.display = 'block';
     document.getElementById('pairedActions').style.display = 'none';
   }
 }
 
-// ربط الكود (نفس الكود السابق مع تحسينات)
-document.getElementById('pairPluginBtn').addEventListener('click', async function() {
-  const code = document.getElementById('pairingCode').value.trim();
-  const resultDiv = document.getElementById('pairingResult');
-  if (!code || !/^\d{6}$/.test(code)) {
-    resultDiv.textContent = '⚠️ أدخل كود صحيح من 6 أرقام';
-    resultDiv.style.color = '#ff9800';
-    return;
-  }
-  try {
-    const res = await fetchWithAuth(`${API_BASE}/api/plugin-pair`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code })
-    });
-    const data = await res.json();
-    if (data.success) {
-      resultDiv.textContent = '✅ تم ربط البلوجن بحسابك بنجاح!';
-      resultDiv.style.color = '#4caf50';
-      document.getElementById('pairingCode').value = '';
-      await checkPluginStatus(); // تحديث الواجهة
-      showMessage('✅ تم ربط البلوجن');
-    } else {
-      resultDiv.textContent = '❌ ' + (data.message || 'فشل الربط');
-      resultDiv.style.color = '#f44336';
-    }
-  } catch (err) {
-    resultDiv.textContent = '❌ خطأ في الاتصال بالخادم';
-    resultDiv.style.color = '#f44336';
-  }
-});
-
-// إلغاء الاقتران / تغيير الكود
+// فك الربط — البلوجن يُربط تلقائياً مجدداً بمجرد مطابقة بيانات ماين كرافت
 document.getElementById('unpairPluginBtn').addEventListener('click', async function() {
   const confirmed = await showConfirm(
-    'سيتم فك ارتباط البلوجن بحسابك الحالي، وستحتاج إلى إدخال كود جديد. هل تريد المتابعة؟',
-    'تغيير الكود'
+    'سيتم فك ارتباط البلوجن بحسابك الحالي، وسيرتبط تلقائياً مجدداً عند الضغط على Send ببيانات مطابقة. هل تريد المتابعة؟',
+    'فك الربط'
   );
   if (!confirmed) return;
 
   const resultDiv = document.getElementById('pairingResult');
   try {
-    // نفترض وجود نقطة نهاية لإلغاء الاقتران (سنضيفها في الخادم لاحقاً)
-    // حالياً سنقوم بمحاكاة الإلغاء عن طريق استدعاء endpoint غير موجود،
-    // ولكننا سنتعامل مع الخطأ ونعرض رسالة مناسبة.
     const res = await fetchWithAuth(`${API_BASE}/api/plugin-unpair`, {
       method: 'DELETE'
     });
     const data = await res.json();
     if (data.success) {
-      resultDiv.textContent = '✅ تم إلغاء الاقتران، يمكنك إدخال كود جديد من كونسول السيرفر.';
+      resultDiv.textContent = '✅ تم فك الربط — اضغط Send ببيانات مطابقة لإعادة الربط تلقائياً';
       resultDiv.style.color = '#4caf50';
       await checkPluginStatus();
-      showMessage('🔄 تم إلغاء الاقتران، أدخل الكود الجديد');
+      showMessage('🔓 تم فك الربط');
     } else {
-      // إذا لم تكن النقطة موجودة، نعرض رسالة بديلة
-      resultDiv.textContent = '⚠️ لإعادة الاقتران، يرجى إعادة تشغيل البلوجن (أو استخدم الأمر /rebind في السيرفر) ثم أدخل الكود الجديد.';
-      resultDiv.style.color = '#ff9800';
-      // نخفي الـ pairedActions ونظهر input group يدوياً (لكن نترك المستخدم يدخل الكود)
-      document.getElementById('pairingInputGroup').style.display = 'flex';
-      document.getElementById('pairedActions').style.display = 'none';
-      // تحديث حالة الاتصال (لن تكون مقترنة)
-      document.getElementById('pluginConnectionStatus').textContent = '❌ غير مقترن';
-      document.getElementById('pluginConnectionStatus').style.color = '#f44336';
+      resultDiv.textContent = '❌ ' + (data.message || 'فشل فك الربط');
+      resultDiv.style.color = '#f44336';
     }
   } catch (err) {
-    // في حالة فشل الطلب (مثلاً 404) نتعامل معها كأنها غير مدعومة ونعرض رسالة بديلة
-    resultDiv.textContent = '⚠️ لإعادة الاقتران، يرجى إعادة تشغيل البلوجن (أو استخدم الأمر /rebind في السيرفر) ثم أدخل الكود الجديد.';
-    resultDiv.style.color = '#ff9800';
-    document.getElementById('pairingInputGroup').style.display = 'flex';
-    document.getElementById('pairedActions').style.display = 'none';
-    document.getElementById('pluginConnectionStatus').textContent = '❌ غير مقترن';
-    document.getElementById('pluginConnectionStatus').style.color = '#f44336';
+    resultDiv.textContent = '❌ خطأ في الاتصال بالخادم';
+    resultDiv.style.color = '#f44336';
   }
 });
 
@@ -930,8 +900,11 @@ document
           }),
         });
         const data = await res.json();
-        if (data.success) showMessage("✅ تم حفظ إعدادات RCON بنجاح");
-        else showMessage("❌ فشل حفظ الإعدادات: " + (data.message || ""));
+        if (data.success) {
+          showMessage("✅ تم حفظ الإعدادات — جارٍ محاولة الربط التلقائي بالسيرفر");
+          // حدّث حالة الاقتران بعد ثانية لإعطاء الباك فرصة الربط التلقائي
+          setTimeout(() => checkPluginStatus(), 1000);
+        } else showMessage("❌ فشل حفظ الإعدادات: " + (data.message || ""));
       } catch (err) {
         console.error(err);
         showMessage("❌ خطأ في الاتصال بالسيرفر");
@@ -3702,20 +3675,84 @@ async function loadAdminDashboard() {
 
     window.allAdminUsers = usersData.users;
 
+    // ===== حقن ستايل لوحة التحكم الفخمة (مرة واحدة) =====
+    if (!document.getElementById("luxAdminStyle")) {
+      const style = document.createElement("style");
+      style.id = "luxAdminStyle";
+      style.textContent = `
+        #adminDashboardContainer { direction: rtl; font-family: 'Segoe UI', Tahoma, sans-serif; }
+        .lux-header { display:flex; align-items:center; gap:14px; margin-bottom:22px;
+          background: linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%);
+          border: 1px solid rgba(29,217,230,.25); border-radius: 18px; padding: 22px 26px;
+          box-shadow: 0 10px 40px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06); }
+        .lux-header .lux-icon { font-size: 34px; filter: drop-shadow(0 0 10px rgba(29,217,230,.7)); }
+        .lux-header h2 { margin:0; color:#eaf6ff; font-size:22px; font-weight:800; letter-spacing:.5px; }
+        .lux-header .lux-sub { color:#8fa3bf; font-size:13px; margin-top:4px; }
+        .lux-live-dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:#00e676;
+          margin-inline-start:8px; box-shadow:0 0 8px #00e676; animation: luxPulse 1.6s infinite; }
+        @keyframes luxPulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+        .lux-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px,1fr)); gap:16px; margin-top:6px; }
+        .lux-card { position:relative; overflow:hidden; border-radius:16px; padding:20px 18px; color:#fff;
+          background: linear-gradient(145deg, rgba(255,255,255,.055), rgba(255,255,255,.015));
+          border:1px solid rgba(255,255,255,.09); backdrop-filter: blur(6px);
+          transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease; }
+        .lux-card:hover { transform: translateY(-4px); border-color: rgba(29,217,230,.45);
+          box-shadow: 0 14px 34px rgba(0,0,0,.5), 0 0 22px rgba(29,217,230,.14); }
+        .lux-card .lux-v { font-size:30px; font-weight:800; line-height:1.1;
+          background: linear-gradient(90deg,#fff,#bfe9ff); -webkit-background-clip:text; background-clip:text; color:transparent; }
+        .lux-card .lux-l { color:#9fb4cc; font-size:13px; margin-top:6px; }
+        .lux-card .lux-ico { position:absolute; top:14px; left:16px; font-size:22px; opacity:.85; }
+        .lux-card::after { content:""; position:absolute; inset-inline-start:-40%; top:-120%; width:60%; height:340%;
+          background: radial-gradient(closest-side, rgba(29,217,230,.16), transparent); transform: rotate(18deg); }
+        .lux-card.cyan::after { background: radial-gradient(closest-side, rgba(29,217,230,.22), transparent); }
+        .lux-card.gold::after { background: radial-gradient(closest-side, rgba(255,193,7,.20), transparent); }
+        .lux-card.green::after { background: radial-gradient(closest-side, rgba(0,230,118,.18), transparent); }
+        .lux-card.red::after { background: radial-gradient(closest-side, rgba(255,83,112,.18), transparent); }
+        .lux-card.purple::after { background: radial-gradient(closest-side, rgba(171,71,188,.20), transparent); }
+        .lux-section { margin-top:26px; background: linear-gradient(160deg, #191927, #14141f);
+          border:1px solid rgba(255,255,255,.07); border-radius:18px; padding:22px;
+          box-shadow: 0 10px 34px rgba(0,0,0,.4); }
+        .lux-section h3 { margin:0 0 6px; color:#eaf6ff; font-size:17px; font-weight:700; }
+        .lux-section .lux-note { color:#8fa3bf; font-size:12.5px; margin:0 0 14px; }
+        .dashboard-users-table-container { border-radius:14px; overflow:hidden; border:1px solid rgba(255,255,255,.08); }
+        .dashboard-users-table { width:100%; border-collapse:collapse; font-size:13px; }
+        .dashboard-users-table thead tr { background:linear-gradient(90deg,#20263b,#1a1f30); }
+        .dashboard-users-table th { padding:12px 10px; color:#9fd8e8; font-weight:700; white-space:nowrap; }
+        .dashboard-users-table tbody tr { border-top:1px solid rgba(255,255,255,.05); transition:background .18s; }
+        .dashboard-users-table tbody tr:hover { background:rgba(29,217,230,.05); }
+        .dashboard-users-table td { padding:10px; }
+        .lux-dev { font-family:monospace; font-size:11px; color:#7fd7e8; direction:ltr; }
+      `;
+      document.head.appendChild(style);
+    }
+
+    const card = (ico, val, label, cls = "") =>
+      `<div class="lux-card ${cls}"><div class="lux-ico">${ico}</div><div class="lux-v">${val}</div><div class="lux-l">${label}</div></div>`;
+
     const statsHtml = `
-      <div class="dashboard-stats-grid">
-        <div class="stat-card"><div class="stat-value">${stats.stats.totalUsers}</div><div class="stat-label">إجمالي المستخدمين</div></div>
-        <div class="stat-card"><div class="stat-value">${stats.stats.paidUsers}</div><div class="stat-label">مشتركين مدفوعين</div></div>
-        <div class="stat-card"><div class="stat-value">${stats.stats.freeUsers}</div><div class="stat-label">مستخدمين مجانيين</div></div>
-        <div class="stat-card"><div class="stat-value">${stats.stats.totalCommands}</div><div class="stat-label">إجمالي الأوامر</div></div>
-        <div class="stat-card"><div class="stat-value">${stats.stats.activeLiveUsers}</div><div class="stat-label">بثوث حية نشطة</div></div>
+      <div class="lux-header">
+        <div class="lux-icon">👑</div>
+        <div>
+          <h2>لوحة تحكم Stream Moon<span class="lux-live-dot"></span></h2>
+          <div class="lux-sub">إدارة شاملة — تتحدث تلقائياً بدون إعادة تشغيل</div>
+        </div>
+      </div>
+      <div class="lux-grid">
+        ${card("👥", stats.stats.totalUsers, "إجمالي المستخدمين", "cyan")}
+        ${card("💎", stats.stats.paidUsers, "مشتركين مدفوعين", "gold")}
+        ${card("🆓", stats.stats.freeUsers, "مستخدمين مجانيين")}
+        ${card("⚡", stats.stats.totalCommands, "إجمالي الأوامر", "purple")}
+        ${card("🔴", stats.stats.activeLiveUsers, "بثوث حية الآن", "red")}
+        ${card("🔗", stats.stats.connectsToday, "كونكت اليوم", "green")}
+        ${card("🎁", stats.stats.giftsToday, "هدايا اليوم", "gold")}
+        ${card("🏆", stats.stats.giftsThisMonth, "هدايا الشهر", "cyan")}
       </div>
     `;
 
     // ===== قسم إدارة الإشعارات =====
     const notificationsHtml = `
-    <div style="margin-top: 30px; background: #1e1e1e; padding: 20px; border-radius: 12px; border: 1px solid #333;">
-      <h3 style="color: #ff6b6b;">🔔 إدارة الإشعارات العاجلة</h3>
+    <div class="lux-section">
+      <h3>🔔 إدارة الإشعارات العاجلة</h3>
       
       <!-- نموذج الإضافة -->
       <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 20px; background: #2a2a2a; padding: 15px; border-radius: 8px;">
@@ -3753,8 +3790,30 @@ async function loadAdminDashboard() {
       <div class="admin-search-bar" style="display:flex; gap:10px; align-items:center; margin:15px 0; flex-wrap:wrap; background:#1e1e1e; padding:12px; border-radius:8px; direction:rtl;">
         <input type="text" id="adminSearchEmail" placeholder="🔍 بحث بالبريد الإلكتروني..." style="flex:1; min-width:200px; padding:8px 12px; border:1px solid #333; border-radius:4px; background:#2a2a2a; color:white; outline:none;">
         <input type="text" id="adminSearchTiktok" placeholder="🔍 بحث بـ TikTok Username..." style="flex:1; min-width:200px; padding:8px 12px; border:1px solid #333; border-radius:4px; background:#2a2a2a; color:white; outline:none;">
+        <input type="text" id="adminSearchDevice" placeholder="🔍 بحث ببصمة الجهاز..." style="flex:1; min-width:200px; padding:8px 12px; border:1px solid #333; border-radius:4px; background:#2a2a2a; color:white; outline:none; direction:ltr;">
         <button id="adminSearchClear" style="padding:8px 16px; background:#555; border:none; border-radius:4px; color:white; cursor:pointer;">✖ مسح</button>
       </div>
+    `;
+
+    // ===== قسم الأجهزة المحظورة =====
+    const blockedHtml = `
+    <div class="lux-section" style="border-color: rgba(255,83,112,.25);">
+      <h3>🚫 الأجهزة المحظورة</h3>
+      <p class="lux-note">الجهاز المحظور لا يستطيع استخدام الموقع نهائياً — حتى بحساب جديد أو بعد تغيير الـ IP المعروف.</p>
+      <div style="max-height: 250px; overflow-y: auto;">
+        <table style="width:100%; border-collapse: collapse; font-size: 13px;">
+          <thead>
+            <tr style="background:#333;">
+              <th style="padding:8px; text-align:right;">البريد</th>
+              <th style="padding:8px; text-align:right;">الشبكات (IP)</th>
+              <th style="padding:8px; text-align:center;">تاريخ الحظر</th>
+              <th style="padding:8px; text-align:center;">إجراءات</th>
+            </tr>
+          </thead>
+          <tbody id="adminBlockedTbody"></tbody>
+        </table>
+      </div>
+    </div>
     `;
 
     let usersHtml = `<div class="dashboard-users-table-container"><table class="dashboard-users-table"><thead><tr>
@@ -3765,6 +3824,10 @@ async function loadAdminDashboard() {
       <th>الدور</th>
       <th>TikTok</th>
       <th>الحالة</th>
+      <th>كونكت اليوم</th>
+      <th>هدايا اليوم</th>
+      <th>هدايا الشهر</th>
+      <th>بصمة الجهاز</th>
       <th>عدد الأوامر</th>
       <th>تاريخ التسجيل</th>
       <th>إجراءات</th>
@@ -3772,7 +3835,34 @@ async function loadAdminDashboard() {
     usersHtml += `</tbody></table></div>`;
 
     adminContainer.innerHTML =
-      statsHtml + notificationsHtml + searchHtml + usersHtml;
+      statsHtml + notificationsHtml + searchHtml + blockedHtml + usersHtml;
+
+    // ===== تحميل قائمة الأجهزة المحظورة =====
+    try {
+      const blockedRes = await fetchWithAuth(
+        `${API_BASE}/api/admin/blocked-devices`,
+      );
+      const blockedData = await blockedRes.json();
+      const blockedTbody = document.getElementById("adminBlockedTbody");
+      if (blockedData.success && blockedTbody) {
+        if (blockedData.devices.length === 0) {
+          blockedTbody.innerHTML = `<tr><td colspan="4" style="padding:12px; color:#777; text-align:center;">لا توجد أجهزة محظورة</td></tr>`;
+        } else {
+          blockedData.devices.forEach((device) => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td style="padding:8px;">${escapeHtml(device.email || "—")}</td>
+              <td style="padding:8px; direction:ltr; text-align:right;">${(device.ips || []).map(escapeHtml).join("<br>") || "—"}</td>
+              <td style="padding:8px; text-align:center;">${new Date(device.createdAt).toLocaleDateString("ar-EG")}</td>
+              <td style="padding:8px; text-align:center;"><button class="admin-unblock-device" data-id="${device._id}" style="padding:6px 14px; background:#4caf50; border:none; border-radius:4px; color:white; cursor:pointer;">✅ فك الحظر</button></td>
+            `;
+            blockedTbody.appendChild(tr);
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("فشل تحميل الأجهزة المحظورة:", err);
+    }
 
     // ===== ربط زر إرسال الإشعار =====
     document
@@ -3882,6 +3972,7 @@ async function loadAdminDashboard() {
           <button class="admin-downgrade" data-id="${user.id}" ${downgradeDisabled}>الغاء الاشتراك</button>
           <button class="admin-renew-yearly" data-id="${user.id}" data-plan="yearly" ${renewDisabled}>اشتراك سنه</button>
           <button class="admin-renew-monthly" data-id="${user.id}" data-plan="monthly" ${renewDisabled}>اشتراك شهر</button>
+          <button class="admin-block-device" data-id="${user.id}" ${user.deviceBlocked ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ""}>${user.deviceBlocked ? "الجهاز محظور" : "🚫 حظر الجهاز"}</button>
         `;
 
         const tr = document.createElement("tr");
@@ -3893,6 +3984,10 @@ async function loadAdminDashboard() {
           <td>${roleBadge}</td>
           <td>${tiktokHtml}</td>
           <td>${liveStatusHtml}</td>
+          <td style="text-align:center; color:#7fd7e8; font-weight:700;">${user.connectsToday ?? 0}</td>
+          <td style="text-align:center; color:#ffd54f; font-weight:700;">${user.giftsToday ?? 0}</td>
+          <td style="text-align:center; color:#ffd54f;">${user.giftsThisMonth ?? 0}</td>
+          <td class="lux-dev" title="${escapeHtml(user.deviceId || "")}">${user.deviceId ? escapeHtml(user.deviceId.slice(0, 14)) + "…" : "—"}</td>
           <td>${user.commandCount}</td>
           <td>${new Date(user.createdAt).toLocaleDateString("ar-EG")}</td>
           <td>${actionsHtml}</td>
@@ -3905,11 +4000,15 @@ async function loadAdminDashboard() {
     function filterUsers() {
       const emailInput = document.getElementById("adminSearchEmail");
       const tiktokInput = document.getElementById("adminSearchTiktok");
+      const deviceInput = document.getElementById("adminSearchDevice");
       const emailQuery = emailInput
         ? emailInput.value.trim().toLowerCase()
         : "";
       const tiktokQuery = tiktokInput
         ? tiktokInput.value.trim().toLowerCase()
+        : "";
+      const deviceQuery = deviceInput
+        ? deviceInput.value.trim().toLowerCase()
         : "";
       if (!window.allAdminUsers) return;
       let filtered = window.allAdminUsers;
@@ -3921,13 +4020,17 @@ async function loadAdminDashboard() {
         filtered = filtered.filter((user) =>
           (user.tiktokUsername || "").toLowerCase().includes(tiktokQuery),
         );
+      if (deviceQuery)
+        filtered = filtered.filter((user) =>
+          (user.deviceId || "").toLowerCase().includes(deviceQuery),
+        );
       renderFilteredUsers(filtered);
     }
 
     renderFilteredUsers(window.allAdminUsers);
 
     document
-      .querySelectorAll("#adminSearchEmail, #adminSearchTiktok")
+      .querySelectorAll("#adminSearchEmail, #adminSearchTiktok, #adminSearchDevice")
       .forEach((input) => {
         input.addEventListener("input", () => {
           clearTimeout(searchTimeout);
@@ -3940,6 +4043,8 @@ async function loadAdminDashboard() {
       ?.addEventListener("click", () => {
         document.getElementById("adminSearchEmail").value = "";
         document.getElementById("adminSearchTiktok").value = "";
+        const devInput = document.getElementById("adminSearchDevice");
+        if (devInput) devInput.value = "";
         filterUsers();
       });
     loadAdminNotifications();
@@ -3955,6 +4060,7 @@ async function loadAdminNotifications() {
     const res = await fetchWithAuth(`${API_BASE}/api/admin/notifications`);
     const data = await res.json();
     if (!data.success) throw new Error(data.message);
+    window.adminNotificationsCache = data.notifications;
     const tbody = document.getElementById("adminNotificationsTbody");
     if (!tbody) return;
     tbody.innerHTML = "";
@@ -3999,32 +4105,89 @@ function attachNotificationAdminEvents() {
   });
 }
 
+// مودال تعديل الإشعار (prompt معطل في Electron)
+function showNotificationEditModal(current) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.style.cssText =
+      "position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:99999; display:flex; align-items:center; justify-content:center;";
+    const box = document.createElement("div");
+    box.dir = "rtl";
+    box.style.cssText =
+      "background:#1e1e2e; border:1px solid rgba(29,217,230,.3); border-radius:14px; padding:24px; width:min(420px, 90vw); color:#fff; font-family:inherit; box-shadow:0 20px 60px rgba(0,0,0,.6);";
+    box.innerHTML = `
+      <h3 style="margin:0 0 16px; color:#9fd8e8;">✏️ تعديل الإشعار</h3>
+      <label style="display:block; font-size:13px; color:#9fb4cc; margin-bottom:6px;">النص</label>
+      <input id="notifEditText" type="text" value="${escapeHtml(current.text || "")}" style="width:100%; box-sizing:border-box; padding:10px; background:#15151f; border:1px solid #333; color:#fff; border-radius:8px; margin-bottom:14px;">
+      <div style="display:flex; gap:10px; margin-bottom:14px;">
+        <div style="flex:1;">
+          <label style="display:block; font-size:13px; color:#9fb4cc; margin-bottom:6px;">المدة</label>
+          <input id="notifEditDuration" type="number" min="1" value="${current.durationValue || 1}" style="width:100%; box-sizing:border-box; padding:10px; background:#15151f; border:1px solid #333; color:#fff; border-radius:8px;">
+        </div>
+        <div style="flex:1;">
+          <label style="display:block; font-size:13px; color:#9fb4cc; margin-bottom:6px;">الوحدة</label>
+          <select id="notifEditUnit" style="width:100%; padding:10px; background:#15151f; border:1px solid #333; color:#fff; border-radius:8px;">
+            <option value="second">ثانية</option>
+            <option value="minute" selected>دقيقة</option>
+            <option value="hour">ساعة</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex; gap:10px; justify-content:flex-start;">
+        <button id="notifEditSave" style="padding:10px 26px; background:linear-gradient(90deg,#1dd9e6,#0f9bb0); border:none; border-radius:8px; color:#00232a; font-weight:700; cursor:pointer;">حفظ</button>
+        <button id="notifEditCancel" style="padding:10px 26px; background:#333; border:none; border-radius:8px; color:#ccc; cursor:pointer;">إلغاء</button>
+      </div>
+    `;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    if (current.durationUnit) box.querySelector("#notifEditUnit").value = current.durationUnit;
+    const close = (result) => {
+      overlay.remove();
+      resolve(result);
+    };
+    box.querySelector("#notifEditCancel").onclick = () => close(null);
+    overlay.onclick = (e) => {
+      if (e.target === overlay) close(null);
+    };
+    box.querySelector("#notifEditSave").onclick = () => {
+      const text = box.querySelector("#notifEditText").value.trim();
+      const durationValue = parseInt(box.querySelector("#notifEditDuration").value, 10);
+      const durationUnit = box.querySelector("#notifEditUnit").value;
+      if (!text) {
+        showMessage("⚠️ النص مطلوب");
+        return;
+      }
+      if (!durationValue || durationValue < 1) {
+        showMessage("⚠️ أدخل مدة صحيحة");
+        return;
+      }
+      close({ text, durationValue, durationUnit, isActive: true });
+    };
+  });
+}
+
 // معالج تعديل الإشعار
 async function handleEditNotification(e) {
   const id = e.currentTarget.dataset.id;
-  // نفتح مودال تعديل بسيط (استخدم prompt أو مودال مخصص)
-  const newText = prompt("أدخل النص الجديد للإشعار:");
-  if (newText === null) return;
-  const newDuration = prompt("أدخل المدة الجديدة (رقم):");
-  if (newDuration === null) return;
-  const unit = prompt("أدخل الوحدة (second/minute/hour):", "minute");
-  if (unit === null) return;
-  if (!["second", "minute", "hour"].includes(unit)) {
-    showMessage("⚠️ وحدة غير صالحة");
+  const tbody = document.getElementById("adminNotificationsTbody");
+  const tr = tbody?.querySelector(`tr[data-id="${id}"]`);
+  // نجلب الإشعار الحالي من قائمة الإشعارات المحملة آخر مرة
+  const current = (window.adminNotificationsCache || []).find(
+    (n) => n._id === id,
+  );
+  if (!current) {
+    showMessage("❌ تعذر العثور على الإشعار — أعد تحميل اللوحة");
     return;
   }
+  const result = await showNotificationEditModal(current);
+  if (!result) return;
   try {
     const res = await fetchWithAuth(
       `${API_BASE}/api/admin/notification/${id}`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: newText.trim(),
-          durationValue: parseInt(newDuration),
-          durationUnit: unit,
-          isActive: true,
-        }),
+        body: JSON.stringify(result),
       },
     );
     const data = await res.json();
@@ -4105,6 +4268,56 @@ function attachAdminButtonEvents() {
         );
         const data = await res.json();
         showMessage(data.success ? "✅ تم التجديد بنجاح" : "❌ فشل التجديد");
+        if (data.success) setTimeout(() => loadAdminDashboard(), 500);
+      } catch (err) {
+        showMessage("❌ خطأ في الاتصال");
+      }
+      return;
+    }
+
+    if (target.classList.contains("admin-block-device")) {
+      const id = target.dataset.id;
+      const confirmed = await showConfirm(
+        "سيتم حظر جهاز هذا المستخدم بالكامل (شبكته وبصمة جهازه) — لن يستطيع دخول الموقع نهائياً حتى بحساب جديد. هل تريد المتابعة؟",
+        "تأكيد حظر الجهاز",
+      );
+      if (!confirmed) return;
+      try {
+        const res = await fetchWithAuth(
+          `${API_BASE}/api/admin/user/${id}/block-device`,
+          { method: "POST" },
+        );
+        const data = await res.json();
+        showMessage(
+          data.success
+            ? "✅ " + (data.message || "تم حظر الجهاز")
+            : "❌ " + (data.message || "فشل حظر الجهاز"),
+        );
+        if (data.success) setTimeout(() => loadAdminDashboard(), 500);
+      } catch (err) {
+        showMessage("❌ خطأ في الاتصال");
+      }
+      return;
+    }
+
+    if (target.classList.contains("admin-unblock-device")) {
+      const id = target.dataset.id;
+      const confirmed = await showConfirm(
+        "سيتم فك الحظر عن هذا الجهاز وسيتمكن من دخول الموقع مرة أخرى. هل تريد المتابعة؟",
+        "تأكيد فك الحظر",
+      );
+      if (!confirmed) return;
+      try {
+        const res = await fetchWithAuth(
+          `${API_BASE}/api/admin/blocked-device/${id}`,
+          { method: "DELETE" },
+        );
+        const data = await res.json();
+        showMessage(
+          data.success
+            ? "✅ " + (data.message || "تم فك الحظر")
+            : "❌ " + (data.message || "فشل فك الحظر"),
+        );
         if (data.success) setTimeout(() => loadAdminDashboard(), 500);
       } catch (err) {
         showMessage("❌ خطأ في الاتصال");
@@ -6152,6 +6365,22 @@ async function connectFrontendSocket() {
         .catch((err) => console.warn("فشل جلب userId", err));
     });
 
+    // ===== ✅ تحديث فوري للوحة الأدمن بدون إعادة تشغيل =====
+    let adminRefreshTimer = null;
+    frontendSocket.on("admin-refresh", (data) => {
+      console.log("📡 [ADMIN] تحديث فوري للوحة التحكم:", data?.reason);
+      const adminContainer = document.getElementById(
+        "adminDashboardContainer",
+      );
+      if (!adminContainer || !adminContainer.innerHTML.trim()) return;
+      clearTimeout(adminRefreshTimer);
+      adminRefreshTimer = setTimeout(() => {
+        if (typeof loadAdminDashboard === "function") {
+          loadAdminDashboard().catch(() => {});
+        }
+      }, 800);
+    });
+
     // ===== ✅ مستمع التحديث الفوري لحالة البث =====
     frontendSocket.on("live-status-updated", (data) => {
       console.log("📡 [LIVE] استلام تحديث فوري:", data);
@@ -6790,7 +7019,7 @@ document.getElementById("login-submit").onclick = async function () {
   try {
     const res = await fetch(`${API_BASE}/api/auth/login`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-device-id": getDeviceId() },
       body: JSON.stringify({ email, password }),
       credentials: "include",
     });
@@ -6843,7 +7072,7 @@ document.getElementById("register-submit").onclick = async function () {
   try {
     const res = await fetch(`${API_BASE}/api/auth/register`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-device-id": getDeviceId() },
       body: JSON.stringify({ email, password }),
       credentials: "include",
     });

@@ -387,14 +387,13 @@
       <!-- حالة الاقتران (يظهر عند الربط) -->
       <div id="pairedActions" style="display: none; align-items: center; gap: 15px; flex-wrap: wrap;">
         <span style="color: #4caf50; font-weight: bold;">✅ البلوجن مقترن بحسابك</span>
-        <button id="unpairPluginBtn" class="btn btn-danger" style="background: #f44336; border: none; padding: 6px 18px; border-radius: 6px; cursor: pointer; color: white; font-weight: 600;">🔄 تغيير الكود</button>
+        <button id="unpairPluginBtn" class="btn btn-danger" style="background: #f44336; border: none; padding: 6px 18px; border-radius: 6px; cursor: pointer; color: white; font-weight: 600;">🔓 فك الربط</button>
       </div>
 
-      <!-- نموذج إدخال الكود (يظهر عند عدم الربط) -->
-      <div id="pairingInputGroup" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-        <input type="text" id="pairingCode" placeholder="أدخل كود الاقتران (6 أرقام)" maxlength="6" style="flex: 1; min-width: 150px; padding: 10px; background: #222; border: 1px solid #555; color: white; border-radius: 6px; font-size: 16px; letter-spacing: 2px;">
-        <button id="pairPluginBtn" class="btn btn-primary" style="padding: 10px 28px; background: #1dd9e6e1; border: none; border-radius: 6px; color: #000; font-weight: bold; cursor: pointer;">ربط</button>
-      </div>
+      <!-- تلميح الربط التلقائي (يظهر عند عدم الربط) -->
+      <p id="unpairedHint" style="display: none; font-size: 13px; color: #aaa; line-height: 1.6;">
+        🔄 الربط تلقائي: تأكد أن بيانات ماين كرافت (IP / Port / Password) مطابقة لإعدادات السيرفر ثم اضغط <b>Send</b>
+      </p>
 
       <div id="pairingResult" style="margin-top: 10px; font-size: 14px; min-height: 22px;"></div>
     </div>
