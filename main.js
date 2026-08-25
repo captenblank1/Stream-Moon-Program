@@ -216,6 +216,126 @@ function fetchWithAuth(url, options = {}) {
   return executeRequest();
 }
 
+// ============================================================
+// دوال إدارة الاقتران (Pairing)
+// ============================================================
+
+// التحقق من حالة الاقتران وعرض/إخفاء العناصر
+async function checkPluginStatus() {
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/plugin-status`);
+    const data = await res.json();
+    const isPaired = data.success && data.connected === true;
+
+    const inputGroup = document.getElementById('pairingInputGroup');
+    const pairedActions = document.getElementById('pairedActions');
+    const statusSpan = document.getElementById('pluginConnectionStatus');
+
+    if (isPaired) {
+      inputGroup.style.display = 'none';
+      pairedActions.style.display = 'flex';
+      if (statusSpan) {
+        statusSpan.textContent = '✅ مقترن';
+        statusSpan.style.color = '#4caf50';
+      }
+    } else {
+      inputGroup.style.display = 'flex';
+      pairedActions.style.display = 'none';
+      if (statusSpan) {
+        statusSpan.textContent = '❌ غير مقترن';
+        statusSpan.style.color = '#f44336';
+      }
+    }
+  } catch (err) {
+    console.warn('فشل التحقق من حالة الاقتران:', err);
+    // في حالة الخطأ نعرض الحقل للاحتياط
+    document.getElementById('pairingInputGroup').style.display = 'flex';
+    document.getElementById('pairedActions').style.display = 'none';
+  }
+}
+
+// ربط الكود (نفس الكود السابق مع تحسينات)
+document.getElementById('pairPluginBtn').addEventListener('click', async function() {
+  const code = document.getElementById('pairingCode').value.trim();
+  const resultDiv = document.getElementById('pairingResult');
+  if (!code || !/^\d{6}$/.test(code)) {
+    resultDiv.textContent = '⚠️ أدخل كود صحيح من 6 أرقام';
+    resultDiv.style.color = '#ff9800';
+    return;
+  }
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/plugin-pair`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code })
+    });
+    const data = await res.json();
+    if (data.success) {
+      resultDiv.textContent = '✅ تم ربط البلوجن بحسابك بنجاح!';
+      resultDiv.style.color = '#4caf50';
+      document.getElementById('pairingCode').value = '';
+      await checkPluginStatus(); // تحديث الواجهة
+      showMessage('✅ تم ربط البلوجن');
+    } else {
+      resultDiv.textContent = '❌ ' + (data.message || 'فشل الربط');
+      resultDiv.style.color = '#f44336';
+    }
+  } catch (err) {
+    resultDiv.textContent = '❌ خطأ في الاتصال بالخادم';
+    resultDiv.style.color = '#f44336';
+  }
+});
+
+// إلغاء الاقتران / تغيير الكود
+document.getElementById('unpairPluginBtn').addEventListener('click', async function() {
+  const confirmed = await showConfirm(
+    'سيتم فك ارتباط البلوجن بحسابك الحالي، وستحتاج إلى إدخال كود جديد. هل تريد المتابعة؟',
+    'تغيير الكود'
+  );
+  if (!confirmed) return;
+
+  const resultDiv = document.getElementById('pairingResult');
+  try {
+    // نفترض وجود نقطة نهاية لإلغاء الاقتران (سنضيفها في الخادم لاحقاً)
+    // حالياً سنقوم بمحاكاة الإلغاء عن طريق استدعاء endpoint غير موجود،
+    // ولكننا سنتعامل مع الخطأ ونعرض رسالة مناسبة.
+    const res = await fetchWithAuth(`${API_BASE}/api/plugin-unpair`, {
+      method: 'DELETE'
+    });
+    const data = await res.json();
+    if (data.success) {
+      resultDiv.textContent = '✅ تم إلغاء الاقتران، يمكنك إدخال كود جديد من كونسول السيرفر.';
+      resultDiv.style.color = '#4caf50';
+      await checkPluginStatus();
+      showMessage('🔄 تم إلغاء الاقتران، أدخل الكود الجديد');
+    } else {
+      // إذا لم تكن النقطة موجودة، نعرض رسالة بديلة
+      resultDiv.textContent = '⚠️ لإعادة الاقتران، يرجى إعادة تشغيل البلوجن (أو استخدم الأمر /rebind في السيرفر) ثم أدخل الكود الجديد.';
+      resultDiv.style.color = '#ff9800';
+      // نخفي الـ pairedActions ونظهر input group يدوياً (لكن نترك المستخدم يدخل الكود)
+      document.getElementById('pairingInputGroup').style.display = 'flex';
+      document.getElementById('pairedActions').style.display = 'none';
+      // تحديث حالة الاتصال (لن تكون مقترنة)
+      document.getElementById('pluginConnectionStatus').textContent = '❌ غير مقترن';
+      document.getElementById('pluginConnectionStatus').style.color = '#f44336';
+    }
+  } catch (err) {
+    // في حالة فشل الطلب (مثلاً 404) نتعامل معها كأنها غير مدعومة ونعرض رسالة بديلة
+    resultDiv.textContent = '⚠️ لإعادة الاقتران، يرجى إعادة تشغيل البلوجن (أو استخدم الأمر /rebind في السيرفر) ثم أدخل الكود الجديد.';
+    resultDiv.style.color = '#ff9800';
+    document.getElementById('pairingInputGroup').style.display = 'flex';
+    document.getElementById('pairedActions').style.display = 'none';
+    document.getElementById('pluginConnectionStatus').textContent = '❌ غير مقترن';
+    document.getElementById('pluginConnectionStatus').style.color = '#f44336';
+  }
+});
+
+// استدعاء التحقق من حالة الاقتران عند تحميل الصفحة
+document.addEventListener('DOMContentLoaded', () => {
+  checkPluginStatus();
+  // يمكن استدعاؤها أيضاً بعد تسجيل الدخول
+});
+
 function getAuthToken() {
   try {
     return localStorage.getItem("sm_token") || getCookie("token");
@@ -523,6 +643,7 @@ async function updateAuthUI() {
       await loadHotkeySettings();
       await loadHotkeyCommands();
       await renderHotkeysList();
+      fetchAndShowNotification();
     } catch (err) {
       console.warn("⚠️ فشل تحميل بعض البيانات:", err.message);
     }
@@ -776,10 +897,10 @@ async function loadRconConfig() {
     if (!res.ok) throw new Error("فشل تحميل إعدادات RCON");
     const config = await res.json();
     document.getElementById("player-ip").value = config.host || "";
-    refreshPluginStatus();
     document.getElementById("player-port").value = config.port || "";
     document.getElementById("player-password").value = config.password || "";
     document.getElementById("player-name").value = config.player || "";
+    checkPluginStatus();
   } catch (err) {
     console.warn("⚠️ لم يتم تحميل إعدادات RCON:", err.message);
   }
@@ -819,64 +940,6 @@ document
   );
 
 // ============================================================
-// حالة بلوجن ماينكرافت — الكود يظهر للمستخدم فقط عند الفشل
-// ============================================================
-async function refreshPluginStatus() {
-  const statusEl = document.getElementById("plugin-status");
-  const pairArea = document.getElementById("plugin-pair-area");
-  if (!statusEl || !pairArea) return;
-  try {
-    const res = await fetchWithAuth(`${API_BASE}/api/plugin-status`);
-    const data = await res.json();
-    if (data.connected) {
-      statusEl.textContent = "🟢 البلوجن متصل بسيرفرك — كل حاجة شغالة تلقائياً";
-      statusEl.style.color = "#10b981";
-      statusEl.style.display = "block";
-      pairArea.style.display = "none";
-    } else {
-      statusEl.textContent =
-        "🔌 البلوجن غير متصل. لو البلوجن شغال على السيرفر، هتلاقى كود في كونسول الماينكرافت — اكتبه هنا مرة واحدة:";
-      statusEl.style.color = "#ffcc00";
-      statusEl.style.display = "block";
-      pairArea.style.display = "block";
-    }
-  } catch (err) {
-    statusEl.style.display = "none";
-  }
-}
-
-// ============================================================
-// اقتران بلوجن ماينكرافت بحساب المستخدم
-// ============================================================
-document.getElementById("plugin-pair-btn").addEventListener("click", (event) =>
-  withButtonLock(event.currentTarget, async () => {
-    const code = document.getElementById("plugin-pair-code").value.trim();
-    if (!/^\d{6}$/.test(code)) {
-      showMessage("⚠️ أدخل كود من 6 أرقام من كونسول الماينكرافت");
-      return;
-    }
-    try {
-      const res = await fetchWithAuth(`${API_BASE}/api/plugin-pair`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code }),
-      });
-      const data = await res.json();
-      showMessage(
-        data.message || (data.success ? "✅ تم الربط" : "❌ فشل الربط"),
-      );
-      if (data.success) {
-        document.getElementById("plugin-pair-code").value = "";
-        refreshPluginStatus();
-      }
-    } catch (err) {
-      console.error(err);
-      showMessage("❌ خطأ في الاتصال بالسيرفر");
-    }
-  }),
-);
-
-// ============================================================
 // دوال التخزين
 // ============================================================
 function updateStorageUI(storageData) {
@@ -908,28 +971,16 @@ async function checkStorageNotifications() {
     const res = await fetchWithAuth(`${API_BASE}/api/user/storage`);
     const data = await res.json();
     if (data.success) {
+      // تحديث أشرطة التقدم فقط
       updateStorageUI({
         audio: { usedMB: data.audio.usedMB, limitMB: data.audio.limitMB },
         video: { usedMB: data.video.usedMB, limitMB: data.video.limitMB },
       });
+
+      // ✅ إخفاء الإشعار الثابت نهائياً (لأنه سيتم عبر لوحة الأدمن)
       const storageNotif = document.getElementById("storage-notification");
       if (storageNotif) {
-        const resetsAt = data.storage?.resetsAt || data.resetsAt;
-        const resetTxt = resetsAt
-          ? ` تتجدد الحصة في ${new Date(resetsAt).toLocaleDateString("ar-EG")}.`
-          : "";
-        if (
-          data.audio.usedMB > data.audio.limitMB * 0.9 ||
-          data.video.usedMB > data.video.limitMB * 0.9
-        ) {
-          storageNotif.style.display = "block";
-          storageNotif.textContent =
-            "⚠️ مساحة التخزين على وشك النفاد! يرجى حذف بعض الملفات." + resetTxt;
-        } else {
-          storageNotif.style.display = "block";
-          storageNotif.textContent =
-            "🕒 حصتك الشهرية: 10 جيجا فيديو + 1 جيجا صوت." + resetTxt;
-        }
+        storageNotif.style.display = "none";
       }
     }
   } catch (err) {
@@ -3661,6 +3712,43 @@ async function loadAdminDashboard() {
       </div>
     `;
 
+    // ===== قسم إدارة الإشعارات =====
+    const notificationsHtml = `
+    <div style="margin-top: 30px; background: #1e1e1e; padding: 20px; border-radius: 12px; border: 1px solid #333;">
+      <h3 style="color: #ff6b6b;">🔔 إدارة الإشعارات العاجلة</h3>
+      
+      <!-- نموذج الإضافة -->
+      <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 20px; background: #2a2a2a; padding: 15px; border-radius: 8px;">
+        <input type="text" id="adminNotificationText" placeholder="نص الإشعار..." style="flex: 2; padding: 10px; background: #333; border: 1px solid #555; color: white; border-radius: 6px;">
+        <input type="number" id="adminNotificationDuration" placeholder="المدة" value="1" style="width: 80px; padding: 10px; background: #333; border: 1px solid #555; color: white; border-radius: 6px;">
+        <select id="adminNotificationUnit" style="padding: 10px; background: #333; border: 1px solid #555; color: white; border-radius: 6px;">
+          <option value="second">ثانية</option>
+          <option value="minute" selected>دقيقة</option>
+          <option value="hour">ساعة</option>
+        </select>
+        <button id="adminSendNotificationBtn" class="btn btn-danger" style="background: #dc3545;">إرسال الإشعار</button>
+      </div>
+      
+      <!-- قائمة الإشعارات -->
+      <div id="adminNotificationList" style="max-height: 300px; overflow-y: auto; margin-top: 10px;">
+        <table style="width:100%; border-collapse: collapse; font-size: 14px;">
+          <thead>
+            <tr style="background:#333;">
+              <th style="padding:8px; text-align:right;">النص</th>
+              <th style="padding:8px; text-align:center;">المدة</th>
+              <th style="padding:8px; text-align:center;">الوحدة</th>
+              <th style="padding:8px; text-align:center;">تنتهي في</th>
+              <th style="padding:8px; text-align:center;">الحالة</th>
+              <th style="padding:8px; text-align:center;">إجراءات</th>
+            </tr>
+          </thead>
+          <tbody id="adminNotificationsTbody"></tbody>
+        </table>
+      </div>
+      <div id="adminNotificationResult" style="margin-top: 10px; color: #aaa;"></div>
+    </div>
+    `;
+
     const searchHtml = `
       <div class="admin-search-bar" style="display:flex; gap:10px; align-items:center; margin:15px 0; flex-wrap:wrap; background:#1e1e1e; padding:12px; border-radius:8px; direction:rtl;">
         <input type="text" id="adminSearchEmail" placeholder="🔍 بحث بالبريد الإلكتروني..." style="flex:1; min-width:200px; padding:8px 12px; border:1px solid #333; border-radius:4px; background:#2a2a2a; color:white; outline:none;">
@@ -3683,7 +3771,54 @@ async function loadAdminDashboard() {
     </tr></thead><tbody id="adminTableBody">`;
     usersHtml += `</tbody></table></div>`;
 
-    adminContainer.innerHTML = statsHtml + searchHtml + usersHtml;
+    adminContainer.innerHTML =
+      statsHtml + notificationsHtml + searchHtml + usersHtml;
+
+    // ===== ربط زر إرسال الإشعار =====
+    document
+      .getElementById("adminSendNotificationBtn")
+      ?.addEventListener("click", async function () {
+        const text = document
+          .getElementById("adminNotificationText")
+          .value.trim();
+        const duration =
+          parseInt(
+            document.getElementById("adminNotificationDuration").value,
+          ) || 1;
+        const unit = document.getElementById("adminNotificationUnit").value;
+        if (!text) {
+          document.getElementById("adminNotificationResult").textContent =
+            "⚠️ أدخل نص الإشعار";
+          return;
+        }
+        try {
+          const res = await fetchWithAuth(
+            `${API_BASE}/api/admin/notification`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                text,
+                durationValue: duration,
+                durationUnit: unit,
+              }),
+            },
+          );
+          const data = await res.json();
+          if (data.success) {
+            document.getElementById("adminNotificationResult").textContent =
+              "✅ تم إرسال الإشعار بنجاح";
+            document.getElementById("adminNotificationText").value = "";
+            loadAdminNotifications();
+          } else {
+            document.getElementById("adminNotificationResult").textContent =
+              "❌ فشل الإرسال: " + (data.message || "");
+          }
+        } catch (err) {
+          document.getElementById("adminNotificationResult").textContent =
+            "❌ خطأ في الاتصال";
+        }
+      });
 
     function renderFilteredUsers(filteredUsers) {
       const tbody = document.getElementById("adminTableBody");
@@ -3807,10 +3942,127 @@ async function loadAdminDashboard() {
         document.getElementById("adminSearchTiktok").value = "";
         filterUsers();
       });
-
+    loadAdminNotifications();
     attachAdminButtonEvents();
   } catch (err) {
     adminContainer.innerHTML = `<div class="error-message">❌ فشل تحميل لوحة التحكم: ${err.message}</div>`;
+  }
+}
+
+// تحميل قائمة الإشعارات (للوحة الأدمن)
+async function loadAdminNotifications() {
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/admin/notifications`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message);
+    const tbody = document.getElementById("adminNotificationsTbody");
+    if (!tbody) return;
+    tbody.innerHTML = "";
+    if (data.notifications.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#888;">لا توجد إشعارات</td></tr>`;
+      return;
+    }
+    data.notifications.forEach((n) => {
+      const tr = document.createElement("tr");
+      tr.dataset.id = n._id;
+      const now = new Date();
+      const isExpired = new Date(n.expiresAt) < now;
+      const isActive = n.isActive && !isExpired;
+      tr.innerHTML = `
+        <td style="padding:8px; text-align:right;">${escapeHtml(n.text)}</td>
+        <td style="text-align:center;">${n.durationValue || "?"}</td>
+        <td style="text-align:center;">${n.durationUnit === "hour" ? "ساعة" : n.durationUnit === "minute" ? "دقيقة" : "ثانية"}</td>
+        <td style="text-align:center;">${new Date(n.expiresAt).toLocaleString("ar-EG")}</td>
+        <td style="text-align:center;">${isActive ? "🟢 نشط" : "🔴 منتهي/غير نشط"}</td>
+        <td style="text-align:center;">
+          <button class="admin-edit-notification" data-id="${n._id}" style="background:#ffc107; border:none; padding:4px 10px; border-radius:4px; cursor:pointer;">✏️ تعديل</button>
+          <button class="admin-delete-notification" data-id="${n._id}" style="background:#dc3545; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; color:white;">🗑️ حذف</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+    attachNotificationAdminEvents();
+  } catch (err) {
+    console.error("فشل تحميل الإشعارات:", err);
+  }
+}
+
+// ربط أحداث التعديل والحذف
+function attachNotificationAdminEvents() {
+  document.querySelectorAll(".admin-edit-notification").forEach((btn) => {
+    btn.removeEventListener("click", handleEditNotification);
+    btn.addEventListener("click", handleEditNotification);
+  });
+  document.querySelectorAll(".admin-delete-notification").forEach((btn) => {
+    btn.removeEventListener("click", handleDeleteNotification);
+    btn.addEventListener("click", handleDeleteNotification);
+  });
+}
+
+// معالج تعديل الإشعار
+async function handleEditNotification(e) {
+  const id = e.currentTarget.dataset.id;
+  // نفتح مودال تعديل بسيط (استخدم prompt أو مودال مخصص)
+  const newText = prompt("أدخل النص الجديد للإشعار:");
+  if (newText === null) return;
+  const newDuration = prompt("أدخل المدة الجديدة (رقم):");
+  if (newDuration === null) return;
+  const unit = prompt("أدخل الوحدة (second/minute/hour):", "minute");
+  if (unit === null) return;
+  if (!["second", "minute", "hour"].includes(unit)) {
+    showMessage("⚠️ وحدة غير صالحة");
+    return;
+  }
+  try {
+    const res = await fetchWithAuth(
+      `${API_BASE}/api/admin/notification/${id}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: newText.trim(),
+          durationValue: parseInt(newDuration),
+          durationUnit: unit,
+          isActive: true,
+        }),
+      },
+    );
+    const data = await res.json();
+    if (data.success) {
+      showMessage("✅ تم تعديل الإشعار");
+      loadAdminNotifications();
+    } else {
+      showMessage("❌ فشل التعديل: " + data.message);
+    }
+  } catch (err) {
+    showMessage("❌ خطأ في الاتصال");
+  }
+}
+
+// معالج حذف الإشعار
+async function handleDeleteNotification(e) {
+  const id = e.currentTarget.dataset.id;
+  const confirmed = await showConfirm(
+    "هل أنت متأكد من حذف هذا الإشعار نهائياً؟",
+    "تأكيد الحذف",
+  );
+  if (!confirmed) return;
+  try {
+    const res = await fetchWithAuth(
+      `${API_BASE}/api/admin/notification/${id}`,
+      {
+        method: "DELETE",
+      },
+    );
+    const data = await res.json();
+    if (data.success) {
+      showMessage("✅ تم حذف الإشعار");
+      loadAdminNotifications();
+    } else {
+      showMessage("❌ فشل الحذف: " + data.message);
+    }
+  } catch (err) {
+    showMessage("❌ خطأ في الاتصال");
   }
 }
 
@@ -4654,7 +4906,10 @@ async function saveHotkeySettings() {
   const activeCheck = document.getElementById("hotkeyActive");
 
   if (!keyInput || !select) {
-    showHotkeyStatus("❌ عناصر الواجهة غير موجودة", "var(--error-color, #f44336)");
+    showHotkeyStatus(
+      "❌ عناصر الواجهة غير موجودة",
+      "var(--error-color, #f44336)",
+    );
     return;
   }
 
@@ -4665,19 +4920,28 @@ async function saveHotkeySettings() {
   const active = activeCheck ? activeCheck.checked : false;
 
   if (!newKey) {
-    showHotkeyStatus("⚠️ يرجى اختيار مفتاح من لوحة المفاتيح", "var(--warning-color, #ff9800)");
+    showHotkeyStatus(
+      "⚠️ يرجى اختيار مفتاح من لوحة المفاتيح",
+      "var(--warning-color, #ff9800)",
+    );
     showMessage("⚠️ يرجى اختيار مفتاح من لوحة المفاتيح أولاً");
     return;
   }
 
   if (!isValidHotkeyKey(newKey)) {
-    showHotkeyStatus(`⚠️ المفتاح "${newKey}" غير مدعوم`, "var(--warning-color, #ff9800)");
+    showHotkeyStatus(
+      `⚠️ المفتاح "${newKey}" غير مدعوم`,
+      "var(--warning-color, #ff9800)",
+    );
     showMessage(`⚠️ المفتاح "${newKey}" غير مدعوم`);
     return;
   }
 
   if (!commandId || !commandType) {
-    showHotkeyStatus("⚠️ يرجى اختيار أمر من القائمة", "var(--warning-color, #ff9800)");
+    showHotkeyStatus(
+      "⚠️ يرجى اختيار أمر من القائمة",
+      "var(--warning-color, #ff9800)",
+    );
     showMessage("⚠️ يرجى اختيار أمر من القائمة");
     return;
   }
@@ -4699,7 +4963,10 @@ async function saveHotkeySettings() {
 
         // إذا لم نجد الاختصار القديم، هذا يعني أنه تم حذفه أو أن المعرف غير صحيح
         if (!oldHotkey) {
-          showHotkeyStatus("❌ الاختصار المطلوب تعديله غير موجود", "var(--error-color, #f44336)");
+          showHotkeyStatus(
+            "❌ الاختصار المطلوب تعديله غير موجود",
+            "var(--error-color, #f44336)",
+          );
           showMessage("❌ الاختصار المطلوب تعديله غير موجود");
           editingHotkeyId = null;
           clearHotkeyFormFields();
@@ -4714,7 +4981,10 @@ async function saveHotkeySettings() {
         );
 
         if (existingHotkey) {
-          showHotkeyStatus(`⚠️ المفتاح "${newKey}" مستخدم بالفعل مع أمر آخر`, "var(--warning-color, #ff9800)");
+          showHotkeyStatus(
+            `⚠️ المفتاح "${newKey}" مستخدم بالفعل مع أمر آخر`,
+            "var(--warning-color, #ff9800)",
+          );
           showMessage(`⚠️ المفتاح "${newKey}" مستخدم بالفعل مع أمر آخر`);
           return;
         }
@@ -4731,7 +5001,9 @@ async function saveHotkeySettings() {
             `⚠️ هذا الأمر مستخدم بالفعل مع المفتاح "${dupCommand.key}"`,
             "var(--warning-color, #ff9800)",
           );
-          showMessage(`⚠️ هذا الأمر مستخدم بالفعل مع المفتاح "${dupCommand.key}"`);
+          showMessage(
+            `⚠️ هذا الأمر مستخدم بالفعل مع المفتاح "${dupCommand.key}"`,
+          );
           return;
         }
 
@@ -4762,7 +5034,10 @@ async function saveHotkeySettings() {
           await loadHotkeyCommands();
           await renderHotkeysList();
 
-          showHotkeyStatus(`✅ تم تحديث الاختصار: ${newKey}`, "var(--success-color, #4caf50)");
+          showHotkeyStatus(
+            `✅ تم تحديث الاختصار: ${newKey}`,
+            "var(--success-color, #4caf50)",
+          );
           showMessage(`✅ تم تحديث الاختصار من "${oldKey}" إلى "${newKey}"`);
 
           // ✅ مسح حالة التعديل وتصفير الحقول بعد التحديث
@@ -4771,7 +5046,10 @@ async function saveHotkeySettings() {
           return;
         } else {
           const errorData = await updateRes.json().catch(() => ({}));
-          showHotkeyStatus(`❌ فشل تحديث الاختصار: ${errorData.message || "خطأ غير معروف"}`, "var(--error-color, #f44336)");
+          showHotkeyStatus(
+            `❌ فشل تحديث الاختصار: ${errorData.message || "خطأ غير معروف"}`,
+            "var(--error-color, #f44336)",
+          );
           showMessage(
             `❌ فشل تحديث الاختصار: ${errorData.message || "خطأ غير معروف"}`,
           );
@@ -4782,7 +5060,10 @@ async function saveHotkeySettings() {
       // ✅ حالة الإضافة الجديدة - التحقق من عدم وجود المفتاح
       const existingHotkey = data.hotkeys.find((h) => h.key === newKey);
       if (existingHotkey) {
-        showHotkeyStatus(`⚠️ المفتاح "${newKey}" مستخدم بالفعل`, "var(--warning-color, #ff9800)");
+        showHotkeyStatus(
+          `⚠️ المفتاح "${newKey}" مستخدم بالفعل`,
+          "var(--warning-color, #ff9800)",
+        );
         showMessage(`⚠️ المفتاح "${newKey}" مستخدم بالفعل`);
         return;
       }
@@ -4796,7 +5077,9 @@ async function saveHotkeySettings() {
           `⚠️ هذا الأمر مستخدم بالفعل مع المفتاح "${dupCommand.key}"`,
           "var(--warning-color, #ff9800)",
         );
-        showMessage(`⚠️ هذا الأمر مستخدم بالفعل مع المفتاح "${dupCommand.key}"`);
+        showMessage(
+          `⚠️ هذا الأمر مستخدم بالفعل مع المفتاح "${dupCommand.key}"`,
+        );
         return;
       }
     }
@@ -4814,7 +5097,10 @@ async function saveHotkeySettings() {
     const saved = await saveHotkeySettingsToServer(settings);
 
     if (saved) {
-      showHotkeyStatus(`✅ تم حفظ الاختصار: ${newKey}`, "var(--success-color, #4caf50)");
+      showHotkeyStatus(
+        `✅ تم حفظ الاختصار: ${newKey}`,
+        "var(--success-color, #4caf50)",
+      );
       // تحديث hotkeySettings بالقيم الجديدة
       hotkeySettings = { key: newKey, commandId, commandType, active };
       await updateHotkeyRegistration();
@@ -4825,7 +5111,10 @@ async function saveHotkeySettings() {
       clearHotkeyFormFields();
       updateClearShortcutButton();
     } else {
-      showHotkeyStatus("❌ فشل حفظ الإعدادات على السيرفر", "var(--error-color, #f44336)");
+      showHotkeyStatus(
+        "❌ فشل حفظ الإعدادات على السيرفر",
+        "var(--error-color, #f44336)",
+      );
       showMessage("❌ فشل حفظ الاختصار");
     }
   } catch (err) {
@@ -5910,6 +6199,37 @@ async function connectFrontendSocket() {
       }
     });
 
+    // ===== ✅ مستمع الإشعارات الفورية من الأدمن =====
+    frontendSocket.on("new-notification", (notification) => {
+      const dismissed = getDismissedNotifications();
+      if (!dismissed.includes(notification._id)) {
+        showNotification(notification);
+      }
+    });
+
+    frontendSocket.on("notification-updated", (notification) => {
+      // إذا كان الإشعار المعروض حالياً هو نفسه، نحدثه
+      if (currentNotification && currentNotification._id === notification._id) {
+        if (
+          notification.isActive &&
+          new Date() < new Date(notification.expiresAt)
+        ) {
+          showNotification(notification);
+        } else {
+          hideNotification();
+        }
+      } else {
+        // إذا لم يكن معروضاً، نتحقق من أنه جديد ونعرضه إن لم يكن مغلقاً
+        fetchAndShowNotification();
+      }
+    });
+
+    frontendSocket.on("notification-deleted", (data) => {
+      if (currentNotification && currentNotification._id === data.id) {
+        hideNotification();
+      }
+    });
+
     frontendSocket.on("play-sound", async (payload) => {
       if (payload.id && payload.id === lastPlayedSoundId) return;
       lastPlayedSoundId = payload.id;
@@ -6406,8 +6726,9 @@ function validatePasswordStrength(password) {
     return { valid: false, message: "❌ يجب أن تكون 8 أحرف على الأقل" };
   if (!/[a-z]/.test(password))
     return { valid: false, message: "❌ أضف حرفاً صغيراً (a-z)" };
-  if (!/[A-Z]/.test(password))
-    return { valid: false, message: "❌ أضف حرفاً كبيراً (A-Z)" };
+  // ❌ تم إزالة شرط الحرف الكبير
+  // if (!/[A-Z]/.test(password))
+  //   return { valid: false, message: "❌ أضف حرفاً كبيراً (A-Z)" };
   if (!/\d/.test(password))
     return { valid: false, message: "❌ أضف رقماً (0-9)" };
   if (!/[^A-Za-z0-9]/.test(password))
@@ -6792,3 +7113,120 @@ function safeMediaUrl(url, type = "audio") {
 ].forEach((fn) => {
   if (typeof fn === "function") window[fn.name] = fn;
 });
+
+// ============================================================
+// إشعارات الأدمن
+// ============================================================
+let currentNotification = null;
+let notificationTimer = null;
+
+function getDismissedNotifications() {
+  try {
+    return JSON.parse(localStorage.getItem("dismissedNotifications") || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function addDismissedNotification(id) {
+  const list = getDismissedNotifications();
+  if (!list.includes(id)) {
+    list.push(id);
+    localStorage.setItem("dismissedNotifications", JSON.stringify(list));
+  }
+}
+
+async function fetchAndShowNotification() {
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/notifications/active`);
+    const data = await res.json();
+    if (data.success && data.notifications.length > 0) {
+      const dismissed = getDismissedNotifications();
+      // نعرض أول إشعار لم يتم إغلاقه
+      const active = data.notifications.find((n) => !dismissed.includes(n._id));
+      if (active) {
+        showNotification(active);
+      } else {
+        hideNotification();
+      }
+    } else {
+      hideNotification();
+    }
+  } catch (err) {
+    console.warn("Failed to fetch notifications:", err);
+  }
+}
+
+function showNotification(notification) {
+  // إزالة أي إشعار سابق
+  hideNotification();
+
+  currentNotification = notification;
+
+  const bar = document.createElement("div");
+  bar.id = "adminNotificationBar";
+  bar.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #dc3545;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    z-index: 99999;
+    max-width: 90%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    font-size: 16px;
+    font-weight: bold;
+    direction: rtl;
+  `;
+
+  const textSpan = document.createElement("span");
+  textSpan.textContent = notification.text;
+
+  const closeBtn = document.createElement("button");
+  closeBtn.innerHTML = "✕";
+  closeBtn.style.cssText = `
+    background: transparent;
+    border: none;
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0 8px;
+    line-height: 1;
+  `;
+  closeBtn.onclick = function () {
+    addDismissedNotification(notification._id);
+    hideNotification();
+  };
+
+  bar.appendChild(textSpan);
+  bar.appendChild(closeBtn);
+  document.body.appendChild(bar);
+
+  // نضبط مؤقتاً لتحديث الإشعارات عند انتهاء المدة
+  clearInterval(notificationTimer);
+  notificationTimer = setInterval(() => {
+    if (
+      currentNotification &&
+      new Date() > new Date(currentNotification.expiresAt)
+    ) {
+      hideNotification();
+      clearInterval(notificationTimer);
+      // نبحث عن إشعار آخر
+      fetchAndShowNotification();
+    }
+  }, 5000);
+}
+
+function hideNotification() {
+  const bar = document.getElementById("adminNotificationBar");
+  if (bar) bar.remove();
+  clearInterval(notificationTimer);
+  currentNotification = null;
+}

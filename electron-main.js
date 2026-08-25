@@ -1,4 +1,4 @@
-// electron-main.js - Agent مدمج بالكامل (مع robotjs + autoUpdater + Hotkey)
+// electron-main.js - Agent مدمج بالكامل (مع robotjs + autoUpdater + Hotkey + تشفير البلوجن)
 // ============================================================
 
 const {
@@ -32,18 +32,16 @@ let CONFIG_DIR,
   KEY_FILE,
   LOG_FILE,
   ERROR_LOG_FILE,
-  MACHINE_ID_FILE;
+  MACHINE_ID_FILE,
+  PLUGIN_KEY_FILE; // ← جديد
 
 const DEFAULT_SERVER_URL = "https://backend-production-484d.up.railway.app";
-// روابط قديمة مهجورة تُستبدل تلقائياً بالسيرفر الحالي عند التحميل
 const LEGACY_SERVER_URLS = [
   "backend-7hj8.onrender.com",
   "streammoon.onrender.com",
 ];
 
 // ================ بروتوكول app:// المشفر ================
-// الأصول النصية (html/css/js) مشفرة AES-256-GCM في enc/
-// وتُقدَّم عبر هذا البروتوكول مع فك التشفير في الذاكرة فقط
 let RESOURCE_KEY = null;
 try {
   RESOURCE_KEY = Buffer.from(require("./res-key.jsc"), "hex");
@@ -102,7 +100,6 @@ function registerAppProtocol() {
     }
     if (!p || p === "/") p = "/index.html";
     p = p.replace(/^\/+/, "").split("?")[0];
-    // منع الخروج من مجلد التطبيق
     if (p.includes("..")) return new Response("Forbidden", { status: 403 });
 
     let buffer = null;
@@ -140,6 +137,7 @@ function initPaths() {
   LOG_FILE = path.join(CONFIG_DIR, "agent.log");
   ERROR_LOG_FILE = path.join(CONFIG_DIR, "agent-error.log");
   MACHINE_ID_FILE = path.join(CONFIG_DIR, "machine_id");
+  PLUGIN_KEY_FILE = path.join(CONFIG_DIR, "plugin_master_key.enc"); // ← جديد
 
   if (!fs.existsSync(CONFIG_DIR)) fs.mkdirSync(CONFIG_DIR, { recursive: true });
 }
@@ -152,6 +150,9 @@ let config = {
   serverUrl: DEFAULT_SERVER_URL,
   sessionToken: null,
 };
+
+// ===== متغيرات المفتاح الرئيسي للبلوجن =====
+let pluginMasterKey = null;
 
 function loadOrCreateKey() {
   try {
@@ -223,6 +224,7 @@ function normalizeServerUrl(url) {
   return url;
 }
 
+
 function loadConfig() {
   try {
     if (fs.existsSync(CONFIG_FILE)) {
@@ -234,7 +236,7 @@ function loadConfig() {
       config.serverUrl = data.serverUrl
         ? normalizeServerUrl(data.serverUrl)
         : DEFAULT_SERVER_URL;
-      // ترحيل تلقائي: استبدال أي سيرفر قديم مهجور بالسيرفر الحالي
+      // ترحيل تلقائي: استبدال أي سيرفر قديم
       if (LEGACY_SERVER_URLS.some((old) => config.serverUrl.includes(old))) {
         logMessage(
           `🔄 تم استبدال السيرفر القديم (${config.serverUrl}) بالسيرفر الحالي (${DEFAULT_SERVER_URL})`,
@@ -264,6 +266,193 @@ function saveConfig() {
   }
 }
 
+// توليد مفتاح من Machine ID (نفس طريقة Java)
+function generateKeyFromMachineId() {
+  const machineId = getMachineId();
+  const seed = machineId + "StreamMoon2024SecureKey";
+  return crypto.createHash("sha256").update(seed).digest();
+}
+
+// توليد أو تحميل المفتاح الرئيسي للبلوجن
+function loadOrCreatePluginMasterKey() {
+  try {
+    // محاولة قراءة المفتاح المشفر
+    if (fs.existsSync(PLUGIN_KEY_FILE)) {
+      const encryptedData = fs.readFileSync(PLUGIN_KEY_FILE);
+
+      // استخراج IV والبيانات المشفرة
+      const iv = encryptedData.subarray(0, 16);
+      const ciphertext = encryptedData.subarray(16);
+
+      // توليد مفتاح فك التشفير من Machine ID
+      const key = generateKeyFromMachineId();
+
+      // فك التشفير
+      const decipher = crypto.createDecipheriv("aes-256-cbc", key, iv);
+      let decrypted = decipher.update(ciphertext);
+      decrypted = Buffer.concat([decrypted, decipher.final()]);
+
+      pluginMasterKey = decrypted;
+      logMessage("🔑 تم تحميل المفتاح الرئيسي للبلوجن من الملف");
+      return;
+    }
+  } catch (error) {
+    logError("⚠️ فشل تحميل المفتاح الرئيسي:", error.message);
+  }
+
+  // ✅ إنشاء مفتاح جديد من Machine ID (بدلاً من Random)
+  pluginMasterKey = generateKeyFromMachineId();
+  savePluginMasterKeyEncrypted();
+  logMessage("🔑 تم إنشاء مفتاح رئيسي جديد من Machine ID");
+}
+
+// حفظ المفتاح الرئيسي مشفراً
+function savePluginMasterKeyEncrypted() {
+  try {
+    // توليد مفتاح تشفير من Machine ID
+    const key = generateKeyFromMachineId();
+
+    // تشفير المفتاح الرئيسي
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
+    let encrypted = cipher.update(pluginMasterKey);
+    encrypted = Buffer.concat([encrypted, cipher.final()]);
+
+    // حفظ: IV + البيانات المشفرة
+    const finalBuffer = Buffer.concat([iv, encrypted]);
+    fs.writeFileSync(PLUGIN_KEY_FILE, finalBuffer);
+
+    logMessage("💾 تم حفظ المفتاح الرئيسي للبلوجن مشفراً");
+  } catch (error) {
+    logError("❌ فشل حفظ المفتاح الرئيسي:", error.message);
+  }
+}
+
+// الحصول على المفتاح الرئيسي (لإرساله للبلوجن)
+function getPluginMasterKeyHex() {
+  if (!pluginMasterKey) {
+    loadOrCreatePluginMasterKey();
+  }
+  return pluginMasterKey ? pluginMasterKey.toString("hex") : null;
+}
+// حفظ المفتاح الرئيسي مشفراً
+function savePluginMasterKeyEncrypted() {
+  try {
+    // توليد مفتاح تشفير من Machine ID
+    const key = generateKeyFromMachineId();
+
+    // تشفير المفتاح الرئيسي
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
+    let encrypted = cipher.update(pluginMasterKey);
+    encrypted = Buffer.concat([encrypted, cipher.final()]);
+
+    // حفظ: IV + البيانات المشفرة
+    const finalBuffer = Buffer.concat([iv, encrypted]);
+    fs.writeFileSync(PLUGIN_KEY_FILE, finalBuffer);
+
+    logMessage("💾 تم حفظ المفتاح الرئيسي للبلوجن مشفراً");
+  } catch (error) {
+    logError("❌ فشل حفظ المفتاح الرئيسي:", error.message);
+  }
+}
+
+// الحصول على المفتاح الرئيسي (لإرساله للبلوجن)
+function getPluginMasterKeyHex() {
+  if (!pluginMasterKey) {
+    loadOrCreatePluginMasterKey();
+  }
+  return pluginMasterKey ? pluginMasterKey.toString("hex") : null;
+}
+
+// حفظ المفتاح الرئيسي مشفراً
+function savePluginMasterKeyEncrypted() {
+  try {
+    // توليد مفتاح تشفير من Machine ID
+    const machineId = getMachineId();
+    const key = crypto
+      .createHash("sha256")
+      .update(machineId + "StreamMoon2024SecureKey")
+      .digest();
+
+    // تشفير المفتاح الرئيسي
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
+    let encrypted = cipher.update(pluginMasterKey);
+    encrypted = Buffer.concat([encrypted, cipher.final()]);
+
+    // حفظ: IV + البيانات المشفرة
+    const finalBuffer = Buffer.concat([iv, encrypted]);
+    fs.writeFileSync(PLUGIN_KEY_FILE, finalBuffer);
+
+    logMessage("💾 تم حفظ المفتاح الرئيسي للبلوجن مشفراً");
+  } catch (error) {
+    logError("❌ فشل حفظ المفتاح الرئيسي:", error.message);
+  }
+}
+
+// الحصول على المفتاح الرئيسي (لإرساله للبلوجن)
+function getPluginMasterKeyHex() {
+  if (!pluginMasterKey) {
+    loadOrCreatePluginMasterKey();
+  }
+  return pluginMasterKey ? pluginMasterKey.toString("hex") : null;
+}
+
+// ============================================================
+// 2.2 تشفير ملفات البلوجن (جديد)
+// ============================================================
+
+// تشفير ملف للبلوجن
+function encryptFileForPlugin(inputPath, outputPath) {
+  try {
+    if (!pluginMasterKey) {
+      loadOrCreatePluginMasterKey();
+    }
+
+    const data = fs.readFileSync(inputPath);
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv("aes-256-cbc", pluginMasterKey, iv);
+    let encrypted = cipher.update(data);
+    encrypted = Buffer.concat([encrypted, cipher.final()]);
+
+    const finalBuffer = Buffer.concat([iv, encrypted]);
+    fs.writeFileSync(outputPath, finalBuffer);
+
+    logMessage(`✅ تم تشفير ${path.basename(inputPath)} للبلوجن`);
+    return true;
+  } catch (error) {
+    logError(`❌ فشل تشفير ${path.basename(inputPath)}:`, error.message);
+    return false;
+  }
+}
+
+// فك تشفير ملف من البلوجن
+function decryptFileFromPlugin(inputPath) {
+  try {
+    if (!pluginMasterKey) {
+      loadOrCreatePluginMasterKey();
+    }
+
+    const encryptedData = fs.readFileSync(inputPath);
+    const iv = encryptedData.subarray(0, 16);
+    const ciphertext = encryptedData.subarray(16);
+
+    const decipher = crypto.createDecipheriv(
+      "aes-256-cbc",
+      pluginMasterKey,
+      iv,
+    );
+    let decrypted = decipher.update(ciphertext);
+    decrypted = Buffer.concat([decrypted, decipher.final()]);
+
+    return decrypted;
+  } catch (error) {
+    logError(`❌ فشل فك تشفير ${path.basename(inputPath)}:`, error.message);
+    return null;
+  }
+}
+
 // ============================================================
 // 3. السجلات (Logs)
 // ============================================================
@@ -277,8 +466,6 @@ function rotateLog(filePath, maxSize = MAX_LOG_SIZE) {
   } catch (_) {}
 }
 
-// تجاهل أخطاء الكتابة في stdout/stderr (EPIPE) - تحدث عند إغلاق الطرفية
-// التي أطلقت التطبيق وتؤدي لاستثناء غير معالج يوقف العملية الرئيسية
 process.stdout?.on?.("error", (err) => {
   if (err && err.code === "EPIPE") return;
   throw err;
@@ -317,10 +504,9 @@ function logError(...msg) {
 }
 
 // ============================================================
-// 4. تنفيذ المفاتيح باستخدام robotjs (محاكاة ضغطات حقيقية)
+// 4. تنفيذ المفاتيح باستخدام robotjs
 // ============================================================
 
-// تحويل أسماء مفاتيح التطبيق إلى أسماء robotjs وضغط الكومبو كضغطة حقيقية
 const ROBOT_MODIFIERS = { Ctrl: "control", Alt: "alt", Shift: "shift" };
 const ROBOT_KEY_MAP = {
   Space: "space",
@@ -405,7 +591,6 @@ async function executeKeys(command, repeat = 1, interval = 500) {
     if (i > 0 && safeInterval > 0) {
       await new Promise((r) => setTimeout(r, safeInterval));
     }
-    // الكومبو (Ctrl+Alt+H مثلاً) يُضغط كضغطة حقيقية وليس كنص مكتوب
     const combo = parseCombo(keys);
     if (combo) await sendComboViaRobot(combo);
     else await sendKeysViaRobot(keys);
@@ -549,11 +734,28 @@ async function executeWebhook(payload) {
 }
 
 // ============================================================
-// 6. الاتصال بالسيرفر كـ Agent
+// 6. الاتصال بالسيرفر كـ Agent (معدل لإرسال المفتاح للبلوجن)
 // ============================================================
 let currentSocket = null;
 let isConnecting = false;
 let heartbeatInterval = null;
+
+// ===== دالة إرسال المفتاح للبلوجن =====
+function sendPluginKeyToServer() {
+  if (!currentSocket || !currentSocket.connected) {
+    logMessage("⚠️ لا يوجد اتصال لإرسال المفتاح");
+    return;
+  }
+
+  const keyHex = getPluginMasterKeyHex();
+  if (!keyHex) {
+    logError("❌ لا يوجد مفتاح لإرساله للبلوجن");
+    return;
+  }
+
+  currentSocket.emit("plugin-key", { key: keyHex });
+  logMessage("🔑 تم إرسال المفتاح الرئيسي للبلوجن");
+}
 
 function connectToServer() {
   if (isConnecting) {
@@ -614,11 +816,20 @@ function connectToServer() {
       machineId: machineId,
     });
 
+    // ✅ إرسال المفتاح للبلوجن عند الاتصال
+    setTimeout(() => sendPluginKeyToServer(), 500);
+
     isConnecting = false;
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     heartbeatInterval = setInterval(() => {
       if (socket.connected) socket.emit("ping", { timestamp: Date.now() });
     }, HEARTBEAT_INTERVAL);
+  });
+
+  // ===== مستمع طلب المفتاح من البلوجن =====
+  socket.on("request-plugin-key", () => {
+    logMessage("📨 استلام طلب المفتاح من البلوجن");
+    sendPluginKeyToServer();
   });
 
   socket.on("execute-keys", async (payload) => {
@@ -662,6 +873,8 @@ function connectToServer() {
   socket.on("reconnect", (attempt) => {
     logMessage(`🔄 تم إعادة الاتصال (المحاولة ${attempt})`);
     isConnecting = false;
+    // إعادة إرسال المفتاح عند إعادة الاتصال
+    setTimeout(() => sendPluginKeyToServer(), 500);
   });
 
   socket.on("reconnect_failed", () => {
@@ -683,24 +896,38 @@ function connectToServer() {
 }
 
 // ============================================================
-// 7. IPC للتواصل مع الواجهة
+// 7. IPC للتواصل مع الواجهة (معدل)
 // ============================================================
-// مزامنة عنوان السيرفر مع الواجهة (بدل العنوان الثابت)
 ipcMain.on("get-server-url-sync", (event) => {
   event.returnValue = normalizeServerUrl(config.serverUrl);
 });
 
-ipcMain.handle("get-agent-status", () => {  return {
+ipcMain.handle("get-agent-status", () => {
+  return {
     connected: currentSocket?.connected || false,
     server: config.serverUrl,
     hasSession: !!config.sessionToken,
   };
 });
 
-// ===== نافذة الدفع المعزولة (PayPal بدون أي صلاحيات Node) =====
+// ===== IPC جديد: تشفير ملف للبلوجن =====
+ipcMain.handle("encrypt-for-plugin", (event, inputPath, outputPath) => {
+  return encryptFileForPlugin(inputPath, outputPath);
+});
+
+// ===== IPC جديد: فك تشفير ملف من البلوجن =====
+ipcMain.handle("decrypt-from-plugin", (event, inputPath) => {
+  return decryptFileFromPlugin(inputPath);
+});
+
+// ===== IPC جديد: الحصول على مفتاح البلوجن =====
+ipcMain.handle("get-plugin-key", () => {
+  return getPluginMasterKeyHex();
+});
+
+// ===== نافذة الدفع المعزولة =====
 let paymentWindow = null;
 ipcMain.handle("open-payment-window", (event, token) => {
-  // التوكن يمر عبر الـ query فقط لهذه النافذة - لا صلاحيات Node فيها
   const safeToken = String(token || "").replace(/[^a-zA-Z0-9._-]/g, "");
   if (paymentWindow) {
     paymentWindow.focus();
@@ -714,20 +941,17 @@ ipcMain.handle("open-payment-window", (event, token) => {
     title: "اشتراك - Stream Moon",
     autoHideMenuBar: true,
     webPreferences: {
-      // معزولة تماماً: لا Node مهما حدث داخل صفحة PayPal
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
   });
-  // صفحة الدفع تُقدَّم من الخادم - لا تدخل داخل حزمة التطبيق إطلاقاً
   const paymentUrl = `${config.serverUrl.replace(/\/+$/, "")}/payment/index.html`;
   paymentWindow.loadURL(
     token ? `${paymentUrl}?token=${encodeURIComponent(safeToken)}` : paymentUrl,
   );
   paymentWindow.on("closed", () => {
     paymentWindow = null;
-    // إعلام النافذة الرئيسية لتحديث حالة الاشتراك
     if (mainWindow) {
       mainWindow.webContents.send("payment-closed");
     }
@@ -777,12 +1001,11 @@ ipcMain.handle("bind-agent-session", async (event, userToken) => {
 });
 
 // ============================================================
-// 7.1 نظام Hotkey (باستخدام uiohook-napi)
+// 7.1 نظام Hotkey
 // ============================================================
-let hotkeyListeners = {}; // { combo: { commandId, commandType } }
+let hotkeyListeners = {};
 let uiohookStarted = false;
-// تتبع حالة المعدلات المضغوطة - أعلام الحدث (altKey...) غير موثوقة على Windows
-const pressedModifiers = new Set(); // "Ctrl" | "Alt" | "Shift"
+const pressedModifiers = new Set();
 
 const MODIFIER_KEYS = {
   Ctrl: ["Ctrl", "CtrlRight"],
@@ -809,7 +1032,6 @@ function startUiohook() {
   if (uiohookStarted) return;
   uiohookStarted = true;
 
-  // تحديث حالة المعدلات عند رفع المفتاح
   const heldKeys = new Set();
   uIOhook.on("keyup", (e) => {
     const keyName = getKeyName(e.keycode);
@@ -821,13 +1043,11 @@ function startUiohook() {
   uIOhook.on("keydown", (e) => {
     const keyName = getKeyName(e.keycode);
     if (!keyName) return;
-    // تحديث حالة المعدلات: علم الحدث أو التتبع اليدوي (أيهما متاح)
     const mod = getModifierName(keyName);
     if (mod) {
       pressedModifiers.add(mod);
-      return; // الضغط على المعدل وحده لا ينفذ اختصاراً
+      return;
     }
-    // التكرار التلقائي من النظام طالما الإصبع مضغوط: ينفذ مرة واحدة لكل ضغطة فعلية
     if (heldKeys.has(keyName)) return;
     heldKeys.add(keyName);
 
@@ -835,7 +1055,6 @@ function startUiohook() {
     const alt = e.altKey || pressedModifiers.has("Alt");
     const shift = e.shiftKey || pressedModifiers.has("Shift");
 
-    // بناء الـ combo مع المعدلات
     let combo = "";
     if (ctrl) combo += "Ctrl+";
     if (alt) combo += "Alt+";
@@ -857,7 +1076,6 @@ function startUiohook() {
   logMessage("✅ uIOhook started for global hotkeys");
 }
 
-// تسجيل اختصار جديد
 ipcMain.handle("hotkey:register", (event, combo, commandId, commandType) => {
   if (hotkeyListeners[combo]) {
     logMessage(`⚠️ Hotkey ${combo} already registered, replacing`);
@@ -867,7 +1085,6 @@ ipcMain.handle("hotkey:register", (event, combo, commandId, commandType) => {
   return { success: true };
 });
 
-// إلغاء اختصار
 ipcMain.handle("hotkey:unregister", (event, combo) => {
   if (hotkeyListeners[combo]) {
     delete hotkeyListeners[combo];
@@ -876,7 +1093,6 @@ ipcMain.handle("hotkey:unregister", (event, combo) => {
   return { success: false };
 });
 
-// إلغاء جميع الاختصارات
 ipcMain.handle("hotkey:unregisterAll", () => {
   hotkeyListeners = {};
   return { success: true };
@@ -894,19 +1110,16 @@ function initAutoUpdater() {
     return;
   }
 
-  // 1. تحديد خادم التحديثات يدوياً لضمان عدم حدوث خطأ في القراءة
   autoUpdater.setFeedURL({
     provider: "github",
     owner: "captenblank1",
     repo: "Stream-Moon-Program",
   });
 
-  // 2. إيقاف التحقق من التوقيع الرقمي (بسبب forceCodeSigning: false)
   autoUpdater.verifyUpdateCodeSignature = false;
   autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.autoInstallOnAppQuit = false;
 
-  // ===== تحديث صامت قبل فتح البرنامج =====
   let mainOpened = false;
   const openMainWindow = () => {
     if (mainOpened) return;
@@ -914,7 +1127,6 @@ function initAutoUpdater() {
     closeUpdateSplash();
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   };
-  // أمان: لو الفحص علق 90 ثانية نفتح البرنامج عادي
   const safetyTimer = setTimeout(openMainWindow, 90000);
 
   autoUpdater.on("checking-for-update", () => {
@@ -923,7 +1135,6 @@ function initAutoUpdater() {
 
   autoUpdater.on("update-available", (info) => {
     logMessage(`🔄 يتوفر تحديث جديد (${info.version})، جاري التحميل...`);
-    // شاشة صغيرة توضح أن التحديث جارٍ قبل فتح البرنامج (بدون واجهة المثبت)
     createUpdateSplash(info.version);
   });
 
@@ -941,15 +1152,25 @@ function initAutoUpdater() {
 
   autoUpdater.on("update-downloaded", (info) => {
     logMessage(
-      `✅ تم تحميل التحديث (${info.version}) - تثبيت صامت وإعادة تشغيل تلقائي.`,
+      `✅ تم تحميل التحديث (${info.version}) - سيتم تثبيت التحديث وإعادة التشغيل.`,
     );
-    updateSplashProgress(100, "جاري التثبيت الصامت...");
-    // مهلة قصيرة لعرض نسبة 100% ثم تثبيت صامت (isSilent=true) وإعادة تشغيل تلقائية
-    setTimeout(() => {
+    updateSplashProgress(100, "جاري تثبيت التحديث وإعادة التشغيل...");
+
+    setImmediate(() => {
       clearTimeout(safetyTimer);
       closeUpdateSplash();
-      autoUpdater.quitAndInstall(true, true);
-    }, 1000);
+
+      logMessage("🔄 استدعاء quitAndInstall...");
+      autoUpdater.quitAndInstall(false, false);
+
+      setTimeout(() => {
+        if (process.platform === "win32") {
+          logMessage("⚠️ quitAndInstall لم ينجح، محاولة إعادة تشغيل يدوية...");
+          app.relaunch();
+          app.exit(0);
+        }
+      }, 5000);
+    });
   });
 
   autoUpdater.on("error", (err) => {
@@ -958,12 +1179,15 @@ function initAutoUpdater() {
     openMainWindow();
   });
 
-  // بدء التحقق — النافذة الرئيسية تفتح فقط بعد انتهاء الفحص بدون تحديث
+  autoUpdater.on("quit-and-install", () => {
+    logMessage("🔄 جاري إنهاء التطبيق وبدء التثبيت...");
+  });
+
   autoUpdater.checkForUpdates();
 }
 
 // ============================================================
-// 8.1 شاشة التحديث الصامت (تظهر قبل فتح البرنامج)
+// 8.1 شاشة التحديث
 // ============================================================
 let updateSplashWindow = null;
 
@@ -997,7 +1221,7 @@ function createUpdateSplash(version) {
 </style></head>
 <body>
   <h2>🔄 Stream Moon — تحديث جديد</h2>
-  <p>جاري تحميل الإصدار ${version} — لن يظهر أي مثبّت، سيتم كل شيء تلقائياً</p>
+  <p>جاري تحميل الإصدار ${version} — بعد الانتهاء، ستظهر نافذة التثبيت لتأكيد التحديث</p>
   <div class="bar"><div id="fill"></div></div>
   <div id="pct">0%</div>
 </body></html>`;
@@ -1035,7 +1259,6 @@ function createWindow() {
     menu: null,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
-      // مطلوب لتشغيل كود الواجهة من bytecode (main.jsc) داخل الصفحة
       contextIsolation: false,
       nodeIntegration: true,
       sandbox: false,
@@ -1043,20 +1266,17 @@ function createWindow() {
   });
   mainWindow.loadURL("app://s/index.html");
 
-  // ===== حماية: منع أي تنقل خارجي أو فتح نوافذ/iframe من داخل الصفحة =====
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (!url.startsWith("app://") && !url.startsWith("file://"))
       event.preventDefault();
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    // أي رابط خارجي يُفتح في متصفح النظام وليس داخل التطبيق
     if (!url.startsWith("file://")) {
       require("electron").shell.openExternal(url);
       return { action: "deny" };
     }
     return { action: "deny" };
   });
-  // منع صفحة الواجهة من إنشاء نوافذ WebContents جديدة (window.open)
   mainWindow.webContents.on("did-attach-webview", (event, wc) => {
     wc.setWindowOpenHandler(() => ({ action: "deny" }));
   });
@@ -1067,7 +1287,7 @@ function createWindow() {
 }
 
 // ============================================================
-// 9. قفل التشغيل (Single Instance)
+// 9. قفل التشغيل
 // ============================================================
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -1091,6 +1311,9 @@ app.whenReady().then(async () => {
   loadOrCreateKey();
   loadConfig();
 
+  // ✅ تحميل أو إنشاء المفتاح الرئيسي للبلوجن
+  loadOrCreatePluginMasterKey();
+
   logMessage("✅ تم التهيئة باستخدام robotjs");
 
   if (config.sessionToken) {
@@ -1100,7 +1323,6 @@ app.whenReady().then(async () => {
   }
 
   registerAppProtocol();
-  // التحديث الصامت يتم قبل فتح النافذة — initAutoUpdater يفتح النافذة عند انتهاء الفحص
   initAutoUpdater();
 
   app.on("activate", () => {
@@ -1119,7 +1341,6 @@ app.on("window-all-closed", () => {
       currentSocket = null;
     }
     if (heartbeatInterval) clearInterval(heartbeatInterval);
-    // إلغاء جميع اختصارات hotkey
     hotkeyListeners = {};
     pressedModifiers.clear();
     if (uiohookStarted) {

@@ -354,63 +354,56 @@
     </aside>
 
     <!-- ===== المحتوى الرئيسي ===== -->
-    <div class="start-section section-css">
-      <div class="account">
-        <img
-          id="liveOwnerImg1"
-          loading="lazy"
-          src="images/img1.jpg"
-          alt="صورة الحساب"
-        />
-        <p id="liveOwnerText">Stream Moon</p>
-        <div class="text">
-          <p>Your TikTok Username <span>(Required!)</span></p>
-          <input id="user-tiktok" type="text" placeholder="@Username TikTok" />
-        </div>
-        <button
-          type="button"
-          id="send-usertik"
-          class="btn btn-primary btn-block"
-        >
-          Connect to TikTok LIVE
-        </button>
-        <p id="result"></p>
-      </div>
-      <div class="minecraft-properties">
-        <input id="player-name" type="text" placeholder="Player Name" />
-        <input id="player-ip" type="text" placeholder="IP" />
-        <input id="player-port" type="text" placeholder="Port" />
-        <input id="player-password" type="text" placeholder="Password" />
-        <button
-          type="button"
-          id="send-minecraft-properties"
-          class="btn btn-primary btn-block"
-        >
-          Send
-        </button>
-        <p
-          id="plugin-status"
-          style="font-size: 0.8rem; margin: 6px 0 0; display: none"
-        ></p>
-        <div id="plugin-pair-area" style="display: none">
-          <input
-            id="plugin-pair-code"
-            type="text"
-            inputmode="numeric"
-            maxlength="6"
-            placeholder="كود البلوجن من كونسول الماينكرافت"
-          />
-          <button
-            type="button"
-            id="plugin-pair-btn"
-            class="btn btn-primary btn-block"
-          >
-            🔗 ربط البلوجن بحسابي
-          </button>
-        </div>
-        <p id="result2"></p>
-      </div>
+  <div class="start-section section-css">
+  <div class="account">
+    <img id="liveOwnerImg1" loading="lazy" src="images/img1.jpg" alt="صورة الحساب" />
+    <p id="liveOwnerText">Stream Moon</p>
+    <div class="text">
+      <p>Your TikTok Username <span>(Required!)</span></p>
+      <input id="user-tiktok" type="text" placeholder="@Username TikTok" />
     </div>
+    <button type="button" id="send-usertik" class="btn btn-primary btn-block">
+      Connect to TikTok LIVE
+    </button>
+    <p id="result"></p>
+  </div>
+
+  <div class="minecraft-properties">
+    <input id="player-name" type="text" placeholder="Player Name" />
+    <input id="player-ip" type="text" placeholder="IP" />
+    <input id="player-port" type="text" placeholder="Port" />
+    <input id="player-password" type="text" placeholder="Password" />
+    <button type="button" id="send-minecraft-properties" class="btn btn-primary btn-block">
+      Send
+    </button>
+
+    <!-- ======== قسم الربط الجديد ======== -->
+    <div class="plugin-pair-section" style="margin-top: 20px; border-top: 1px solid #444; padding-top: 15px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+        <h4 style="color: #1dd9e6e1; margin: 0;">🔗 ربط البلوجن</h4>
+        <span id="pluginConnectionStatus" style="font-size: 13px; color: #aaa;">غير مقترن</span>
+      </div>
+
+      <!-- حالة الاقتران (يظهر عند الربط) -->
+      <div id="pairedActions" style="display: none; align-items: center; gap: 15px; flex-wrap: wrap;">
+        <span style="color: #4caf50; font-weight: bold;">✅ البلوجن مقترن بحسابك</span>
+        <button id="unpairPluginBtn" class="btn btn-danger" style="background: #f44336; border: none; padding: 6px 18px; border-radius: 6px; cursor: pointer; color: white; font-weight: 600;">🔄 تغيير الكود</button>
+      </div>
+
+      <!-- نموذج إدخال الكود (يظهر عند عدم الربط) -->
+      <div id="pairingInputGroup" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <input type="text" id="pairingCode" placeholder="أدخل كود الاقتران (6 أرقام)" maxlength="6" style="flex: 1; min-width: 150px; padding: 10px; background: #222; border: 1px solid #555; color: white; border-radius: 6px; font-size: 16px; letter-spacing: 2px;">
+        <button id="pairPluginBtn" class="btn btn-primary" style="padding: 10px 28px; background: #1dd9e6e1; border: none; border-radius: 6px; color: #000; font-weight: bold; cursor: pointer;">ربط</button>
+      </div>
+
+      <div id="pairingResult" style="margin-top: 10px; font-size: 14px; min-height: 22px;"></div>
+    </div>
+    <!-- ======== نهاية قسم الربط ======== -->
+
+    <p id="plugin-status" style="font-size: 0.8rem; margin: 6px 0 0; display: none;"></p>
+    <p id="result2"></p>
+  </div>
+</div>
 
     <div class="start-section-2 section-css">
       <main>
