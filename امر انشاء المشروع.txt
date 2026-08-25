@@ -1,0 +1,7 @@
+Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
+npm run dist
+
+repomix
+
+npm run compile
+node scripts/encrypt.js

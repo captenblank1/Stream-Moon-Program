@@ -1,0 +1,11 @@
+*.exe
+*.blockmap
+*.yml
+.DS_Store
+repomix-output.xml
+Stream-Moon-Program/
+*.log
+node_modules/
+build/
+release-build/
+dist/
