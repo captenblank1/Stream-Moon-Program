@@ -1,3 +1,22 @@
+// Resource guard (أمان الذاكرة): تتبع كل المؤقتات التي تنشئها هذه الصفحة
+// وتنظيفها بالكامل عند الإغلاق — يمنع بقاء المؤقتات تعمل للأبد
+(function () {
+  if (window.__smTimersGuard) return;
+  window.__smTimersGuard = true;
+  var timers = new Set();
+  var origSetInterval = window.setInterval.bind(window);
+  window.setInterval = function (fn, ms) {
+    var id = origSetInterval(fn, ms);
+    timers.add(id);
+    return id;
+  };
+  var clearAll = function () {
+    timers.forEach(function (id) { window.clearInterval(id); });
+    timers.clear();
+  };
+  window.addEventListener("pagehide", clearAll);
+  window.addEventListener("beforeunload", clearAll);
+})();
 "use strict";
 const _0xf0e606 = _0x36aa;
 (function (_0x972eb4, _0x45db85) {

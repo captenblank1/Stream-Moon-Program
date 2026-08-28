@@ -8,6 +8,8 @@ const {
   Menu,
   Notification,
   protocol,
+  shell,
+  safeStorage,
 } = require("electron");
 const path = require("path");
 const fs = require("fs");
@@ -146,7 +148,12 @@ function initPaths() {
 // ============================================================
 // 2. التشفير وإدارة الجلسات
 // ============================================================
-let encryptionKey = null;
+// 🔒 حماية البيانات المحلية بطبقتين:
+//   1) safeStorage من نظام التشغيل (DPAPI على Windows — مفتاح مربوط
+//      بحساب المستخدم ويُدار من النظام، لا يُكتب مفتاح خام على القرص)
+//   2) بديل AES-256-GCM بمفتاح مشتق من بصمة الجهاز إن لم يتوفر safeStorage
+// المفتاح يعيش في الذاكرة (RAM) فقط أثناء التشغيل، والملف القديم
+// (.encryption_key بنص صريح) يُحذف نهائياً بعد الترحيل
 let config = {
   serverUrl: DEFAULT_SERVER_URL,
   sessionToken: null,
@@ -155,38 +162,95 @@ let config = {
 // ===== متغيرات المفتاح الرئيسي للبلوجن =====
 let pluginMasterKey = null;
 
-function loadOrCreateKey() {
+// مفتاح قديم للترحيل فقط (إن وُجد ملف .encryption_key)
+let legacyEncryptionKey = null;
+
+function loadLegacyKeyForMigration() {
   try {
     if (fs.existsSync(KEY_FILE)) {
-      encryptionKey = Buffer.from(fs.readFileSync(KEY_FILE, "utf8"), "hex");
-    } else {
-      encryptionKey = crypto.randomBytes(32);
-      fs.writeFileSync(KEY_FILE, encryptionKey.toString("hex"));
+      legacyEncryptionKey = Buffer.from(
+        fs.readFileSync(KEY_FILE, "utf8"),
+        "hex",
+      );
     }
-  } catch (e) {
-    encryptionKey = crypto.randomBytes(32);
-    logError("⚠️ تعذّر حفظ مفتاح التشفير، سيتم استخدام مفتاح مؤقت.");
+  } catch (_) {}
+}
+
+// فك صيغة CBC القديمة (iv:hex) — للترحيل فقط
+function legacyDecrypt(encryptedData) {
+  if (!encryptedData || !legacyEncryptionKey) return null;
+  try {
+    const parts = encryptedData.split(":");
+    if (parts.length !== 2) return null;
+    const iv = Buffer.from(parts[0], "hex");
+    const decipher = crypto.createDecipheriv(
+      "aes-256-cbc",
+      legacyEncryptionKey,
+      iv,
+    );
+    let decrypted = decipher.update(parts[1], "hex", "utf8");
+    decrypted += decipher.final("utf8");
+    return decrypted;
+  } catch {
+    return null;
   }
 }
 
-function encrypt(text) {
-  if (!text || !encryptionKey) return null;
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv("aes-256-cbc", encryptionKey, iv);
-  let encrypted = cipher.update(text, "utf8", "hex");
-  encrypted += cipher.final("hex");
-  return iv.toString("hex") + ":" + encrypted;
+// لفّ سر نصي للتخزين الآمن على القرص
+function sealSecret(plain) {
+  if (plain == null) return null;
+  if (safeStorage && safeStorage.isEncryptionAvailable()) {
+    return (
+      "SS1:" + safeStorage.encryptString(String(plain)).toString("base64")
+    );
+  }
+  const key = generateKeyFromMachineId();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const ct = Buffer.concat([
+    cipher.update(String(plain), "utf8"),
+    cipher.final(),
+  ]);
+  return (
+    "GCM:" +
+    iv.toString("base64") +
+    ":" +
+    ct.toString("base64") +
+    ":" +
+    cipher.getAuthTag().toString("base64")
+  );
 }
 
-function decrypt(encryptedData) {
-  if (!encryptedData || !encryptionKey) return null;
-  const parts = encryptedData.split(":");
-  if (parts.length !== 2) return null;
-  const iv = Buffer.from(parts[0], "hex");
-  const decipher = crypto.createDecipheriv("aes-256-cbc", encryptionKey, iv);
-  let decrypted = decipher.update(parts[1], "hex", "utf8");
-  decrypted += decipher.final("utf8");
-  return decrypted;
+// فكّ سر ملفوف (الصيغ الجديدة فقط)
+function unsealSecret(sealed) {
+  if (!sealed || typeof sealed !== "string") return null;
+  if (sealed.startsWith("SS1:")) {
+    try {
+      return safeStorage.decryptString(
+        Buffer.from(sealed.slice(4), "base64"),
+      );
+    } catch {
+      return null;
+    }
+  }
+  if (sealed.startsWith("GCM:")) {
+    try {
+      const parts = sealed.split(":");
+      const d = crypto.createDecipheriv(
+        "aes-256-gcm",
+        generateKeyFromMachineId(),
+        Buffer.from(parts[1], "base64"),
+      );
+      d.setAuthTag(Buffer.from(parts[3], "base64"));
+      return Buffer.concat([
+        d.update(Buffer.from(parts[2], "base64")),
+        d.final(),
+      ]).toString("utf8");
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 function getMachineId() {
@@ -231,9 +295,16 @@ function loadConfig() {
     if (fs.existsSync(CONFIG_FILE)) {
       const raw = fs.readFileSync(CONFIG_FILE, "utf8");
       const data = JSON.parse(raw);
-      config.sessionToken = data.sessionToken
-        ? decrypt(data.sessionToken)
-        : null;
+      // الصيغة الجديدة (SS1/GCM) أولاً، ثم ترحيل الصيغة القديمة CBC
+      if (data.sessionToken) {
+        config.sessionToken =
+          unsealSecret(data.sessionToken) || legacyDecrypt(data.sessionToken);
+        if (config.sessionToken && legacyEncryptionKey) {
+          saveConfig(); // إعادة لفّ فوراً بالحماية الجديدة
+        }
+      } else {
+        config.sessionToken = null;
+      }
       config.serverUrl = data.serverUrl
         ? normalizeServerUrl(data.serverUrl)
         : DEFAULT_SERVER_URL;
@@ -259,7 +330,7 @@ function saveConfig() {
   try {
     const toSave = { serverUrl: config.serverUrl };
     toSave.sessionToken = config.sessionToken
-      ? encrypt(config.sessionToken)
+      ? sealSecret(config.sessionToken)
       : null;
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(toSave, null, 2));
   } catch (e) {
@@ -267,132 +338,90 @@ function saveConfig() {
   }
 }
 
-// توليد مفتاح من Machine ID (نفس طريقة Java)
+// توليد مفتاح مشتق من بصمة الجهاز (لصيغة GCM الاحتياطية فقط)
 function generateKeyFromMachineId() {
   const machineId = getMachineId();
   const seed = machineId + "StreamMoon2024SecureKey";
   return crypto.createHash("sha256").update(seed).digest();
 }
 
-// توليد أو تحميل المفتاح الرئيسي للبلوجن
+// ============================================================
+// المفتاح الرئيسي للبلوجن — تخزين ملفوف بـ safeStorage/GCM.
+// توليد عشوائي (لا اشتقاق من بصمة الجهاز) حتى لا يمكن إعادة بنائه
+// من معلومات الجهاز لو سرق الملف. الصيغة الثنائية القديمة تُرحَّل تلقائياً.
+// ============================================================
 function loadOrCreatePluginMasterKey() {
+  // 1) الصيغة الجديدة (نص ملفوف)
   try {
-    // محاولة قراءة المفتاح المشفر
     if (fs.existsSync(PLUGIN_KEY_FILE)) {
-      const encryptedData = fs.readFileSync(PLUGIN_KEY_FILE);
-
-      // استخراج IV والبيانات المشفرة
-      const iv = encryptedData.subarray(0, 16);
-      const ciphertext = encryptedData.subarray(16);
-
-      // توليد مفتاح فك التشفير من Machine ID
-      const key = generateKeyFromMachineId();
-
-      // فك التشفير
-      const decipher = crypto.createDecipheriv("aes-256-cbc", key, iv);
-      let decrypted = decipher.update(ciphertext);
-      decrypted = Buffer.concat([decrypted, decipher.final()]);
-
-      pluginMasterKey = decrypted;
-      logMessage("🔑 تم تحميل المفتاح الرئيسي للبلوجن من الملف");
-      return;
+      const sealed = fs.readFileSync(PLUGIN_KEY_FILE, "utf8").trim();
+      if (sealed.startsWith("SS1:") || sealed.startsWith("GCM:")) {
+        const hex = unsealSecret(sealed);
+        if (hex && /^[0-9a-f]{64}$/i.test(hex)) {
+          pluginMasterKey = Buffer.from(hex, "hex");
+          logMessage("🔑 تم تحميل المفتاح الرئيسي للبلوجن (تخزين محمي)");
+          return;
+        }
+      }
     }
   } catch (error) {
     logError("⚠️ فشل تحميل المفتاح الرئيسي:", error.message);
   }
 
-  // ✅ إنشاء مفتاح جديد من Machine ID (بدلاً من Random)
-  pluginMasterKey = generateKeyFromMachineId();
+  // 2) الصيغة القديمة (ثنائي CBC بمفتاح بصمة الجهاز) — ترحيل
+  try {
+    if (fs.existsSync(PLUGIN_KEY_FILE)) {
+      const encryptedData = fs.readFileSync(PLUGIN_KEY_FILE);
+      if (!encryptedData.subarray) throw new Error("bad file");
+      const iv = encryptedData.subarray(0, 16);
+      const ciphertext = encryptedData.subarray(16);
+      const key = generateKeyFromMachineId();
+      const decipher = crypto.createDecipheriv("aes-256-cbc", key, iv);
+      let decrypted = decipher.update(ciphertext);
+      decrypted = Buffer.concat([decrypted, decipher.final()]);
+      if (
+        decrypted.length === 32 &&
+        crypto
+          .createHash("sha256")
+          .update(getMachineId() + "StreamMoon2024SecureKey")
+          .digest()
+          .equals(decrypted)
+      ) {
+        // كان مفتاحاً مشتقاً قديماً → نستبدله بعشوائي أقوى
+        pluginMasterKey = crypto.randomBytes(32);
+        logMessage("🔑 ترقية المفتاح: مشتق قديم → عشوائي فريد");
+      } else {
+        pluginMasterKey = decrypted;
+        logMessage("🔑 تم تحميل المفتاح الرئيسي القديم وسيُعاد لفّه محمياً");
+      }
+      savePluginMasterKeyEncrypted();
+      return;
+    }
+  } catch (error) {
+    // ملف تالف أو غير قابل للفك → توليد جديد
+  }
+
+  // 3) توليد عشوائي فريد لهذا التثبيت
+  pluginMasterKey = crypto.randomBytes(32);
   savePluginMasterKeyEncrypted();
-  logMessage("🔑 تم إنشاء مفتاح رئيسي جديد من Machine ID");
+  logMessage("🔑 تم إنشاء مفتاح رئيسي جديد عشوائي");
 }
 
-// حفظ المفتاح الرئيسي مشفراً
+// حفظ المفتاح الرئيسي ملفوفاً (safeStorage أو GCM)
 function savePluginMasterKeyEncrypted() {
   try {
-    // توليد مفتاح تشفير من Machine ID
-    const key = generateKeyFromMachineId();
-
-    // تشفير المفتاح الرئيسي
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
-    let encrypted = cipher.update(pluginMasterKey);
-    encrypted = Buffer.concat([encrypted, cipher.final()]);
-
-    // حفظ: IV + البيانات المشفرة
-    const finalBuffer = Buffer.concat([iv, encrypted]);
-    fs.writeFileSync(PLUGIN_KEY_FILE, finalBuffer);
-
-    logMessage("💾 تم حفظ المفتاح الرئيسي للبلوجن مشفراً");
+    if (!pluginMasterKey) return;
+    fs.writeFileSync(
+      PLUGIN_KEY_FILE,
+      sealSecret(pluginMasterKey.toString("hex")),
+      "utf8",
+    );
   } catch (error) {
     logError("❌ فشل حفظ المفتاح الرئيسي:", error.message);
   }
 }
 
-// الحصول على المفتاح الرئيسي (لإرساله للبلوجن)
-function getPluginMasterKeyHex() {
-  if (!pluginMasterKey) {
-    loadOrCreatePluginMasterKey();
-  }
-  return pluginMasterKey ? pluginMasterKey.toString("hex") : null;
-}
-// حفظ المفتاح الرئيسي مشفراً
-function savePluginMasterKeyEncrypted() {
-  try {
-    // توليد مفتاح تشفير من Machine ID
-    const key = generateKeyFromMachineId();
-
-    // تشفير المفتاح الرئيسي
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
-    let encrypted = cipher.update(pluginMasterKey);
-    encrypted = Buffer.concat([encrypted, cipher.final()]);
-
-    // حفظ: IV + البيانات المشفرة
-    const finalBuffer = Buffer.concat([iv, encrypted]);
-    fs.writeFileSync(PLUGIN_KEY_FILE, finalBuffer);
-
-    logMessage("💾 تم حفظ المفتاح الرئيسي للبلوجن مشفراً");
-  } catch (error) {
-    logError("❌ فشل حفظ المفتاح الرئيسي:", error.message);
-  }
-}
-
-// الحصول على المفتاح الرئيسي (لإرساله للبلوجن)
-function getPluginMasterKeyHex() {
-  if (!pluginMasterKey) {
-    loadOrCreatePluginMasterKey();
-  }
-  return pluginMasterKey ? pluginMasterKey.toString("hex") : null;
-}
-
-// حفظ المفتاح الرئيسي مشفراً
-function savePluginMasterKeyEncrypted() {
-  try {
-    // توليد مفتاح تشفير من Machine ID
-    const machineId = getMachineId();
-    const key = crypto
-      .createHash("sha256")
-      .update(machineId + "StreamMoon2024SecureKey")
-      .digest();
-
-    // تشفير المفتاح الرئيسي
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
-    let encrypted = cipher.update(pluginMasterKey);
-    encrypted = Buffer.concat([encrypted, cipher.final()]);
-
-    // حفظ: IV + البيانات المشفرة
-    const finalBuffer = Buffer.concat([iv, encrypted]);
-    fs.writeFileSync(PLUGIN_KEY_FILE, finalBuffer);
-
-    logMessage("💾 تم حفظ المفتاح الرئيسي للبلوجن مشفراً");
-  } catch (error) {
-    logError("❌ فشل حفظ المفتاح الرئيسي:", error.message);
-  }
-}
-
-// الحصول على المفتاح الرئيسي (لإرساله للبلوجن)
+// الحصول على المفتاح الرئيسي (لإرساله للبلوجن عبر القناة الموثقة)
 function getPluginMasterKeyHex() {
   if (!pluginMasterKey) {
     loadOrCreatePluginMasterKey();
@@ -488,15 +517,38 @@ function safeConsoleError(line) {
   } catch {}
 }
 
+// تعقيم الأسطر قبل كتابتها في أي سجل: يخفي التوكنات/المفاتيح السداسية
+// الطويلة وعبارات Bearer والبريد — لا بيانات حساسة في لوجات العميل
+function redactLogArg(arg) {
+  if (typeof arg !== "string") return arg;
+  return arg
+    .replace(
+      /([a-f0-9]{32,})/gi,
+      (m) => `${m.slice(0, 6)}…[REDACTED:${m.length}]`,
+    )
+    .replace(
+      /\b(Bearer|Basic)\s+[A-Za-z0-9._-]+/gi,
+      (m) => `${m.split(/\s+/)[0]} [REDACTED]`,
+    )
+    .replace(
+      /\b([a-zA-Z0-9._%+-])[a-zA-Z0-9._%+-]*@([a-zA-Z0-9.-]+\.[a-z]{2,})\b/g,
+      (m, first, domain) => `${first}***@${domain}`,
+    );
+}
+
 function logMessage(...msg) {
-  const line = `[${new Date().toISOString()}] ${msg.join(" ")}`;
+  const line = `[${new Date().toISOString()}] ${msg
+    .map(redactLogArg)
+    .join(" ")}`;
   rotateLog(LOG_FILE);
   fs.appendFileSync(LOG_FILE, line + "\n");
   safeConsoleLog(line);
 }
 
 function logError(...msg) {
-  const line = `[${new Date().toISOString()}] ERROR: ${msg.join(" ")}`;
+  const line = `[${new Date().toISOString()}] ERROR: ${msg
+    .map(redactLogArg)
+    .join(" ")}`;
   rotateLog(LOG_FILE);
   rotateLog(ERROR_LOG_FILE);
   fs.appendFileSync(LOG_FILE, line + "\n");
@@ -509,6 +561,8 @@ function logError(...msg) {
 // ============================================================
 
 const ROBOT_MODIFIERS = { Ctrl: "control", Alt: "alt", Shift: "shift" };
+// ⛔ Win محذوف عمداً: منع فتح قائمة ابدأ/تشغيل (Win+R) عن بُعد —
+// أقوى مسار لتنفيذ أوامر نظام على جهاز المستخدم عبر ضغطات المفاتيح
 const ROBOT_KEY_MAP = {
   Space: "space",
   Enter: "enter",
@@ -520,7 +574,6 @@ const ROBOT_KEY_MAP = {
   ArrowLeft: "left",
   ArrowRight: "right",
   Menu: "menu",
-  Win: "command",
 };
 
 function parseCombo(str) {
@@ -571,6 +624,22 @@ async function sendKeysViaRobot(text) {
   }
 }
 
+// ===== إشعار المستخدم بتنفيذ ضغطات عن بُعد (مرة كل 30 ثانية كحد أقصى) =====
+let lastRemoteKeysNotify = 0;
+function notifyRemoteKeysExecuted(command) {
+  const now = Date.now();
+  if (now - lastRemoteKeysNotify < 30000) return;
+  lastRemoteKeysNotify = now;
+  try {
+    if (Notification.isSupported()) {
+      new Notification({
+        title: "Stream Moon — تنفيذ أوامر كيبورد",
+        body: "يتم الآن تنفيذ ضغطات مفاتيح وصلت من السيرفر (هدية/تفاعل). إن لم تكن تتوقع ذلك افصل الاتصال.",
+      }).show();
+    }
+  } catch {}
+}
+
 async function executeKeys(command, repeat = 1, interval = 500) {
   const keys = command.startsWith("KEY:") ? command.slice(4) : command;
 
@@ -578,6 +647,8 @@ async function executeKeys(command, repeat = 1, interval = 500) {
     logError(`⛔ تم حظر أمر يحتوي على مفتاح نظامي: ${keys}`);
     return;
   }
+
+  notifyRemoteKeysExecuted(keys);
 
   const safeRepeat = Math.min(
     MAX_KEY_REPEAT,
@@ -614,10 +685,30 @@ async function executeWebhook(payload) {
     fromServer = false,
   } = payload;
 
-  if (!url || typeof url !== "string" || !url.startsWith("http")) {
+  if (!url || typeof url !== "string" || !/^https?:\/\//i.test(url)) {
     logError("❌ تخطي Webhook: رابط غير صالح ->", url);
     return;
   }
+
+  // ⛔ عناوين metadata السحابية وشبكات link-local محجوبة دائماً —
+  // حتى للطلبات القادمة من السيرفر (لا استخدام مشروع لها على جهاز منزلي)
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+    const isMetadata =
+      /^169\.254\./.test(hostname) ||
+      hostname === "metadata.google.internal" ||
+      hostname === "instance-data" ||
+      // IPv6 literal فقط (يحتوي :) — link-local وULA
+      (hostname.includes(":") &&
+        (hostname.startsWith("fe80") ||
+          hostname.startsWith("fc") ||
+          hostname.startsWith("fd")));
+    if (isMetadata) {
+      logError("❌ تخطي Webhook: عنوان metadata/داخلي محجوب ->", url);
+      return;
+    }
+  } catch (e) {}
 
   if (!fromServer) {
     try {
@@ -899,11 +990,26 @@ function connectToServer() {
 // ============================================================
 // 7. IPC للتواصل مع الواجهة (معدل)
 // ============================================================
+// التحقق من أن المرسل هو نافذتنا الموثوقة فقط (app:// أو file://)
+// يمنع أي سياق آخر (نوافذ بعيدة/iframe) من استدعاء القنوات الحساسة
+function isTrustedRenderer(event) {
+  try {
+    const senderUrl =
+      (event.senderFrame && event.senderFrame.url) ||
+      (event.sender && event.sender.getURL && event.sender.getURL()) ||
+      "";
+    return senderUrl.startsWith("app://") || senderUrl.startsWith("file://");
+  } catch {
+    return false;
+  }
+}
+
 ipcMain.on("get-server-url-sync", (event) => {
   event.returnValue = normalizeServerUrl(config.serverUrl);
 });
 
-ipcMain.handle("get-agent-status", () => {
+ipcMain.handle("get-agent-status", (event) => {
+  if (!isTrustedRenderer(event)) return { connected: false, server: "", hasSession: false };
   return {
     connected: currentSocket?.connected || false,
     server: config.serverUrl,
@@ -913,22 +1019,26 @@ ipcMain.handle("get-agent-status", () => {
 
 // ===== IPC جديد: تشفير ملف للبلوجن =====
 ipcMain.handle("encrypt-for-plugin", (event, inputPath, outputPath) => {
+  if (!isTrustedRenderer(event)) return false;
   return encryptFileForPlugin(inputPath, outputPath);
 });
 
 // ===== IPC جديد: فك تشفير ملف من البلوجن =====
 ipcMain.handle("decrypt-from-plugin", (event, inputPath) => {
+  if (!isTrustedRenderer(event)) return null;
   return decryptFileFromPlugin(inputPath);
 });
 
 // ===== IPC جديد: الحصول على مفتاح البلوجن =====
-ipcMain.handle("get-plugin-key", () => {
+ipcMain.handle("get-plugin-key", (event) => {
+  if (!isTrustedRenderer(event)) return null;
   return getPluginMasterKeyHex();
 });
 
 // ===== نافذة الدفع المعزولة =====
 let paymentWindow = null;
 ipcMain.handle("open-payment-window", (event, token) => {
+  if (!isTrustedRenderer(event)) return { success: false };
   const safeToken = String(token || "").replace(/[^a-zA-Z0-9._-]/g, "");
   if (paymentWindow) {
     paymentWindow.focus();
@@ -948,8 +1058,9 @@ ipcMain.handle("open-payment-window", (event, token) => {
     },
   });
   const paymentUrl = `${config.serverUrl.replace(/\/+$/, "")}/payment/index.html`;
+  // التوكن في الـ hash (#) بدل الـ query — الـ hash لا يُسجَّل في سجلات السيرفرات/البروكسيات
   paymentWindow.loadURL(
-    token ? `${paymentUrl}?token=${encodeURIComponent(safeToken)}` : paymentUrl,
+    token ? `${paymentUrl}#token=${encodeURIComponent(safeToken)}` : paymentUrl,
   );
   paymentWindow.on("closed", () => {
     paymentWindow = null;
@@ -961,6 +1072,8 @@ ipcMain.handle("open-payment-window", (event, token) => {
 });
 
 ipcMain.handle("bind-agent-session", async (event, userToken) => {
+  if (!isTrustedRenderer(event))
+    return { success: false, message: "مصدر غير موثوق" };
   if (!userToken) return { success: false, message: "رمز الجلسة مطلوب" };
 
   try {
@@ -1078,6 +1191,7 @@ function startUiohook() {
 }
 
 ipcMain.handle("hotkey:register", (event, combo, commandId, commandType) => {
+  if (!isTrustedRenderer(event)) return { success: false };
   if (hotkeyListeners[combo]) {
     logMessage(`⚠️ Hotkey ${combo} already registered, replacing`);
   }
@@ -1087,6 +1201,7 @@ ipcMain.handle("hotkey:register", (event, combo, commandId, commandType) => {
 });
 
 ipcMain.handle("hotkey:unregister", (event, combo) => {
+  if (!isTrustedRenderer(event)) return { success: false };
   if (hotkeyListeners[combo]) {
     delete hotkeyListeners[combo];
     return { success: true };
@@ -1236,11 +1351,13 @@ function createUpdateSplash(version) {
 
 function updateSplashProgress(percent, text) {
   if (!updateSplashWindow || updateSplashWindow.isDestroyed()) return;
-  const label = text || `${percent}%`;
+  // تمرير القيم عبر JSON.stringify — يمنع حقن كود من أي قيمة مستقبل
+  const label = String(text || `${percent}%`);
+  const safePercent = String(Math.round(Number(percent) || 0));
   updateSplashWindow.webContents
     .executeJavaScript(
-      `document.getElementById('fill').style.width='${percent}%';
-       document.getElementById('pct').textContent='${label}';`,
+      `document.getElementById('fill').style.width=${JSON.stringify(safePercent + "%")};
+       document.getElementById('pct').textContent=${JSON.stringify(label)};`,
     )
     .catch(() => {});
 }
@@ -1272,9 +1389,12 @@ function createWindow() {
       event.preventDefault();
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (!url.startsWith("file://")) {
-      require("electron").shell.openExternal(url);
-      return { action: "deny" };
+    // فتح الروابط الخارجية في المتصفح — بروتوكولات http/https فقط،
+    // ما عداها (file://, smb://, ms-msdt:, chrome://...) يُرفض نهائياً
+    if (/^https?:\/\//i.test(url)) {
+      shell.openExternal(url);
+    } else {
+      logMessage(`⛔ تم حظر فتح رابط ببروتوكول غير مسموح: ${url}`);
     }
     return { action: "deny" };
   });
@@ -1309,11 +1429,50 @@ app.on("second-instance", (event, commandLine, workingDirectory) => {
 // ============================================================
 app.whenReady().then(async () => {
   initPaths();
-  loadOrCreateKey();
+  loadLegacyKeyForMigration();
   loadConfig();
 
-  // ✅ تحميل أو إنشاء المفتاح الرئيسي للبلوجن
+  // ✅ تحميل أو إنشاء المفتاح الرئيسي للبلوجن (تخزين محمي)
   loadOrCreatePluginMasterKey();
+
+  // 🧹 تنظيف أثر الترحيل: حذف ملف المفتاح القديم بالنص الصريح ومسح المفتاح من الذاكرة
+  try {
+    if (fs.existsSync(KEY_FILE)) {
+      fs.unlinkSync(KEY_FILE);
+      logMessage("🧹 تم حذف ملف مفتاح التشفير القديم (لم يعد لازماً)");
+    }
+  } catch (_) {}
+  if (legacyEncryptionKey) {
+    try {
+      legacyEncryptionKey.fill(0);
+    } catch (_) {}
+    legacyEncryptionKey = null;
+  }
+
+  // ===== حماية كل النوافذ/المحتويات التي تُنشأ لاحقاً =====
+  // منع فتح نوافذ ببروتوكولات خطيرة (file:, chrome:, javascript:) من أي محتوى،
+  // والإبقاء على http/https فقط بالسلوك الافتراضي
+  app.on("web-contents-created", (event, contents) => {
+    try {
+      contents.setWindowOpenHandler(({ url }) => {
+        if (/^https?:\/\//i.test(url)) return { action: "allow" };
+        logMessage(`⛔ تم حظر فتح نافذة ببروتوكول غير مسموح: ${url}`);
+        return { action: "deny" };
+      });
+      contents.on("will-navigate", (e, url) => {
+        if (/^(file:|chrome:|chrome-extension:|javascript:|data:)/i.test(url)) {
+          // data: مسموح فقط لشاشة التحديث الداخلية (تُنشأ من كودنا)
+          const isOwnDataSplash =
+            url.startsWith("data:") &&
+            contents === (updateSplashWindow && updateSplashWindow.webContents);
+          if (!isOwnDataSplash) {
+            e.preventDefault();
+            logMessage(`⛔ تم حظر تنقل لبروتوكول غير مسموح: ${url}`);
+          }
+        }
+      });
+    } catch {}
+  });
 
   logMessage("✅ تم التهيئة باستخدام robotjs");
 

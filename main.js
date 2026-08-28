@@ -593,7 +593,7 @@ async function updateAuthUI() {
         planText = `⏳ فترة سماح: متبقي ${Math.floor(subscription.hoursLeft)} ساعة للتجديد`;
       else planText = user.plan === "paid" ? "مدفوع (منتهي)" : "مجاني";
       if (statusEl)
-        statusEl.innerHTML = `<i class="fas fa-user-circle"></i> مرحباً ${user.email} | ${planText}`;
+        statusEl.innerHTML = `<i class="fas fa-user-circle"></i> مرحباً ${escapeHtml(user.email)} | ${planText}`;
     }
   } catch (err) {
     console.warn("⚠️ فشل التحقق من حالة الدخول:", err.message);

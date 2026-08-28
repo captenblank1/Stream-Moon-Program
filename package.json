@@ -12,7 +12,7 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@electron/fuses": "^2.2.0",
+    "@electron/fuses": "^2.1.1",
     "electron": "^28.0.0",
     "electron-builder": "^24.13.3",
     "electron-packager": "^17.1.2"
