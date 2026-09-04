@@ -14,6 +14,41 @@ const API_BASE = window.API_BASE || "";
 const GIFT_API = `${API_BASE}/api/gift-commands`;
 const INTERACT_API = `${API_BASE}/api/interaction-commands`;
 
+// ============================================================
+// إخفاء عنوان الخادم من أي مخرجات واجهة البرنامج (كونسول/ديف تولز)
+// نستبدل أي URL خارجي (غير محلي) بـ [HIDDEN] قبل الطباعة
+// ============================================================
+(() => {
+  const EXT_URL = /https?:\/\/[a-zA-Z0-9._%:-]+(\/[^\s"')]*)?/g;
+  const LOCAL = /^(https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$))/;
+  const mask = (v) => {
+    if (typeof v !== "string") return v;
+    return v.replace(EXT_URL, (u) => (LOCAL.test(u) ? u : "[HIDDEN]"));
+  };
+  for (const level of ["log", "warn", "error", "info", "debug"]) {
+    const orig = console[level]?.bind(console);
+    if (!orig) continue;
+    console[level] = (...args) => orig(...args.map(mask));
+  }
+})();
+
+// ============================================================
+// قاعدة روابط الشاشات/الأوفرلاي: عبر الوسيط المحلي (127.0.0.1)
+// إن كان يعمل — فلا يظهر عنوان الخادم الحقيقي في أي رابط للمستخدم
+// (نُعيد السؤال حتى يجهز الوسيط، ثم نخزّن النتيجة)
+// ============================================================
+let localOverlayBaseCache = "";
+function overlayBase() {
+  if (!localOverlayBaseCache) {
+    try {
+      const ipc = require("electron").ipcRenderer;
+      const port = ipc?.sendSync?.("get-local-proxy-base-sync");
+      if (port) localOverlayBaseCache = `http://127.0.0.1:${port}`;
+    } catch {}
+  }
+  return localOverlayBaseCache || API_BASE;
+}
+
 // socket.io محلي من node_modules بدل CDN (أمان: لا سكربتات خارجية)
 let io;
 try {
@@ -191,10 +226,21 @@ function getDeviceId() {
 }
 
 function fetchWithAuth(url, options = {}) {
-  const token = getAuthToken();
   const headers = { ...(options.headers || {}) };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  // التوكن يُحقن من العملية الرئيسية تلقائياً في الإلكترون — لا يمر عبر
+  // هذه الواجهة. بدون إلكترون: المصادحة عبر الكوكي (credentials: include)
   headers["x-device-id"] = getDeviceId();
+
+  // طرد فوري عند اكتشاف حظر الجهاز من أي رد 403 blocked
+  const checkBlockedResponse = async (res) => {
+    if (res.status === 403) {
+      try {
+        const data = await res.clone().json();
+        if (data && data.blocked) forceBlockedLogout();
+      } catch {}
+    }
+    return res;
+  };
 
   // نقوم بتنفيذ الطلب مع إعادة المحاولة في حالة 401
   const executeRequest = async () => {
@@ -203,6 +249,7 @@ function fetchWithAuth(url, options = {}) {
       headers,
       credentials: "include",
     });
+    await checkBlockedResponse(res);
 
     if (res.status === 401) {
       try {
@@ -211,17 +258,20 @@ function fetchWithAuth(url, options = {}) {
           credentials: "include",
         });
         if (refreshRes.ok) {
-          const newToken = getCookie("token");
-          if (newToken) {
-            saveAuthToken(newToken);
-            headers["Authorization"] = `Bearer ${newToken}`;
-            // إعادة المحاولة
-            res = await fetch(url, {
-              ...options,
-              headers,
-              credentials: "include",
-            });
+          // إنتظار مزامنة التوكن المختوم من الكوكي قبل إعادة المحاولة —
+          // العملية الرئيسية تحقن التوكن الطازج في الطلب التالي
+          if (electronIpc?.invoke) {
+            try {
+              await electronIpc.invoke("sync-auth-token-from-cookie");
+            } catch {}
           }
+          // إعادة المحاولة
+          res = await fetch(url, {
+            ...options,
+            headers,
+            credentials: "include",
+          });
+          await checkBlockedResponse(res);
         }
       } catch (err) {
         console.warn("⚠️ فشل تجديد التوكن:", err.message);
@@ -231,6 +281,27 @@ function fetchWithAuth(url, options = {}) {
   };
 
   return executeRequest();
+}
+
+// ============================================================
+// الطرد عند حظر الجهاز — مسح الجلسة وإعادة التحميل لشاشة الدخول
+// ============================================================
+let blockedLogoutShown = false;
+function forceBlockedLogout() {
+  if (blockedLogoutShown) return;
+  blockedLogoutShown = true;
+  // مسح التوكن من كل مكان: العملية الرئيسية المختومة + المتصفح
+  try {
+    electronIpc?.invoke?.("set-auth-token", null);
+  } catch {}
+  try {
+    localStorage.removeItem("sm_token");
+  } catch {}
+  try {
+    frontendSocket?.disconnect();
+  } catch {}
+  alert("تم حظر هذا الجهاز من استخدام الخدمة.\nسيتم تسجيل خروجك الآن.");
+  setTimeout(() => window.location.reload(), 400);
 }
 
 // ============================================================
@@ -300,26 +371,107 @@ document.getElementById('unpairPluginBtn').addEventListener('click', async funct
   }
 });
 
-// استدعاء التحقق من حالة الاقتران عند تحميل الصفحة
-document.addEventListener('DOMContentLoaded', () => {
-  checkPluginStatus();
-  // يمكن استدعاؤها أيضاً بعد تسجيل الدخول
-});
-
-function getAuthToken() {
+// ربط يدوي بالكود — الكود يظهر في كونسول سيرفر ماينكرافت (/streammoon code)
+async function pairWithCode() {
+  const input = document.getElementById('pairCodeInput');
+  const btn = document.getElementById('pairWithCodeBtn');
+  const resultDiv = document.getElementById('pairingResult');
+  const code = (input.value || '').trim();
+  if (!code) {
+    resultDiv.textContent = '❌ اكتب الكود الظاهر في كونسول السيرفر أولاً';
+    resultDiv.style.color = '#f44336';
+    input.focus();
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = '⏳ جاري الربط...';
   try {
-    return localStorage.getItem("sm_token") || getCookie("token");
-  } catch {
-    return getCookie("token");
+    const res = await fetchWithAuth(`${API_BASE}/api/plugin-pair`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      resultDiv.textContent = '✅ ' + (data.message || 'تم ربط البلوجن بحسابك بنجاح');
+      resultDiv.style.color = '#4caf50';
+      input.value = '';
+      showMessage('🔗 تم ربط البلوجن بحسابك');
+      await checkPluginStatus();
+    } else {
+      resultDiv.textContent = '❌ ' + (data.message || 'فشل الربط — تأكد من الكود');
+      resultDiv.style.color = '#f44336';
+    }
+  } catch (err) {
+    resultDiv.textContent = '❌ خطأ في الاتصال بالخادم';
+    resultDiv.style.color = '#f44336';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔗 ربط';
   }
 }
 
-function saveAuthToken(token) {
+document.getElementById('pairWithCodeBtn').addEventListener('click', pairWithCode);
+document.getElementById('pairCodeInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') pairWithCode();
+});
+
+// استدعاء التحقق من حالة الاقتران عند تحميل الصفحة + تحديث دوري
+// حتى تعكس الحالة الربط فور حدوثه (كود يدوي أو مطابقة RCON) بدون refresh
+document.addEventListener('DOMContentLoaded', () => {
+  checkPluginStatus();
+  setInterval(checkPluginStatus, 15000);
+  // يمكن استدعاؤها أيضاً بعد تسجيل الدخول
+});
+
+// الوصول لـ IPC الإلكترون (مرة واحدة) — خارج الإلكترون = نسخة الويب
+const electronIpc = (() => {
   try {
-    if (token) localStorage.setItem("sm_token", token);
-    else localStorage.removeItem("sm_token");
+    return require("electron").ipcRenderer || null;
+  } catch {
+    return null;
+  }
+})();
+
+// التوكن يُدار من العملية الرئيسية مختوماً بـ safeStorage — لا يُخزن في
+// المتصفح إطلاقاً تحت أي ظرف (localStorage كان مكشوفاً في DevTools وملفات LevelDB)
+function getAuthToken() {
+  // المصدر الوحيد: العملية الرئيسية المختومة
+  if (electronIpc?.sendSync) {
+    try {
+      return electronIpc.sendSync("get-auth-token-sync") || null;
+    } catch {
+      return null;
+    }
+  }
+  // بدون إلكترون: لا توكن — لا تخزين في المتصفح مطلقاً
+  return null;
+}
+
+function saveAuthToken(token) {
+  // المصدر الوحيد للتخزين: العملية الرئيسية المختومة
+  if (electronIpc?.invoke) {
+    electronIpc.invoke("set-auth-token", token || null);
+  }
+  // دفاعياً: مسح أي نسخة متصفح قديمة من إصدارات سابقة — لا تُكتب أبداً
+  try {
+    localStorage.removeItem("sm_token");
   } catch {}
 }
+
+// ترحيل مرة واحدة: توكن الإصدارات القديمة من localStorage → العملية
+// الرئيسية المختومة، ثم إزالته من المتصفح نهائياً
+(() => {
+  if (!electronIpc?.invoke) return;
+  try {
+    const legacy = localStorage.getItem("sm_token");
+    if (legacy) {
+      const current = electronIpc.sendSync("get-auth-token-sync");
+      if (!current) electronIpc.invoke("set-auth-token", legacy);
+      localStorage.removeItem("sm_token");
+    }
+  } catch {}
+})();
 
 function getSelectedProfileId() {
   const lbl = document.getElementById("current-profile-label");
@@ -3625,8 +3777,8 @@ async function loadScreens(force = false) {
     const token = data.token;
     let html = '<div class="screens-grid">';
     for (let i = 1; i <= 10; i++) {
-      // ✅ الرابط الطويل مباشرة (دون widgetId)
-      const screenUrl = `${API_BASE}/screens/${token}/${i}.html`;
+      // ✅ الرابط عبر الوسيط المحلي (127.0.0.1) — الخادم الحقيقي مخفي
+      const screenUrl = `${overlayBase()}/screens/${token}/${i}.html`;
       const safeUrl = escapeHtml(screenUrl);
       html += `
         <div class="screen-card">
@@ -4443,9 +4595,9 @@ async function initWinsPanel() {
     const linkInput = $("smwLinkUrl");
     if (data.success) {
       screenToken = data.token;
-      // ✅ الرابط الطويل فقط (تجاهل widgetId تماماً)
+      // ✅ الرابط عبر الوسيط المحلي — الخادم الحقيقي مخفي
       if (linkInput) {
-        linkInput.value = `${API_BASE}/overlay/wins.html?token=${screenToken}`;
+        linkInput.value = `${overlayBase()}/overlay/wins.html?token=${screenToken}`;
       }
     } else if (linkInput) {
       linkInput.value = "فشل تحميل الرابط — تأكد من تسجيل الدخول";
@@ -4634,9 +4786,9 @@ async function initListsPanel() {
     }
     return screenToken;
   }
-  // رابط قصير للأوفرلاي عبر الدومين الرئيسي مع الرجوع للطويل عند غياب cid
+  // رابط الأوفرلاي عبر الوسيط المحلي — الخادم الحقيقي مخفي عن المستخدم
   function overlayLink(token, id) {
-    return `${API_BASE}/overlay/overlay.html?token=${token}&id=${id}`;
+    return `${overlayBase()}/overlay/overlay.html?token=${token}&id=${id}`;
   }
   async function getSettings(token) {
     const res = await fetchWithAuth(
@@ -6345,10 +6497,22 @@ async function connectFrontendSocket() {
     }
 
     const token = getAuthToken();
+    // بصمة الجهاز (المتصفح + العتاد) تُرفق بالاتصال — تفحصها بوابة حظر
+    // الأجهزة في الخادم حتى على اتصالات WebSocket التي لا تحمل الترويسات
+    let socketMachineId = "";
+    try {
+      socketMachineId =
+        require("electron").ipcRenderer?.sendSync?.("get-machine-id-sync") ||
+        "";
+    } catch {}
     frontendSocket = io(API_BASE, {
       withCredentials: true,
       transports: ["websocket", "polling"],
-      auth: { token },
+      auth: {
+        token,
+        deviceId: getDeviceId() || undefined,
+        machineId: socketMachineId || undefined,
+      },
     });
 
     let reconnectAttempts = 0;
@@ -6373,6 +6537,9 @@ async function connectFrontendSocket() {
       showMessage("💎 تم تحديث حالة اشتراكك");
       setTimeout(() => window.location.reload(), 1200);
     });
+
+    // ===== 🚫 طرد فوري عند حظر الجهاز من الإدارة =====
+    frontendSocket.on("account-blocked", () => forceBlockedLogout());
 
     // ===== ✅ تحديث فوري للوحة الأدمن عند أي تغيير في البيانات =====
     // الأحداث اليومية (هدايا/كونكت/بث/اشتراك) تُحدّث الأرقام في مكانها فقط

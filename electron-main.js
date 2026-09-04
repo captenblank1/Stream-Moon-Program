@@ -8,6 +8,7 @@ const {
   Menu,
   Notification,
   protocol,
+  session,
   shell,
   safeStorage,
 } = require("electron");
@@ -308,6 +309,14 @@ function loadConfig() {
       config.serverUrl = data.serverUrl
         ? normalizeServerUrl(data.serverUrl)
         : DEFAULT_SERVER_URL;
+      // بورت الوسيط المحلي — ثابت بين الجلسات حتى لا تتغير روابط OBS
+      config.localProxyPort = Number.isInteger(data.localProxyPort)
+        ? data.localProxyPort
+        : null;
+      // توكن الدخول مختوماً (safeStorage) — لا يُخزن في المتصفح أبداً
+      config.authToken = data.authToken
+        ? unsealSecret(data.authToken) || null
+        : null;
       // ترحيل تلقائي: استبدال أي سيرفر قديم
       if (LEGACY_SERVER_URLS.some((old) => config.serverUrl.includes(old))) {
         logMessage(
@@ -329,12 +338,38 @@ function loadConfig() {
 function saveConfig() {
   try {
     const toSave = { serverUrl: config.serverUrl };
+    // بورت الوسيط المحلي ثابت بين الجلسات حتى لا تتغير روابط OBS
+    if (config.localProxyPort) toSave.localProxyPort = config.localProxyPort;
     toSave.sessionToken = config.sessionToken
       ? sealSecret(config.sessionToken)
       : null;
+    toSave.authToken = config.authToken ? sealSecret(config.authToken) : null;
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(toSave, null, 2));
   } catch (e) {
     logError("❌ فشل حفظ الإعدادات:", e.message);
+  }
+}
+
+// مزامنة التوكن المختوم من كوكي الخادم (httpOnly — تقرأه العملية الرئيسية
+// فقط) بعد الدخول/التجديد، حتى يظل التوكن المحقون طازجاً دائماً
+async function syncTokenFromCookie() {
+  try {
+    const serverBase = normalizeServerUrl(
+      config.serverUrl || DEFAULT_SERVER_URL,
+    ).replace(/\/+$/, "");
+    const cookies = await session.defaultSession.cookies.get({
+      url: serverBase,
+      name: "token",
+    });
+    const fresh = cookies && cookies[0] ? cookies[0].value : null;
+    if (fresh && fresh !== config.authToken) {
+      config.authToken = fresh;
+      saveConfig();
+      logMessage("🔁 تم تحديث التوكن المختوم من كوكي الخادم");
+    }
+    return { success: true, token: config.authToken || null };
+  } catch (e) {
+    return { success: false, token: null };
   }
 }
 
@@ -518,10 +553,36 @@ function safeConsoleError(line) {
 }
 
 // تعقيم الأسطر قبل كتابتها في أي سجل: يخفي التوكنات/المفاتيح السداسية
-// الطويلة وعبارات Bearer والبريد — لا بيانات حساسة في لوجات العميل
+// الطويلة وعبارات Bearer والبريد — وعنوان الخادم الحقيقي (يُرمز إلى [SERVER])
+// لا بيانات حساسة في لوجات العميل
 function redactLogArg(arg) {
   if (typeof arg !== "string") return arg;
-  return arg
+  let out = arg;
+  // إخفاء أي عنوان للخادم الحالي أو القديم أو أي رابط خارجي غير محلي
+  try {
+    const serverHosts = [
+      DEFAULT_SERVER_URL,
+      ...LEGACY_SERVER_URLS,
+      config?.serverUrl || "",
+    ]
+      .map((u) => {
+        try {
+          return new URL(normalizeServerUrl(u)).host;
+        } catch {
+          return "";
+        }
+      })
+      .filter(Boolean);
+    for (const host of new Set(serverHosts)) {
+      out = out.split(host).join("[SERVER]");
+    }
+    // أي رابط http(s) متبقٍ غير محلي يُخفى أيضاً (روابط وسيطة/قديمة)
+    out = out.replace(
+      /https?:\/\/(?!127\.0\.0\.1|localhost|\[::1\])[a-zA-Z0-9._%:-]+(\/[^\s"')]*)?/g,
+      "[SERVER]",
+    );
+  } catch {}
+  return out
     .replace(
       /([a-f0-9]{32,})/gi,
       (m) => `${m.slice(0, 6)}…[REDACTED:${m.length}]`,
@@ -554,6 +615,111 @@ function logError(...msg) {
   fs.appendFileSync(LOG_FILE, line + "\n");
   fs.appendFileSync(ERROR_LOG_FILE, line + "\n");
   safeConsoleError(line);
+}
+
+// ============================================================
+// 3.5 الخادم الوسيط المحلي (إخفاء الخادم الحقيقي عن المستخدم/OBS)
+// ============================================================
+// يعرض البرنامج صفحات الشاشات/الأوفرلاي عبر http://127.0.0.1:<port>
+// ويمرر كل الطلبات (صفحات HTML / socket.io / وسائط) إلى الخادم الحقيقي،
+// فلا يظهر عنوان الخادم في أي رابط ينسخه المستخدم أو أي صفحة يفتحها.
+let localProxyPort = null;
+
+function buildProxyTarget(reqUrl) {
+  const base = normalizeServerUrl(config.serverUrl || DEFAULT_SERVER_URL);
+  return new URL(reqUrl, base);
+}
+
+function proxyHttpRequest(req, res) {
+  try {
+    const target = buildProxyTarget(req.url);
+    const headers = { ...req.headers };
+    // طلب أصيل من الخادم نفسه: لا Origin محلي يرفضه CORS الخادم البعيد
+    delete headers.origin;
+    delete headers.referer;
+    headers.host = target.host;
+    const mod = target.protocol === "http:" ? http : https;
+    const proxyReq = mod.request(target, { method: req.method, headers }, (proxyRes) => {
+      try {
+        res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+        proxyRes.pipe(res, { end: true });
+      } catch {}
+    });
+    proxyReq.setTimeout(60000, () => {
+      try { proxyReq.destroy(new Error("timeout")); } catch {}
+    });
+    proxyReq.on("error", () => {
+      try { if (!res.headersSent) res.writeHead(502); res.end(); } catch {}
+    });
+    req.pipe(proxyReq, { end: true });
+  } catch {
+    try { res.writeHead(502); res.end(); } catch {}
+  }
+}
+
+function proxyUpgrade(req, socket, head) {
+  try {
+    const target = buildProxyTarget(req.url);
+    const headers = { ...req.headers };
+    delete headers.origin;
+    delete headers.referer;
+    headers.host = target.host;
+    headers.connection = "Upgrade";
+    headers.upgrade = "websocket";
+    const mod = target.protocol === "http:" ? http : https;
+    const proxyReq = mod.request(target, { method: "GET", headers });
+    proxyReq.on("upgrade", (proxyRes, proxySocket, proxyHead) => {
+      try {
+        const hdrs = Object.entries(proxyRes.headers || {})
+          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`)
+          .join("\r\n");
+        socket.write(`HTTP/1.1 101 Switching Protocols\r\n${hdrs}\r\n\r\n`);
+        proxySocket.on("error", () => socket.destroy());
+        socket.on("error", () => proxySocket.destroy());
+        if (proxyHead && proxyHead.length) socket.write(proxyHead);
+        proxySocket.pipe(socket);
+        socket.pipe(proxySocket);
+      } catch {
+        try { socket.destroy(); } catch {}
+      }
+    });
+    proxyReq.on("error", () => socket.destroy());
+    proxyReq.end(head);
+  } catch {
+    try { socket.destroy(); } catch {}
+  }
+}
+
+function startLocalProxy() {
+  const tryListen = (port) =>
+    new Promise((resolve) => {
+      const server = http.createServer(proxyHttpRequest);
+      server.on("upgrade", proxyUpgrade);
+      server.on("clientError", () => {});
+      server.once("error", () => resolve(null));
+      server.listen(port, "127.0.0.1", () => resolve({ server, port }));
+    });
+
+  (async () => {
+    // نحترم البورت المحفوظ أولاً (ثبات روابط OBS) ثم نجرب نطاقاً محجوزاً
+    const candidates = [];
+    if (Number.isInteger(config.localProxyPort)) candidates.push(config.localProxyPort);
+    for (let p = 47325; p <= 47335; p++)
+      if (!candidates.includes(p)) candidates.push(p);
+    for (const port of candidates) {
+      const res = await tryListen(port);
+      if (res) {
+        localProxyPort = res.port;
+        if (config.localProxyPort !== res.port) {
+          config.localProxyPort = res.port;
+          saveConfig();
+        }
+        logMessage(`✅ الوسيط المحلي للأوفرلاي يعمل على المنفذ ${res.port}`);
+        return;
+      }
+    }
+    logError("⚠️ تعذر تشغيل الوسيط المحلي — ستستخدم الشاشات الرابط المباشر");
+  })();
 }
 
 // ============================================================
@@ -1006,6 +1172,45 @@ function isTrustedRenderer(event) {
 
 ipcMain.on("get-server-url-sync", (event) => {
   event.returnValue = normalizeServerUrl(config.serverUrl);
+});
+
+// بورت الوسيط المحلي للشاشات/الأوفرلاي (null إن لم يعمل)
+ipcMain.on("get-local-proxy-base-sync", (event) => {
+  event.returnValue = localProxyPort || null;
+});
+
+// بصمة عتاد الجهاز للواجهة (تُرفق مع اتصال Socket.IO لفحص الحظر)
+ipcMain.on("get-machine-id-sync", (event) => {
+  try {
+    event.returnValue = getMachineId();
+  } catch {
+    event.returnValue = null;
+  }
+});
+
+// ===== إدارة توكن الدخول من العملية الرئيسية (مختوم بـ safeStorage) =====
+// الواجهة لا ترى التوكن ولا يُخزن في localStorage — يُحقن تلقائياً في الطلبات
+ipcMain.on("get-auth-token-sync", (event) => {
+  try {
+    event.returnValue = config.authToken || null;
+  } catch {
+    event.returnValue = null;
+  }
+});
+
+ipcMain.handle("set-auth-token", (event, token) => {
+  if (!isTrustedRenderer(event)) return { success: false };
+  config.authToken =
+    typeof token === "string" && token.trim() ? token.trim() : null;
+  saveConfig();
+  return { success: true };
+});
+
+// تزامن فوري للتوكن المختوم من كوكي الخادم — تستدعيه الواجهة بعد تجديد
+// الجلسة للتأكد من أن إعادة المحاولة تحمل التوكن الطازج لا القديم
+ipcMain.handle("sync-auth-token-from-cookie", (event) => {
+  if (!isTrustedRenderer(event)) return { success: false, token: null };
+  return syncTokenFromCookie();
 });
 
 ipcMain.handle("get-agent-status", (event) => {
@@ -1475,6 +1680,60 @@ app.whenReady().then(async () => {
   });
 
   logMessage("✅ تم التهيئة باستخدام robotjs");
+
+  // الوسيط المحلي: يعرض الشاشات/الأوفرلاي عبر 127.0.0.1 بدل الخادم
+  startLocalProxy();
+
+  // بصمة عتاد الجهاز تُرفق تلقائياً بكل طلبات الواجهة إلى الخادم —
+  // طبقة حظر لا تنكسر بمسح بيانات المتصفح أو إعادة تثبيت البرنامج.
+  // ومعها توكن الدخول: يُحقن من هنا ولا يمر عبر الواجهة/المتصفح إطلاقاً.
+  try {
+    const serverBase = normalizeServerUrl(
+      config.serverUrl || DEFAULT_SERVER_URL,
+    ).replace(/\/+$/, "");
+    const MACHINE_FINGERPRINT = getMachineId();
+    // مسارات لا يُحقن فيها التوكن: الدخول/التسجيل (لا مصادقة) والتجديد
+    // (يجب أن يعتمد على الكوكي وحده — التوكن القديم قد يكون ملغى/منتهياً)
+    const NO_TOKEN_PATHS = [
+      "/api/auth/refresh",
+      "/api/auth/login",
+      "/api/auth/register",
+    ];
+    session.defaultSession.webRequest.onBeforeSendHeaders(
+      { urls: [`${serverBase}/*`] },
+      (details, callback) => {
+        try {
+          details.requestHeaders["x-machine-id"] = MACHINE_FINGERPRINT;
+          const hasOwnAuth =
+            details.requestHeaders["Authorization"] ||
+            details.requestHeaders["authorization"];
+          const skipToken =
+            hasOwnAuth ||
+            NO_TOKEN_PATHS.some((p) => details.url.includes(p));
+          if (config.authToken && !skipToken) {
+            details.requestHeaders["Authorization"] =
+              `Bearer ${config.authToken}`;
+          }
+        } catch {}
+        callback({ requestHeaders: details.requestHeaders });
+      },
+    );
+
+    // إبقاء التوكن المختوم طازجاً: بعد أي عملية دخول/تجديد يضبط الخادم
+    // كوكي httpOnly — syncTokenFromCookie تقرأه وتعيد الختم تلقائياً
+    session.defaultSession.webRequest.onCompleted(
+      { urls: [`${serverBase}/api/auth/*`] },
+      () => {
+        syncTokenFromCookie();
+      },
+    );
+    // مزامنة أولية عند الإقلاع (لو الخادم جدد الكوكي أثناء غلق البرنامج)
+    setTimeout(syncTokenFromCookie, 3000);
+
+    logMessage("✅ تفعيل بصمة العتاد والتوكن المختوم على طلبات الشبكة");
+  } catch (e) {
+    logError("⚠️ تعذر تفعيل بصمة العتاد للطلبات:", e.message);
+  }
 
   if (config.sessionToken) {
     setTimeout(connectToServer, 1000);

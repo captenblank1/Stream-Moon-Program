@@ -390,10 +390,22 @@
         <button id="unpairPluginBtn" class="btn btn-danger" style="background: #f44336; border: none; padding: 6px 18px; border-radius: 6px; cursor: pointer; color: white; font-weight: 600;">🔓 فك الربط</button>
       </div>
 
-      <!-- تلميح الربط التلقائي (يظهر عند عدم الربط) -->
-      <p id="unpairedHint" style="display: none; font-size: 13px; color: #aaa; line-height: 1.6;">
-        🔄 الربط تلقائي: تأكد أن بيانات ماين كرافت (IP / Port / Password) مطابقة لإعدادات السيرفر ثم اضغط <b>Send</b>
-      </p>
+      <!-- تلميح الربط التلقائي + الربط اليدوي بالكود (يظهر عند عدم الربط) -->
+      <div id="unpairedHint" style="display: none;">
+        <p style="font-size: 13px; color: #aaa; line-height: 1.6; margin: 0 0 6px;">
+          🔄 الربط تلقائي: تأكد أن بيانات ماين كرافت (IP / Port / Password) مطابقة لإعدادات السيرفر ثم اضغط <b>Send</b>
+        </p>
+        <p style="font-size: 13px; color: #aaa; line-height: 1.6; margin: 0 0 8px;">
+          🔐 لم يتم الربط تلقائياً؟ اكتب <b>/streammoon code</b> في كونسول السيرفر وانسخ الكود هنا:
+        </p>
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <input id="pairCodeInput" type="text" placeholder="كود الربط (مثل A7K-9MX)" maxlength="8"
+                 style="flex: 1; min-width: 130px; max-width: 220px; padding: 8px 12px; border-radius: 6px; border: 1px solid #555; background: #2a2a2e; color: #eee; text-align: center; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; font-size: 15px; outline: none;" />
+          <button id="pairWithCodeBtn" type="button" class="btn btn-primary" style="border: none; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+            🔗 ربط
+          </button>
+        </div>
+      </div>
 
       <div id="pairingResult" style="margin-top: 10px; font-size: 14px; min-height: 22px;"></div>
     </div>
@@ -944,6 +956,7 @@
       <div class="screens-header">
         <h2><i class="fas fa-tv"></i> شاشات OBS الخاصة بك</h2>
         <p>استخدم الروابط التالية كمصدر متصفح (Browser Source) في OBS</p>
+        <p style="color: #ffb74d; font-size: 13px;">⚠️ الروابط تعمل من جهازك أثناء فتح البرنامج — أبقِ البرنامج مفتوحاً أثناء البث</p>
       </div>
       <div id="screensContainer" class="screens-container">
         <div class="loading-screens">جاري تحميل الروابط...</div>
