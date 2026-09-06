@@ -3,6 +3,12 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 const electronAPI = {
   getServerUrlSync: () => ipcRenderer.sendSync("get-server-url-sync"),
+  // توكن الجلسة المختوم من العملية الرئيسية — لمصادقة مصافحة Socket.IO
+  getAuthTokenSync: () => ipcRenderer.sendSync("get-auth-token-sync"),
+  // بصمة العتاد — توحيد مفتاح جلسة التطبيق مع وكيل الأوامر
+  getMachineIdSync: () => ipcRenderer.sendSync("get-machine-id-sync"),
+  getLocalProxyPortSync: () =>
+    ipcRenderer.sendSync("get-local-proxy-base-sync"),
   getAgentStatus: () => ipcRenderer.invoke("get-agent-status"),
   bindAgentSession: (token) => ipcRenderer.invoke("bind-agent-session", token),
   // فتح نافذة الدفع المعزولة (PayPal بدون صلاحيات Node)

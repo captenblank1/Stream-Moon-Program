@@ -17,6 +17,9 @@
 
     <link rel="stylesheet" href="vendor/fontawesome/all.min.css" />
     <link rel="stylesheet" href="css/style.css" />
+    <link rel="stylesheet" href="css/responsive.css" />
+    <!-- سكيلتون التحميل الافتتاحي — وحدة مستقلة في مجلد skeleton -->
+    <link rel="stylesheet" href="skeleton/skeleton.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link
       href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&family=Fredoka+One&family=Press+Start+2P&family=Orbitron:wght@900&display=swap"
@@ -31,6 +34,8 @@
     />
 
     <script src="vendor/Sortable.min.js"></script>
+    <!-- وحدة السكيلتون — تُحمَّل قبل main حتى تتوفر واجهة Skeleton لإخفاء صفحة التحميل -->
+    <script src="skeleton/skeleton.js"></script>
     <style>
       @font-face {
         font-family: "Open Sans";
@@ -132,6 +137,70 @@
     <link rel="manifest" href="favicon_io/site.webmanifest" />
   </head>
   <body>
+    <div id="sidebarBackdrop"></div>
+    <button id="sidebarToggle" aria-label="Menu"><i class="fas fa-bars"></i></button>
+    <!-- ===== صفحة السكيلتون — تظهر فوراً حتى جهوز البيانات (تُخفاها main.js) ===== -->
+    <div id="appSkeleton" aria-hidden="true">
+      <div class="sk-shell">
+        <!-- سايد بار مطابق للتطبيق: شعار 112px ثم بروفايل 91px ثم صفوف 53px -->
+        <div class="sk-sidebar">
+          <div class="sk-logo-box"><div class="sk-logo"></div></div>
+          <div class="sk-user">
+            <div class="sk-avatar"></div>
+            <div class="sk-user-lines">
+              <div class="sk-line" style="width: 78%"></div>
+              <div class="sk-line" style="width: 46%"></div>
+            </div>
+          </div>
+          <nav class="sk-nav">
+            <div class="sk-nav-row sk-active"></div>
+            <div class="sk-nav-row"><i></i></div>
+            <div class="sk-nav-row"><i></i></div>
+            <div class="sk-nav-row"><i></i></div>
+            <div class="sk-nav-row"><i></i></div>
+            <div class="sk-nav-row"><i></i></div>
+            <div class="sk-nav-row"><i></i></div>
+          </nav>
+          </div>
+        <!-- الجسم يبدأ بعد السايد بار: شريط 53px ثم بطاقات بعرض كامل -->
+        <div class="sk-main">
+          <header class="sk-topbar">
+            <div class="sk-line sk-teal" style="width: 250px; height: 15px"></div>
+            <div class="sk-topbtns">
+              <div class="sk-pill"></div>
+              <div class="sk-pill"></div>
+              <div class="sk-pill"></div>
+              <div class="sk-pill sk-wide"></div>
+            </div>
+          </header>
+          <div class="sk-content">
+            <!-- بطاقة الحساب: صف دائرة+اسم ثم حقول — عرض كامل وارتفاع ~343 -->
+            <div class="sk-card sk-account">
+              <div class="sk-row">
+                <div class="sk-avatar"></div>
+                <div class="sk-user-lines">
+                  <div class="sk-line" style="width: 200px"></div>
+                  <div class="sk-line" style="width: 110px"></div>
+                </div>
+              </div>
+              <div class="sk-input"></div>
+              <div class="sk-input"></div>
+              <div class="sk-cta" style="width: 220px"></div>
+            </div>
+            <!-- بطاقة الإعدادات: أزواج تسمية+حقل ×4 — عرض كامل وارتفاع ~669 -->
+            <div class="sk-card sk-settings">
+              <div class="sk-pair"><div class="sk-line" style="width: 120px"></div><div class="sk-input"></div></div>
+              <div class="sk-pair"><div class="sk-line" style="width: 150px"></div><div class="sk-input"></div></div>
+              <div class="sk-pair"><div class="sk-line" style="width: 100px"></div><div class="sk-input"></div></div>
+              <div class="sk-pair"><div class="sk-line" style="width: 140px"></div><div class="sk-input"></div></div>
+              <div class="sk-cta" style="width: 200px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- ===== نهاية صفحة السكيلتون ===== -->
+
     <!-- ===== شريط المصادقة ===== -->
     <div class="auth-header">
       <div id="auth-status"></div>
@@ -178,6 +247,9 @@
         <button id="upgrade-btn" class="btn btn-warning" style="display: none">
           <i class="fas fa-crown"></i> اشتراك فى خطه
         </button>
+        <button id="langToggle" class="btn btn-secondary" title="Language">
+          <i class="fas fa-language"></i> <span id="langToggleLabel">عربي</span>
+        </button>
       </div>
     </div>
 
@@ -209,7 +281,7 @@
             id="login-password-toggle"
             title="إظهار / إخفاء كلمة المرور"
             style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; user-select: none; font-size: 16px;"
-            >👁</span
+            ><i class="fas fa-eye"></i></span
           >
         </div>
         <button id="login-submit" class="btn btn-primary btn-block">
@@ -238,15 +310,23 @@
           id="register-password-toggle"
           title="إظهار / إخفاء كلمة المرور"
           style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; user-select: none; font-size: 16px;"
-          >👁</span
+          ><i class="fas fa-eye"></i></span
         >
         </div>
-        <input
-          type="password"
-          id="register-confirm-password"
-          placeholder="تأكيد كلمة المرور"
-          style="margin-top: 10px"
-        />
+        <div style="position: relative; margin-top: 10px">
+          <input
+            type="password"
+            id="register-confirm-password"
+            placeholder="تأكيد كلمة المرور"
+            style="padding-right: 44px; width: 100%"
+          />
+          <span
+            id="register-confirm-toggle"
+            title="إظهار / إخفاء كلمة المرور"
+            style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; user-select: none; font-size: 16px;"
+            ><i class="fas fa-eye"></i></span
+          >
+        </div>
         <button id="register-submit" class="btn btn-primary btn-block">
           تسجيل
         </button>
@@ -285,7 +365,7 @@
                 text-align: center;
               "
             >
-              ✅ جميع المزايا<br />✅ لا حد للأوامر<br />✅ جميع البروفايلات<br />✅
+              <i class="fas fa-circle-check"></i> جميع المزايا<br /><i class="fas fa-circle-check"></i> لا حد للأوامر<br /><i class="fas fa-circle-check"></i> جميع البروفايلات<br /><i class="fas fa-circle-check"></i>
               أولوية الدعم
             </div>
           </div>
@@ -313,8 +393,8 @@
                 text-align: center;
               "
             >
-              ✅ جميع المزايا<br />✅ لا حد للأوامر<br />✅ جميع البروفايلات<br />✅
-              أولوية الدعم<br />✅ خصم 30%
+              <i class="fas fa-circle-check"></i> جميع المزايا<br /><i class="fas fa-circle-check"></i> لا حد للأوامر<br /><i class="fas fa-circle-check"></i> جميع البروفايلات<br /><i class="fas fa-circle-check"></i>
+              أولوية الدعم<br /><i class="fas fa-circle-check"></i> خصم 30%
             </div>
           </div>
         </div>
@@ -342,14 +422,14 @@
         </div>
         <div id="connect-profile-aside"></div>
       </div>
-      <div class="all button-select-slide"><p>All</p></div>
-      <div class="start button-select-slide"><p>Start</p></div>
-      <div class="action button-select-slide"><p>Action</p></div>
-      <div class="screens button-select-slide"><p>Screens</p></div>
-      <div class="hotkey button-select-slide"><p>Hotkey</p></div>
-      <div class="overlays button-select-slide"><p>Overlays</p></div>
+      <div class="all button-select-slide"><p><i class="fas fa-table-cells"></i> All</p></div>
+      <div class="start button-select-slide"><p><i class="fas fa-play"></i> Start</p></div>
+      <div class="action button-select-slide"><p><i class="fas fa-bolt"></i> Action</p></div>
+      <div class="screens button-select-slide"><p><i class="fas fa-display"></i> Screens</p></div>
+      <div class="hotkey button-select-slide"><p><i class="fas fa-keyboard"></i> Hotkey</p></div>
+      <div class="overlays button-select-slide"><p><i class="fas fa-layer-group"></i> Overlays</p></div>
       <div class="admin button-select-slide" style="display: none">
-        <p>Admin</p>
+        <p><i class="fas fa-user-shield"></i> Admin</p>
       </div>
     </aside>
 
@@ -377,32 +457,42 @@
       Send
     </button>
 
-    <!-- ======== قسم الربط الجديد ======== -->
+      <!-- ======== قسم الربط الجديد ======== -->
     <div class="plugin-pair-section" style="margin-top: 20px; border-top: 1px solid #444; padding-top: 15px;">
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-        <h4 style="color: #1dd9e6e1; margin: 0;">🔗 ربط البلوجن</h4>
+        <h4 style="color: #1dd9e6e1; margin: 0;"><i class="fas fa-link"></i> ربط البلوجن</h4>
         <span id="pluginConnectionStatus" style="font-size: 13px; color: #aaa;">غير مقترن</span>
+      </div>
+
+      <!-- تحميل النسخة المخصصة — فيها توكن الحساب فيتصل أي سيرفر تشغّله عليها تلقائياً -->
+      <div style="margin-bottom: 12px;">
+        <button id="downloadPluginBtn" type="button" class="btn btn-primary" style="width: 100%; border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+          <i class="fas fa-download"></i> تحميل البلوجن — نسخة مربوطة بحسابك تلقائياً
+        </button>
+        <p style="font-size: 12.5px; color: #aaa; line-height: 1.6; margin: 8px 0 0;">
+          حمّل البلوجن من هنا فقط وضعه في مجلد <b>plugins</b> بالسيرفر — أول تشغيل يربطه بحسابك <b>تلقائياً بدون أي كود</b>
+        </p>
       </div>
 
       <!-- حالة الاقتران (يظهر عند الربط) -->
       <div id="pairedActions" style="display: none; align-items: center; gap: 15px; flex-wrap: wrap;">
-        <span style="color: #4caf50; font-weight: bold;">✅ البلوجن مقترن بحسابك</span>
-        <button id="unpairPluginBtn" class="btn btn-danger" style="background: #f44336; border: none; padding: 6px 18px; border-radius: 6px; cursor: pointer; color: white; font-weight: 600;">🔓 فك الربط</button>
+        <span style="color: #4caf50; font-weight: bold;"><i class="fas fa-circle-check"></i> البلوجن مقترن بحسابك</span>
+        <button id="unpairPluginBtn" class="btn btn-danger" style="background: #f44336; border: none; padding: 6px 18px; border-radius: 6px; cursor: pointer; color: white; font-weight: 600;"><i class="fas fa-unlock"></i> فك الربط</button>
       </div>
 
-      <!-- تلميح الربط التلقائي + الربط اليدوي بالكود (يظهر عند عدم الربط) -->
+      <!-- الكود اليدوي — حل طوارئ نادر فقط عند فشل كل مسارات الربط التلقائي -->
       <div id="unpairedHint" style="display: none;">
-        <p style="font-size: 13px; color: #aaa; line-height: 1.6; margin: 0 0 6px;">
-          🔄 الربط تلقائي: تأكد أن بيانات ماين كرافت (IP / Port / Password) مطابقة لإعدادات السيرفر ثم اضغط <b>Send</b>
+        <p style="font-size: 13px; color: #aaa; line-height: 1.6; margin: 0 0 8px;">
+          <i class="fas fa-magnifying-glass"></i> بانتظار الربط التلقائي… تأكد أنك استخدمت النسخة المحمّلة من الزر بالأعلى (أو أن بيانات ماين كرافت مطابقة للسيرفر ثم اضغط <b>Send</b>)
         </p>
         <p style="font-size: 13px; color: #aaa; line-height: 1.6; margin: 0 0 8px;">
-          🔐 لم يتم الربط تلقائياً؟ اكتب <b>/streammoon code</b> في كونسول السيرفر وانسخ الكود هنا:
+          <i class="fas fa-lock"></i> في حالات الفشل النادرة فقط: اكتب <b>/streammoon code</b> في كونسول السيرفر وانسخ الكود هنا:
         </p>
         <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
           <input id="pairCodeInput" type="text" placeholder="كود الربط (مثل A7K-9MX)" maxlength="8"
                  style="flex: 1; min-width: 130px; max-width: 220px; padding: 8px 12px; border-radius: 6px; border: 1px solid #555; background: #2a2a2e; color: #eee; text-align: center; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; font-size: 15px; outline: none;" />
           <button id="pairWithCodeBtn" type="button" class="btn btn-primary" style="border: none; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-weight: 600;">
-            🔗 ربط
+            <i class="fas fa-link"></i> ربط
           </button>
         </div>
       </div>
@@ -452,8 +542,7 @@
           </button>
         </div>
         <div id="commandLimitWarning" class="command-limit-warning">
-          ⚠️ لقد وصلت للحد الأقصى للأوامر (7) في النسخة المجانية. قم بالترقية
-          لإضافة المزيد.
+          <i class="fas fa-triangle-exclamation"></i> لقد وصلت للحد الأقصى للأوامر — قم بالترقية أو عطّل أوامر أخرى لإضافة المزيد.
         </div>
         <div
           class="storage-status"
@@ -462,13 +551,14 @@
           <div
             id="audio-storage"
             style="
+            display: none;
               flex: 1;
               background: #1e1e1e;
               padding: 10px;
               border-radius: 8px;
             "
           >
-            <h4>🎵 مساحة الصوت</h4>
+            <h4><i class="fas fa-music"></i> مساحة الصوت</h4>
             <progress
               id="audio-progress"
               value="0"
@@ -480,13 +570,14 @@
           <div
             id="video-storage"
             style="
+              display: none;
               flex: 1;
               background: #1e1e1e;
               padding: 10px;
               border-radius: 8px;
             "
           >
-            <h4>🎬 مساحة الفيديو</h4>
+            <h4><i class="fas fa-film"></i> مساحة الفيديو</h4>
             <progress
               id="video-progress"
               value="0"
@@ -505,9 +596,9 @@
             required
           />
           <div class="custom-select action-select">
-            <div class="selected"><span>🎁 Gift</span></div>
+            <div class="selected"><span><i class="fas fa-gift"></i> Gift</span></div>
             <ul class="options">
-              <li data-value="gift">🎁 Gift</li>
+              <li data-value="gift"><i class="fas fa-gift"></i> Gift</li>
               <li data-value="follow">Follow</li>
               <li data-value="like">Like</li>
               <li data-value="comment">Comment</li>
@@ -630,9 +721,10 @@
             placeholder="التأخير قبل التنفيذ"
             value="0"
           />
-          <input type="checkbox" id="oncePerLive" /><label for="oncePerLive"
-            >One-time execution in live</label
-          >
+          <div class="once-live-box">
+            <input type="checkbox" id="oncePerLive" />
+            <label for="oncePerLive"><i class="fas fa-bolt"></i> One-time execution in live</label>
+          </div>
           <div class="audio-section">
             <h4>Choose a voice</h4>
             <div id="audioDropdown" class="gift-dropdown">
@@ -645,7 +737,7 @@
               class="btn btn-danger btn-sm"
               onclick="clearAudio()"
             >
-              🗑️ إزالة الصوت
+              <i class="fas fa-trash"></i> إزالة الصوت
             </button>
             <div style="margin-top: 5px">
               <input
@@ -659,7 +751,7 @@
                 class="btn btn-secondary btn-sm"
                 onclick="document.getElementById('audioUploadInput').click()"
               >
-                📁 رفع صوت من الكمبيوتر
+                <i class="fas fa-folder-open"></i> رفع صوت من الكمبيوتر
               </button>
             </div>
             <div
@@ -686,7 +778,7 @@
           />
           <span id="volumeValue">100</span>
           <div class="video-section">
-            <label class="custom-upload" for="videoInput">🎬 Select File</label>
+            <label class="custom-upload" for="videoInput"><i class="fas fa-film"></i> Select File</label>
             <input type="file" id="videoInput" accept="video/*" />
             <div id="videoPreview"></div>
             <input type="hidden" id="video" />
@@ -695,7 +787,7 @@
               class="btn btn-danger btn-sm"
               onclick="clearVideo()"
             >
-              🗑️ إزالة الفيديو
+              <i class="fas fa-trash"></i> إزالة الفيديو
             </button>
             <span
               id="videoFileName"
@@ -771,7 +863,7 @@
 
         <table class="commands-table">
             <tr>
-              <th style="width: 3%">☰</th>
+              <th style="width: 3%"><i class="fas fa-bars"></i></th>
               <th style="width: 4%">Active</th>
               <th style="width: 5%">Options</th>
               <th style="width: 15%">Name</th>
@@ -790,162 +882,6 @@
           <tbody id="commandsTable"></tbody>
         </table>
       </main>
-      <div id="message"></div>
-
-      <div class="modal" id="deleteModal">
-        <div class="modal-content">
-          <p>هل تريد حذف كل الأوامر؟</p>
-          <button class="btn btn-danger" onclick="deleteAll()">نعم</button>
-          <button class="btn btn-secondary" onclick="closeModal()">
-            إلغاء
-          </button>
-        </div>
-      </div>
-      <div class="modal" id="disconnectModal">
-        <div class="modal-content">
-          <p id="disconnectMessage">هل تريد قطع الاتصال بالبث المباشر؟</p>
-          <button class="btn btn-danger" onclick="confirmDisconnect()">
-            نعم
-          </button>
-          <button class="btn btn-secondary" onclick="closeDisconnectModal()">
-            إلغاء
-          </button>
-        </div>
-      </div>
-      <div class="modal" id="commandSelectionModal">
-        <div
-          class="modal-content command-table-modal"
-          style="display: flex; flex-direction: column; overflow: hidden"
-        >
-          <span class="close-modal" id="close-command-modal">&times;</span>
-          <h2 id="commandModalTitle">اختر الأوامر</h2>
-          <div
-            style="
-              display: flex;
-              gap: 10px;
-              align-items: center;
-              margin: 10px 0;
-              flex-wrap: wrap;
-            "
-          >
-            <label style="display: flex; align-items: center; gap: 5px">
-              <input type="checkbox" id="select-all-commands" />
-              <span style="cursor: pointer" id="select-all-label"
-                >تحديد الكل</span
-              >
-            </label>
-            <label
-              id="copyTargetWrap"
-              style="display: none; align-items: center; gap: 5px"
-            >
-              <span>الوجهة:</span>
-              <select
-                id="copyTargetProfile"
-                style="
-                  padding: 4px 8px;
-                  background: #1a1a1a;
-                  color: #fff;
-                  border: 1px solid #444;
-                  border-radius: 6px;
-                "
-              ></select>
-            </label>
-            <div style="flex: 1"></div>
-            <button id="confirmCommandAction" class="btn btn-primary">
-              تأكيد
-            </button>
-            <button id="cancelCommandAction" class="btn btn-secondary">
-              إلغاء
-            </button>
-          </div>
-          <div
-            style="
-              flex: 1;
-              overflow-y: auto;
-              border: 1px solid #444;
-              background: #1a1a1a;
-            "
-          >
-            <table class="command-table" id="commandSelectionTable">
-              <thead>
-                <tr>
-                  <th style="width: 30px">اختيار</th>
-                  <th style="width: 15%">الاسم</th>
-                  <th>الامر</th>
-                  <th style="width: 7%">الشاشة</th>
-                  <th style="width: 7%">التكرار</th>
-                  <th style="width: 7%">الفاصل</th>
-                  <th style="width: 9%">تأخير</th>
-                  <th style="width: 5%">صوت</th>
-                  <th style="width: 5%">فيديو</th>
-                  <th style="width: 5%">صوت الفيديو</th>
-                </tr>
-              </thead>
-              <tbody id="commandSelectionTableBody"></tbody>
-            </table>
-          </div>
-          <div
-            id="duplicateCommandsArea"
-            style="margin-top: 10px; overflow-y: auto; display: none"
-          >
-            <h3 style="color: #ff9800">أوامر هدايا مكررة - اختر الاستبدال</h3>
-            <table class="command-table" id="duplicateTable">
-              <thead>
-                <tr>
-                  <th style="width: 30px">استبدال</th>
-                  <th style="width: 15%">الاسم</th>
-                  <th>الأمر / Webhook</th>
-                  <th style="width: 7%">الشاشة</th>
-                  <th style="width: 7%">التكرار</th>
-                  <th style="width: 7%">الفاصل</th>
-                  <th style="width: 9%">تأخير</th>
-                  <th style="width: 5%">صوت</th>
-                  <th style="width: 5%">فيديو</th>
-                  <th style="width: 5%">صوت الفيديو</th>
-                </tr>
-              </thead>
-              <tbody id="duplicateTableBody"></tbody>
-            </table>
-            <div style="margin-top: 5px"></div>
-          </div>
-          <div
-            id="hotkeysSelectionArea"
-            style="margin-top: 10px; overflow-y: auto; display: none"
-          >
-            <div
-              style="
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                margin-bottom: 5px;
-              "
-            >
-              <h3 style="color: #1dd9e6" id="hotkeysAreaTitle">
-                اختصارات البروفايل
-              </h3>
-              <label style="display: flex; align-items: center; gap: 5px">
-                <input type="checkbox" id="select-all-hotkeys" />
-                <span style="cursor: pointer" id="select-all-hotkeys-label"
-                  >تحديد الكل</span
-                >
-              </label>
-            </div>
-            <table class="command-table" id="hotkeysSelectionTable">
-              <thead>
-                <tr>
-                  <th style="width: 40px" id="hotkeySelectTh">اختيار</th>
-                  <th style="width: 20%">المفتاح</th>
-                  <th>الأمر</th>
-                  <th style="width: 12%">النوع</th>
-                  <th style="width: 10%">الحالة</th>
-                </tr>
-              </thead>
-              <tbody id="hotkeysSelectionTbody"></tbody>
-            </table>
-            <div style="margin-top: 5px"></div>
-          </div>
-        </div>
-      </div>
     </div>
 
     <div
@@ -956,13 +892,13 @@
       <div class="screens-header">
         <h2><i class="fas fa-tv"></i> شاشات OBS الخاصة بك</h2>
         <p>استخدم الروابط التالية كمصدر متصفح (Browser Source) في OBS</p>
-        <p style="color: #ffb74d; font-size: 13px;">⚠️ الروابط تعمل من جهازك أثناء فتح البرنامج — أبقِ البرنامج مفتوحاً أثناء البث</p>
+        <p style="color: #ffb74d; font-size: 13px;"><i class="fas fa-triangle-exclamation"></i> الروابط تعمل من جهازك أثناء فتح البرنامج — أبقِ البرنامج مفتوحاً أثناء البث</p>
       </div>
       <div id="screensContainer" class="screens-container">
         <div class="loading-screens">جاري تحميل الروابط...</div>
       </div>
       <div class="obs-instructions">
-        <h3>📌 تعليمات الإضافة في OBS:</h3>
+        <h3><i class="fas fa-thumbtack"></i> تعليمات الإضافة في OBS:</h3>
         <ul>
           <li>أضف مصدر جديد من نوع <strong>متصفح (Browser)</strong></li>
           <li>الصق أي رابط من الروابط أعلاه</li>
@@ -988,7 +924,7 @@
         <p>إحصائيات النظام وإدارة المستخدمين</p>
       </div>
       <div id="adminDashboardContainer">
-        <div class="loading-dashboard">⏳ جاري تحميل البيانات...</div>
+        <div class="loading-dashboard"><i class="fas fa-spinner fa-spin"></i> جاري تحميل البيانات...</div>
       </div>
     </div>
 
@@ -1032,7 +968,7 @@
                 font-weight: bold;
               "
             >
-              🏆 قائمة الأساطير
+              <i class="fas fa-trophy"></i> قائمة الأساطير
             </button>
             <button
               class="overlay-tab-btn"
@@ -1047,7 +983,7 @@
                 font-weight: bold;
               "
             >
-              🏆 عداد الفوز/الخسارة
+              <i class="fas fa-trophy"></i> عداد الفوز/الخسارة
             </button>
           </div>
         </div>
@@ -1058,28 +994,43 @@
         dir="rtl"
         style="display: none; width: 100%; background: #12131c; border-radius: 16px; padding: 20px; font-family: 'Cairo', 'Open Sans', sans-serif"
       >
-        <h2 style="margin: 0 0 16px; color: #1dd9e6; font-size: 1.3rem">
-          🎛️ لوحة تحكم الـ Overlays
-        </h2>
-        <div class="sml-grid" id="smlGrid">
-          <div class="sml-panel">
-            <h3>🎮 القائمة الأولى</h3>
+        <div class="ovl-previews">
+          <div class="ovl-preview-card">
+            <h4 class="ovl-preview-title"><i class="fas fa-gamepad"></i> القائمة الأولى</h4>
+            <div class="ovl-frame-wrap"><div class="ovl-live" id="ovlLive1"></div></div>
+            <div class="ovl-preview-actions">
+              <button class="btn btn-primary ovl-open-panel" data-panel="smlPanel1" data-kind="list" data-title="لوحة تحكم القائمة الأولى"><i class="fas fa-sliders"></i> لوحة التحكم</button>
+              <button class="sml-copy btn btn-secondary" data-overlay="1"><i class="fas fa-clipboard"></i> نسخ الرابط</button>
+            </div>
+          </div>
+          <div class="ovl-preview-card">
+            <h4 class="ovl-preview-title"><i class="fas fa-star"></i> القائمة الثانية</h4>
+            <div class="ovl-frame-wrap"><div class="ovl-live" id="ovlLive2"></div></div>
+            <div class="ovl-preview-actions">
+              <button class="btn btn-primary ovl-open-panel" data-panel="smlPanel2" data-kind="list" data-title="لوحة تحكم القائمة الثانية"><i class="fas fa-sliders"></i> لوحة التحكم</button>
+              <button class="sml-copy btn btn-secondary" data-overlay="2"><i class="fas fa-clipboard"></i> نسخ الرابط</button>
+            </div>
+          </div>
+        </div>
+        <div class="sml-grid" id="smlGrid" style="display: none">
+          <div class="sml-panel" id="smlPanel1">
+            <h3><i class="fas fa-gamepad"></i> القائمة الأولى</h3>
             <div class="sml-linkbox">
-              <label>🔗 رابط OBS:</label>
+              <label><i class="fas fa-link"></i> رابط OBS:</label>
               <span class="sml-url" id="smlLink1">تحميل...</span>
-              <button class="sml-copy" data-overlay="1">📋 نسخ</button>
+              <button class="sml-copy" data-overlay="1"><i class="fas fa-clipboard"></i> نسخ</button>
             </div>
             <label class="sml-label">العنوان</label>
-            <input type="text" id="smlTitle1" value="🏆 قائمة الأساطير" class="sml-input" />
+            <input type="text" id="smlTitle1" value="قائمة الأساطير" class="sml-input" />
             <label class="sml-label">الأسماء (كل اسم في سطر)</label>
             <textarea id="smlNames1" rows="4" placeholder="اكتب الأسماء..." class="sml-input"></textarea>
-            <label class="sml-label">تحديد التاج 👑</label>
+            <label class="sml-label">تحديد التاج <i class="fas fa-crown"></i></label>
             <div class="sml-crowns" id="smlCrowns1"></div>
             <label class="sml-label">الثيم</label>
             <select id="smlTheme1" class="sml-input">
-              <option value="theme-neon">⚡ نيون سايبر</option>
-              <option value="theme-gold">👑 VIP ذهبي</option>
-              <option value="theme-purple">💜 بنفسجي</option>
+              <option value="theme-neon"><i class="fas fa-bolt"></i> نيون سايبر</option>
+              <option value="theme-gold"><i class="fas fa-crown"></i> VIP ذهبي</option>
+              <option value="theme-purple"><i class="fas fa-heart"></i> بنفسجي</option>
             </select>
             <div style="display: flex; gap: 14px; margin-top: 10px; align-items: center">
               <div style="display: flex; flex-direction: column; align-items: center">
@@ -1099,29 +1050,30 @@
                 <input type="number" id="smlHeight1" value="500" min="200" max="1000" class="sml-input" />
               </div>
             </div>
-            <div style="display: flex; align-items: center; gap: 10px; margin-top: 12px">
-              <button class="sml-reset" data-overlay="1">🗑️ مسح الأسماء</button>
+            <div style="display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap">
+              <button class="sml-reset" data-overlay="1"><i class="fas fa-trash"></i> مسح الأسماء</button>
+              <button class="sml-restore" data-overlay="1"><i class="fas fa-rotate-left"></i> استعادة الافتراضي</button>
               <span class="sml-status" id="smlStatus1"></span>
             </div>
           </div>
-          <div class="sml-panel">
-            <h3>⭐ القائمة الثانية</h3>
+          <div class="sml-panel" id="smlPanel2">
+            <h3><i class="fas fa-star"></i> القائمة الثانية</h3>
             <div class="sml-linkbox">
-              <label>🔗 رابط OBS:</label>
+              <label><i class="fas fa-link"></i> رابط OBS:</label>
               <span class="sml-url" id="smlLink2">تحميل...</span>
-              <button class="sml-copy" data-overlay="2">📋 نسخ</button>
+              <button class="sml-copy" data-overlay="2"><i class="fas fa-clipboard"></i> نسخ</button>
             </div>
             <label class="sml-label">العنوان</label>
-            <input type="text" id="smlTitle2" value="🔥 كبار الداعمين" class="sml-input" />
+            <input type="text" id="smlTitle2" value="كبار الداعمين" class="sml-input" />
             <label class="sml-label">الأسماء (كل اسم في سطر)</label>
             <textarea id="smlNames2" rows="4" placeholder="اكتب الأسماء..." class="sml-input"></textarea>
-            <label class="sml-label">تحديد التاج 👑</label>
+            <label class="sml-label">تحديد التاج <i class="fas fa-crown"></i></label>
             <div class="sml-crowns" id="smlCrowns2"></div>
             <label class="sml-label">الثيم</label>
             <select id="smlTheme2" class="sml-input">
-              <option value="theme-gold">👑 VIP ذهبي</option>
-              <option value="theme-neon">⚡ نيون سايبر</option>
-              <option value="theme-purple">💜 بنفسجي</option>
+              <option value="theme-gold"><i class="fas fa-crown"></i> VIP ذهبي</option>
+              <option value="theme-neon"><i class="fas fa-bolt"></i> نيون سايبر</option>
+              <option value="theme-purple"><i class="fas fa-heart"></i> بنفسجي</option>
             </select>
             <div style="display: flex; gap: 14px; margin-top: 10px; align-items: center">
               <div style="display: flex; flex-direction: column; align-items: center">
@@ -1141,8 +1093,9 @@
                 <input type="number" id="smlHeight2" value="500" min="200" max="1000" class="sml-input" />
               </div>
             </div>
-            <div style="display: flex; align-items: center; gap: 10px; margin-top: 12px">
-              <button class="sml-reset" data-overlay="2">🗑️ مسح الأسماء</button>
+            <div style="display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap">
+              <button class="sml-reset" data-overlay="2"><i class="fas fa-trash"></i> مسح الأسماء</button>
+              <button class="sml-restore" data-overlay="2"><i class="fas fa-rotate-left"></i> استعادة الافتراضي</button>
               <span class="sml-status" id="smlStatus2"></span>
             </div>
           </div>
@@ -1158,6 +1111,17 @@
           font-family: 'Cairo', 'Open Sans', sans-serif;
         "
       >
+        <div class="ovl-previews">
+          <div class="ovl-preview-card">
+            <h4 class="ovl-preview-title"><i class="fas fa-trophy"></i> عداد الفوز/الخسارة</h4>
+            <div class="ovl-frame-wrap"><div class="ovl-live" id="ovlLiveWins"></div></div>
+            <div class="ovl-preview-actions">
+              <button class="btn btn-primary ovl-open-panel" data-panel="winsPanelControls" data-kind="wins" data-title="لوحة تحكم العداد"><i class="fas fa-sliders"></i> لوحة التحكم</button>
+              <button class="btn btn-secondary" id="smwCardCopy"><i class="fas fa-clipboard"></i> نسخ الرابط</button>
+            </div>
+          </div>
+        </div>
+        <div id="winsPanelHome" style="display: none">
         <div
           style="
             display: grid;
@@ -1167,7 +1131,7 @@
           "
           class="smw-layout"
         >
-          <div
+          <div id="winsPanelControls"
             style="
               background: #12131c;
               border: 1px solid #26283b;
@@ -1195,7 +1159,7 @@
                   font-weight: 700;
                   color: #a0a0c0;
                 "
-                >🔗 رابط OBS (الصقه في المتصفح داخل OBS):</label
+                ><i class="fas fa-link"></i> رابط OBS (الصقه في المتصفح داخل OBS):</label
               >
               <div style="display: flex; gap: 8px; align-items: center">
                 <input
@@ -1232,7 +1196,7 @@
                     white-space: nowrap;
                   "
                 >
-                  📋 نسخ
+                  <i class="fas fa-clipboard"></i> نسخ
                 </button>
               </div>
             </div>
@@ -1376,7 +1340,7 @@
                   display: block;
                   margin-bottom: 4px;
                 "
-                >🎨 اختر الشكل:</label
+                ><i class="fas fa-palette"></i> اختر الشكل:</label
               >
               <select
                 id="smwTheme"
@@ -1390,21 +1354,21 @@
                   font-size: 0.85rem;
                 "
               >
-                <option value="pscontroller">🎮 إطار دراع بلايستيشن</option>
-                <option value="headset">🎧 إطار سماعة جيمنج</option>
-                <option value="shield">🛡️ إطار درع الحرب</option>
-                <option value="cyber">⚡ جيمنج نيون</option>
-                <option value="dragon">🐉 التنين الأحمر</option>
-                <option value="toxic">☣️ سام نيون</option>
-                <option value="mouse">🖱️ إطار ماوس جيمنج</option>
-                <option value="royale">👑 فخامة VIP</option>
-                <option value="fireice">🔥 نار وثلج</option>
-                <option value="arcade">👾 ريترو أركيد</option>
-                <option value="kitty">🐱 إطار القطة كيتي</option>
-                <option value="bunny">🐰 إطار الأرنب</option>
-                <option value="magicstar">✨ النجمة السحرية</option>
-                <option value="purpleneon">🔮 بنفسجي تويتش</option>
-                <option value="minimal">✨ مينيمال بسيط</option>
+                <option value="pscontroller"><i class="fas fa-gamepad"></i> إطار دراع بلايستيشن</option>
+                <option value="headset"><i class="fas fa-headphones"></i> إطار سماعة جيمنج</option>
+                <option value="shield"><i class="fas fa-shield-halved"></i> إطار درع الحرب</option>
+                <option value="cyber"><i class="fas fa-bolt"></i> جيمنج نيون</option>
+                <option value="dragon"><i class="fas fa-dragon"></i> التنين الأحمر</option>
+                <option value="toxic"><i class="fas fa-biohazard"></i> سام نيون</option>
+                <option value="mouse"><i class="fas fa-computer-mouse"></i> إطار ماوس جيمنج</option>
+                <option value="royale"><i class="fas fa-crown"></i> فخامة VIP</option>
+                <option value="fireice"><i class="fas fa-fire"></i> نار وثلج</option>
+                <option value="arcade"><i class="fas fa-ghost"></i> ريترو أركيد</option>
+                <option value="kitty"><i class="fas fa-cat"></i> إطار القطة كيتي</option>
+                <option value="bunny"><i class="fas fa-star"></i> إطار الأرنب</option>
+                <option value="magicstar"><i class="fas fa-wand-magic-sparkles"></i> النجمة السحرية</option>
+                <option value="purpleneon"><i class="fas fa-wand-magic-sparkles"></i> بنفسجي تويتش</option>
+                <option value="minimal"><i class="fas fa-wand-magic-sparkles"></i> مينيمال بسيط</option>
               </select>
             </div>
             <div>
@@ -1415,7 +1379,7 @@
                   display: block;
                   margin-bottom: 4px;
                 "
-                >📐 العرض (px):</label
+                ><i class="fas fa-square-plus"></i> العرض (px):</label
               >
               <input
                 type="number"
@@ -1446,7 +1410,7 @@
                 font-weight: bold;
               "
             >
-              🗑️ تصفير العداد
+              <i class="fas fa-trash"></i> تصفير العداد
             </button>
           </div>
           <div
@@ -1472,10 +1436,10 @@
                 padding: 2px 8px;
                 border-radius: 4px;
               "
-              >👁️ معاينة حية</span
+              ><i class="fas fa-eye"></i> معاينة حية</span
             >
             <div class="smw-box pscontroller" id="smwPreview">
-              <div class="smw-kitty-bow" id="smwKittyBow" style="display: none">🎀</div>
+              <div class="smw-kitty-bow" id="smwKittyBow" style="display: none"><i class="fas fa-star"></i></div>
               <div class="smw-item smw-w">
                 <span class="lbl" id="smwPrevWLabel">WIN</span>
                 <span id="smwPrevWNum">0</span>
@@ -1487,6 +1451,7 @@
               </div>
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>
@@ -1540,7 +1505,8 @@
         flex: 1;
       }
       .sml-copy,
-      .sml-reset {
+      .sml-reset,
+      .sml-restore {
         padding: 6px 12px;
         border: none;
         border-radius: 6px;
@@ -1552,6 +1518,10 @@
       }
       .sml-reset {
         background: #dc2626;
+        color: #fff;
+      }
+      .sml-restore {
+        background: #64748b;
         color: #fff;
       }
       .sml-label {
@@ -1607,6 +1577,150 @@
           grid-template-columns: 1fr;
         }
       }
+
+      /* ===== معاينات الأوفرلاي الحية + النافذة العائمة ===== */
+      .ovl-previews {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 20px;
+      }
+      .ovl-preview-card {
+        background: #1b1d2a;
+        border: 1px solid #26283b;
+        border-radius: 14px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .ovl-preview-title {
+        margin: 0;
+        color: #1dd9e6;
+        font-size: 1.05rem;
+      }
+      .ovl-frame-wrap {
+        position: relative;
+        height: auto;
+        min-height: 160px;
+        border-radius: 10px;
+        overflow: hidden;
+        background:
+          linear-gradient(45deg, #16171f 25%, transparent 25%, transparent 75%, #16171f 75%),
+          linear-gradient(45deg, #16171f 25%, transparent 25%, transparent 75%, #16171f 75%);
+        background-size: 22px 22px;
+        background-position: 0 0, 11px 11px;
+        border: 1px dashed #26283b;
+      }
+      .ovl-frame {
+        width: 100%;
+        height: 100%;
+        border: none;
+        background: transparent;
+      }
+      .ovl-preview-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      #overlayFloatModal #overlayFloatCard {
+        font-family: "Cairo", "Open Sans", sans-serif;
+      }
+      #overlayFloatBody .sml-panel,
+      #overlayFloatBody .smw-layout {
+        background: transparent;
+        border: none;
+        padding: 0;
+      }
+
+      /* ===== المعاينة الحية — نسخة مطابقة لصفحة الأوفرلاي ===== */
+      .ovl-live {
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px;
+        overflow: hidden;
+      }
+      .ovl-box {
+        max-height: none;
+        overflow: hidden;
+        background: rgba(18, 18, 28, 0.9);
+        border: 2px solid #00ffe1;
+        border-radius: 14px;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        font-family: "Cairo", sans-serif;
+      }
+      .ovl-box-head {
+        text-align: center;
+        padding-bottom: 8px;
+        margin-bottom: 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .ovl-box-head h2 {
+        font-size: 15px;
+        font-weight: 900;
+        margin: 0;
+        color: #00ffe1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .ovl-box.theme-gold .ovl-box-head h2 { color: #ffd700; }
+      .ovl-box.theme-purple .ovl-box-head h2 { color: #ec4899; }
+      .ovl-box-list {
+        flex: 1;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-height: 60px;
+      }
+      .ovl-box-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(255, 255, 255, 0.04);
+        border-radius: 8px;
+        padding: 5px 8px;
+      }
+      .ovl-box-num {
+        min-width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 900;
+        font-size: 11px;
+        color: #fff;
+        flex-shrink: 0;
+      }
+      .ovl-box-name {
+        flex: 1;
+        font-size: 12px;
+        font-weight: 700;
+        color: #fff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .ovl-box-row .fa-crown {
+        color: #ffd700;
+        font-size: 12px;
+        flex-shrink: 0;
+      }
+      .ovl-box-empty {
+        color: #888;
+        font-size: 11px;
+        text-align: center;
+        padding: 12px 0;
+      }
+      #ovlLiveWins .smw-box {
+        white-space: nowrap;
+        margin: 10px 0;
+      }
     </style>
 
     <style>
@@ -1658,7 +1772,7 @@
         padding: 16px 36px;
       }
       .pscontroller::before {
-        content: "🎮";
+        content: "<i class="fas fa-gamepad"></i>";
         position: absolute;
         top: -16px;
         left: 50%;
@@ -1932,14 +2046,14 @@
         box-shadow: 0 0 18px rgba(244, 114, 182, 0.5);
       }
       .magicstar::before {
-        content: "✨";
+        content: "<i class="fas fa-wand-magic-sparkles"></i>";
         position: absolute;
         top: -12px;
         left: -10px;
         font-size: 1.2rem;
       }
       .magicstar::after {
-        content: "⭐";
+        content: "<i class="fas fa-star"></i>";
         position: absolute;
         bottom: -12px;
         right: -10px;
@@ -2006,7 +2120,7 @@
         <div class="hotkey-field">
           <label>المفتاح:</label>
           <button id="selectHotkeyBtn" class="btn btn-secondary">
-            اختر مفتاح
+            <i class="fas fa-keyboard"></i> اختر مفتاح
           </button>
           <span id="hotkeyDisplay">لم يتم التعيين</span>
           <input type="hidden" id="hotkeyKey" value="" />
@@ -2021,7 +2135,7 @@
           <label><input type="checkbox" id="hotkeyActive" /> مفعل</label>
         </div>
         <button id="saveHotkeyBtn" class="btn btn-primary">
-          حفظ الإعدادات
+          <i class="fas fa-floppy-disk"></i> حفظ الإعدادات
         </button>
         <div id="hotkeyStatus"></div>
       </div>
@@ -2051,7 +2165,7 @@
                   colspan="7"
                   style="text-align: center; padding: 20px; color: #888"
                 >
-                  ⏳ جاري تحميل الاختصارات...
+                  <i class="fas fa-spinner fa-spin"></i> جاري تحميل الاختصارات...
                 </td>
               </tr>
             </tbody>
@@ -2100,7 +2214,7 @@
             >
           </div>
           <div class="keyboard-wrapper">
-            <div class="keyboard-title">⌨️ لوحة المفاتيح — جميع الأزرار</div>
+            <div class="keyboard-title"><i class="fas fa-keyboard"></i> لوحة المفاتيح — جميع الأزرار</div>
             <div class="kb-row-fn">
               <div class="kb-key fn">Esc</div>
               <div class="kb-key fn">F1</div>
@@ -2189,7 +2303,7 @@
                   <div class="kb-key w-space space">␣</div>
                   <div class="kb-key w-1-25u mod">Alt</div>
                   <div class="kb-key w-1-25u mod">⊞ Win</div>
-                  <div class="kb-key w-1-25u mod">☰</div>
+                  <div class="kb-key w-1-25u mod"><i class="fas fa-bars"></i></div>
                   <div class="kb-key w-1-25u mod">Ctrl</div>
                 </div>
               </div>
@@ -2266,7 +2380,7 @@
             type="text"
             id="audioSearchInput"
             class="audio-search-input"
-            placeholder="🔍 بحث عن صوت..."
+            placeholder="ابحث عن صوت..."
             autocomplete="off"
           />
           <div id="audioOptionsContainer" class="audio-options-container"></div>
@@ -2294,6 +2408,176 @@
         </div>
       </div>
     </div>
+    <!-- نافذة لوحة تحكم الأوفرلاي العائمة — تُفتح بزر وتُغلق بالضغط خارجها -->
+    <div id="overlayFloatModal" style="display: none; position: fixed; inset: 0; z-index: 10050; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(3px)">
+      <div id="overlayFloatCard" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(680px, 94vw); max-height: 86vh; overflow-y: auto; background: #1e1e1e; border-radius: 16px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); padding: 20px">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px">
+          <h3 id="overlayFloatTitle" style="margin: 0; color: #1dd9e6"></h3>
+          <span class="close-modal" id="overlayFloatX" style="cursor: pointer; font-size: 24px">&times;</span>
+        </div>
+        <div id="overlayFloatBody"></div>
+        <p id="overlayFloatHint" style="text-align: center; color: #888; font-size: 0.75rem; margin: 12px 0 0">
+          <i class="fas fa-circle-info"></i> كل تعديل يُحفظ تلقائياً — اضغط خارج النافذة للإغلاق
+        </p>
+      </div>
+    </div>
+      <div id="message"></div>
+
+      <div class="modal" id="deleteModal">
+        <div class="modal-content">
+          <p>هل تريد حذف كل الأوامر؟</p>
+          <button class="btn btn-danger" onclick="deleteAll()">نعم</button>
+          <button class="btn btn-secondary" onclick="closeModal()">
+            إلغاء
+          </button>
+        </div>
+      </div>
+      <div class="modal" id="disconnectModal">
+        <div class="modal-content">
+          <p id="disconnectMessage">هل تريد قطع الاتصال بالبث المباشر؟</p>
+          <button class="btn btn-danger" onclick="confirmDisconnect()">
+            نعم
+          </button>
+          <button class="btn btn-secondary" onclick="closeDisconnectModal()">
+            إلغاء
+          </button>
+        </div>
+      </div>
+      <div class="modal" id="commandSelectionModal">
+        <div
+          class="modal-content command-table-modal"
+          style="display: flex; flex-direction: column; overflow: hidden"
+        >
+          <span class="close-modal" id="close-command-modal">&times;</span>
+          <h2 id="commandModalTitle">اختر الأوامر</h2>
+          <div
+            style="
+              display: flex;
+              gap: 10px;
+              align-items: center;
+              margin: 10px 0;
+              flex-wrap: wrap;
+            "
+          >
+            <label style="display: flex; align-items: center; gap: 5px">
+              <input type="checkbox" id="select-all-commands" />
+              <span style="cursor: pointer" id="select-all-label"
+                >تحديد الكل</span
+              >
+            </label>
+            <label
+              id="copyTargetWrap"
+              style="display: none; align-items: center; gap: 5px"
+            >
+              <span>الوجهة:</span>
+              <select
+                id="copyTargetProfile"
+                style="
+                  padding: 4px 8px;
+                  background: #1a1a1a;
+                  color: #fff;
+                  border: 1px solid #444;
+                  border-radius: 6px;
+                "
+              ></select>
+            </label>
+            <div style="flex: 1"></div>
+            <button id="confirmCommandAction" class="btn btn-primary">
+              تأكيد
+            </button>
+            <button id="cancelCommandAction" class="btn btn-secondary">
+              إلغاء
+            </button>
+          </div>
+          <div
+            style="
+              flex: 1;
+              overflow-y: auto;
+              border: 1px solid #444;
+              background: #1a1a1a;
+            "
+          >
+            <table class="command-table" id="commandSelectionTable">
+              <thead>
+                <tr>
+                  <th style="width: 30px">اختيار</th>
+                  <th style="width: 15%">الاسم</th>
+                  <th>الامر</th>
+                  <th style="width: 7%">الشاشة</th>
+                  <th style="width: 7%">التكرار</th>
+                  <th style="width: 7%">الفاصل</th>
+                  <th style="width: 9%">تأخير</th>
+                  <th style="width: 5%">صوت</th>
+                  <th style="width: 5%">فيديو</th>
+                  <th style="width: 5%">صوت الفيديو</th>
+                </tr>
+              </thead>
+              <tbody id="commandSelectionTableBody"></tbody>
+            </table>
+          </div>
+          <div
+            id="duplicateCommandsArea"
+            style="margin-top: 10px; overflow-y: auto; display: none"
+          >
+            <h3 style="color: #ff9800">أوامر هدايا مكررة - اختر الاستبدال</h3>
+            <table class="command-table" id="duplicateTable">
+              <thead>
+                <tr>
+                  <th style="width: 30px">استبدال</th>
+                  <th style="width: 15%">الاسم</th>
+                  <th>الأمر / Webhook</th>
+                  <th style="width: 7%">الشاشة</th>
+                  <th style="width: 7%">التكرار</th>
+                  <th style="width: 7%">الفاصل</th>
+                  <th style="width: 9%">تأخير</th>
+                  <th style="width: 5%">صوت</th>
+                  <th style="width: 5%">فيديو</th>
+                  <th style="width: 5%">صوت الفيديو</th>
+                </tr>
+              </thead>
+              <tbody id="duplicateTableBody"></tbody>
+            </table>
+            <div style="margin-top: 5px"></div>
+          </div>
+          <div
+            id="hotkeysSelectionArea"
+            style="margin-top: 10px; overflow-y: auto; display: none"
+          >
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-bottom: 5px;
+              "
+            >
+              <h3 style="color: #1dd9e6" id="hotkeysAreaTitle">
+                اختصارات البروفايل
+              </h3>
+              <label style="display: flex; align-items: center; gap: 5px">
+                <input type="checkbox" id="select-all-hotkeys" />
+                <span style="cursor: pointer" id="select-all-hotkeys-label"
+                  >تحديد الكل</span
+                >
+              </label>
+            </div>
+            <table class="command-table" id="hotkeysSelectionTable">
+              <thead>
+                <tr>
+                  <th style="width: 40px" id="hotkeySelectTh">اختيار</th>
+                  <th style="width: 20%">المفتاح</th>
+                  <th>الأمر</th>
+                  <th style="width: 12%">النوع</th>
+                  <th style="width: 10%">الحالة</th>
+                </tr>
+              </thead>
+              <tbody id="hotkeysSelectionTbody"></tbody>
+            </table>
+            <div style="margin-top: 5px"></div>
+          </div>
+        </div>
+      </div>
+
     <div id="cardOverlay" class="overlay" style="display: none"></div>
 
     <script>
@@ -2309,5 +2593,6 @@
         }
       }
     </script>
+    <script src="i18n.js"></script>
   </body>
 </html>

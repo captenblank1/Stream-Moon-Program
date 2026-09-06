@@ -1,0 +1,294 @@
+/* ============================================================
+   responsive.css — تجاوب كامل لكل المقاسات
+   يُحمَّل بعد style.css ليتغلب على القواعد القديمة
+   ============================================================ */
+
+/* زر قائمة الجوال — يظهر فقط على الشاشات الصغيرة */
+#sidebarToggle {
+  display: none;
+  position: fixed;
+  top: 10px;
+  right: 12px;
+  z-index: 1002;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-section);
+  color: var(--primary-color);
+  font-size: 18px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+}
+
+#sidebarBackdrop {
+  display: none;
+}
+
+/* ===== الشاشات المتوسطة والصغيرة: سايد بار منزلق ===== */
+@media (max-width: 1100px) {
+  #sidebarToggle {
+    display: flex;
+  }
+
+  aside {
+    transform: translateX(-105%);
+    transition: transform 0.3s ease;
+    width: 250px;
+    box-shadow: none;
+  }
+
+  body.sidebar-open aside {
+    transform: none;
+    box-shadow: 6px 0 24px rgba(0, 0, 0, 0.5);
+  }
+
+  body.sidebar-open #sidebarBackdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 99;
+  }
+
+  /* كل المحتوى بعرض كامل بدون هامش السايد بار */
+  .auth-header,
+  .section-css,
+  .start-section,
+  .start-section-2,
+  .start-section-3,
+  .start-section-4,
+  .start-section-5,
+  .start-section-6 {
+    margin-left: 0 !important;
+  }
+
+  .auth-header {
+    padding-right: 60px; /* مساحة زر القائمة */
+  }
+
+  .section-css {
+    padding: 14px;
+  }
+}
+
+/* ===== الجداول تمتد أفقيًا بسلاسة بدل كسر التخطيط ===== */
+@media (max-width: 1100px) {
+  table,
+  .commands-table,
+  #hotkeysListTable {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+}
+
+/* ===== الهواتف ===== */
+@media (max-width: 768px) {
+  /* القائمة الجانبية القديمة (العرض الكامل ككتلة) تُلغى — بدلها المنزلقة أعلاه */
+  aside {
+    width: 250px !important;
+    height: 100vh !important;
+    position: fixed !important;
+    top: 0;
+    left: 0;
+  }
+
+  .auth-header {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .auth-buttons {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .auth-buttons .btn {
+    flex: 1 1 45%;
+    font-size: 12px;
+    padding: 8px 10px;
+  }
+
+  .section-css {
+    padding: 10px;
+  }
+
+  .account,
+  .minecraft-properties {
+    flex: 1 1 100%;
+  }
+
+  /* شبكات الأوفرلاي ولوحات الإعدادات عمود واحد */
+  .sml-grid,
+  .ovl-previews,
+  .smw-layout,
+  .plans-container {
+    grid-template-columns: 1fr !important;
+    display: grid;
+  }
+
+  .plans-container {
+    gap: 12px;
+  }
+
+  /* بطاقات الأوامر المنبثقة والنوافذ */
+  .modal-content,
+  #addCard {
+    width: 94vw !important;
+    max-width: 94vw !important;
+    max-height: 88vh !important;
+  }
+
+  #overlayFloatCard {
+    width: 96vw !important;
+    max-height: 90vh !important;
+    padding: 14px !important;
+  }
+
+  /* معاينات الأوفرلاي بارتفاع مناسب */
+  .ovl-frame-wrap {
+    height: 260px;
+  }
+
+  /* جدول الأوامر يحتفظ بتمريره الأفقي */
+  .commands-table {
+    font-size: 12px;
+  }
+
+  /* مودال لوحة المفاتيح — تصغير متوازن */
+  .keyboard-wrapper,
+  .keyboard-body {
+    transform-origin: top center;
+  }
+
+  .kb-key {
+    font-size: 10px !important;
+    padding: 4px 2px !important;
+  }
+
+  /* إشعار البروفايل المتصل */
+  .connected-profile {
+    padding: 10px;
+  }
+
+  h2 {
+    font-size: 1.15rem;
+  }
+}
+
+/* ===== الهواتف الصغيرة ===== */
+@media (max-width: 480px) {
+  .auth-buttons .btn {
+    flex: 1 1 100%;
+  }
+
+  .ovl-frame-wrap {
+    height: 220px;
+  }
+
+  .section-css {
+    padding: 8px;
+  }
+
+  .kb-key {
+    font-size: 8px !important;
+  }
+}
+
+/* ===== الشاشات العريضة جدًا: حد أقصى مريح للمحتوى ===== */
+@media (min-width: 1900px) {
+  .section-css {
+    max-width: 1750px;
+  }
+}
+
+/* ===== وضع الإنجليزية (LTR) ===== */
+html.lang-en #listsPanelNative,
+html.lang-en #listsPanelNative * {
+  text-align: left;
+}
+html.lang-en #listsPanelNative .sml-url {
+  text-align: left;
+}
+html.lang-en #overlayFloatBody .sml-panel,
+html.lang-en #overlayFloatBody .smw-layout {
+  text-align: left;
+}
+
+/* ===== مسافة واضحة بين الأيقونة والنص في كل الاتجاهات ===== */
+.btn i,
+button i,
+th i,
+h1 i,
+h2 i,
+h3 i,
+h4 i,
+label i,
+.ovl-preview-title i,
+.auth-buttons i,
+.button-select-slide i {
+  margin-inline-end: 6px;
+}
+
+/* ===== اهتزاز تنبيهي لإشعار الأدمن (مرة واحدة) ===== */
+@keyframes ovl-notif-shake {
+  0%, 100% { transform: translateX(-50%); }
+  15% { transform: translateX(calc(-50% - 10px)); }
+  30% { transform: translateX(calc(-50% + 10px)); }
+  45% { transform: translateX(calc(-50% - 7px)); }
+  60% { transform: translateX(calc(-50% + 7px)); }
+  75% { transform: translateX(calc(-50% - 3px)); }
+  90% { transform: translateX(calc(-50% + 3px)); }
+}
+
+/* ===== وضع العربي (RTL): انعكاس كامل للتخطيط ===== */
+html[dir="rtl"] aside {
+  left: auto;
+  right: 0;
+  border-right: none;
+  border-left: 1px solid var(--border-color);
+}
+html[dir="rtl"] .section-css,
+html[dir="rtl"] .auth-header {
+  margin-left: 0 !important;
+  margin-right: 250px !important;
+}
+html[dir="rtl"] #sidebarToggle {
+  right: auto;
+  left: 12px;
+}
+html[dir="rtl"] .auth-header {
+  padding-right: 20px;
+  padding-left: 60px;
+}
+@media (max-width: 1100px) {
+  html[dir="rtl"] aside {
+    transform: translateX(105%);
+  }
+  html[dir="rtl"] body.sidebar-open aside,
+  html[dir="rtl"] aside {
+    box-shadow: -6px 0 24px rgba(0, 0, 0, 0.5);
+  }
+  html[dir="rtl"] .section-css,
+  html[dir="rtl"] .auth-header,
+  html[dir="rtl"] .start-section,
+  html[dir="rtl"] .start-section-2,
+  html[dir="rtl"] .start-section-3,
+  html[dir="rtl"] .start-section-4,
+  html[dir="rtl"] .start-section-5,
+  html[dir="rtl"] .start-section-6 {
+    margin-right: 0 !important;
+  }
+  html[dir="rtl"] #sidebarToggle {
+    left: auto;
+    right: 12px;
+  }
+  html[dir="rtl"] .auth-header {
+    padding-left: 20px;
+    padding-right: 60px;
+  }
+}

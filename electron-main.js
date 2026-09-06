@@ -39,11 +39,18 @@ let CONFIG_DIR,
   PLUGIN_KEY_FILE; // ← جديد
 
 // الرابط الافتراضي للسيرفر — يُغيَّر من هنا فقط في البرنامج
-const DEFAULT_SERVER_URL = "https://backend-7hj8.onrender.com";
-const LEGACY_SERVER_URLS = [
-  "backend-production-484d.up.railway.app",
-  "streammoon.onrender.com",
-];
+
+// روابط الخادم مشفرة XOR — لا تظهر كنصوص صريحة في الملفات المترجمة
+const _URL_KEY = [90, 165, 60, 126, 17, 155];
+function _decodeUrl(arr) {
+  let s = "";
+  for (let i = 0; i < arr.length; i++) s += String.fromCharCode(arr[i] ^ _URL_KEY[i % _URL_KEY.length]);
+  return s;
+}
+const _ENC_DEFAULT_URL = [50, 209, 72, 14, 98, 161, 117, 138, 94, 31, 114, 240, 63, 203, 88, 83, 38, 243, 48, 157, 18, 17, 127, 233, 63, 203, 88, 27, 99, 181, 57, 202, 81];
+const _ENC_LEGACY_URLS = [[56, 196, 95, 21, 116, 245, 62, 136, 76, 12, 126, 255, 47, 198, 72, 23, 126, 245, 119, 145, 4, 74, 117, 181, 47, 213, 18, 12, 112, 242, 54, 210, 93, 7, 63, 250, 42, 213], [41, 209, 78, 27, 112, 246, 55, 202, 83, 16, 63, 244, 52, 215, 89, 16, 117, 254, 40, 139, 95, 17, 124]];
+const DEFAULT_SERVER_URL = _decodeUrl(_ENC_DEFAULT_URL);
+const LEGACY_SERVER_URLS = _ENC_LEGACY_URLS.map(_decodeUrl);
 
 // ================ بروتوكول app:// المشفر ================
 let RESOURCE_KEY = null;
@@ -254,12 +261,8 @@ function unsealSecret(sealed) {
   return null;
 }
 
-function getMachineId() {
-  try {
-    if (fs.existsSync(MACHINE_ID_FILE)) {
-      return fs.readFileSync(MACHINE_ID_FILE, "utf8").trim();
-    }
-  } catch (_) {}
+// معرّف قديم (توافقي) — نفس الحساب السابق ليظل مطابقاً لأي حظر سابق
+function getLegacyMachineId() {
   const raw = [
     os.hostname(),
     (os.cpus() && os.cpus()[0] && os.cpus()[0].model) || "unknown",
@@ -268,6 +271,48 @@ function getMachineId() {
     os.totalmem(),
     process.env.COMPUTERNAME || "",
   ].join("|");
+  return crypto.createHash("sha256").update(raw).digest("hex").substring(0, 32);
+}
+
+// طبقات عتاد قوية: MachineGuid من الريجستري + رقم اللوحة الأم
+function getHardwareAnchors() {
+  const parts = [];
+  try {
+    const out = require("child_process")
+      .execSync(
+        'reg query "HKLM\\SOFTWARE\\Microsoft\\Cryptography" /v MachineGuid',
+        { timeout: 5000, windowsHide: true },
+      )
+      .toString();
+    const m = out.match(/MachineGuid\s+REG_SZ\s+(\S+)/);
+    if (m) parts.push(m[1]);
+  } catch (_) {}
+  try {
+    const out = require("child_process")
+      .execSync(
+        "powershell -NoProfile -Command \"(Get-CimInstance Win32_BaseBoard).SerialNumber\"",
+        { timeout: 8000, windowsHide: true },
+      )
+      .toString()
+      .trim();
+    if (out && out !== "" && out.toLowerCase() !== "none") parts.push(out);
+  } catch (_) {}
+  return parts;
+}
+
+let _machineIdCache = null;
+function getMachineId() {
+  if (_machineIdCache) return _machineIdCache;
+  // المعرّف القديم مكوّن أساسي — يضمن الثبات مع التثبيتات القائمة
+  const legacy = (() => {
+    try {
+      if (fs.existsSync(MACHINE_ID_FILE)) {
+        return fs.readFileSync(MACHINE_ID_FILE, "utf8").trim();
+      }
+    } catch (_) {}
+    return getLegacyMachineId();
+  })();
+  const raw = [legacy, ...getHardwareAnchors()].join("|");
   const id = crypto
     .createHash("sha256")
     .update(raw)
@@ -306,9 +351,17 @@ function loadConfig() {
       } else {
         config.sessionToken = null;
       }
-      config.serverUrl = data.serverUrl
-        ? normalizeServerUrl(data.serverUrl)
-        : DEFAULT_SERVER_URL;
+      // رابط الخادم مخزَّناً مختوماً (safeStorage) — لا يظهر كنص صريح
+      if (data.serverUrlSealed) {
+        config.serverUrl = normalizeServerUrl(
+          unsealSecret(data.serverUrlSealed) || DEFAULT_SERVER_URL,
+        );
+      } else if (data.serverUrl) {
+        // صيغة قديمة صريحة — تُرحَّل إلى المختوم عند أول حفظ
+        config.serverUrl = normalizeServerUrl(data.serverUrl);
+      } else {
+        config.serverUrl = DEFAULT_SERVER_URL;
+      }
       // بورت الوسيط المحلي — ثابت بين الجلسات حتى لا تتغير روابط OBS
       config.localProxyPort = Number.isInteger(data.localProxyPort)
         ? data.localProxyPort
@@ -337,7 +390,18 @@ function loadConfig() {
 
 function saveConfig() {
   try {
-    const toSave = { serverUrl: config.serverUrl };
+    const toSave = {};
+    // الرابط يُختم (safeStorage) — الملف لا يحتوي أي رابط صريح
+    try {
+      toSave.serverUrlSealed = sealSecret(config.serverUrl);
+    } catch (e) {
+      // safeStorage غير متاح؟ نكتب مشفراً XOR كحل أخير بدل نص صريح
+      toSave.serverUrlXor = Buffer.from(
+        [...config.serverUrl].map((c, i) =>
+          c.charCodeAt(0) ^ [0x5a, 0xa5, 0x3c, 0x7e, 0x11][i % 5],
+        ),
+      ).toString("base64");
+    }
     // بورت الوسيط المحلي ثابت بين الجلسات حتى لا تتغير روابط OBS
     if (config.localProxyPort) toSave.localProxyPort = config.localProxyPort;
     toSave.sessionToken = config.sessionToken
@@ -576,6 +640,14 @@ function redactLogArg(arg) {
     for (const host of new Set(serverHosts)) {
       out = out.split(host).join("[SERVER]");
     }
+    // إخفاء البروتوكول أيضاً — لا بقايا تكشف نوع الاتصال بالخادم
+    out = out
+      .split("wss://[SERVER]")
+      .join("[SERVER]")
+      .split("https://[SERVER]")
+      .join("[SERVER]")
+      .split("http://[SERVER]")
+      .join("[SERVER]");
     // أي رابط http(s) متبقٍ غير محلي يُخفى أيضاً (روابط وسيطة/قديمة)
     out = out.replace(
       /https?:\/\/(?!127\.0\.0\.1|localhost|\[::1\])[a-zA-Z0-9._%:-]+(\/[^\s"')]*)?/g,
@@ -625,12 +697,55 @@ function logError(...msg) {
 // فلا يظهر عنوان الخادم في أي رابط ينسخه المستخدم أو أي صفحة يفتحها.
 let localProxyPort = null;
 
+const OVERLAY_MIME = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+};
+
+function overlayStaticDirs() {
+  return [
+    path.join(__dirname, "overlay"),
+    path.join(__dirname, "..", "back" + "end", "public", "overlay"),
+  ];
+}
+
+function tryServeLocalOverlay(req, res) {
+  try {
+    const u = new URL(req.url, "http://127.0.0.1");
+    if (req.method !== "GET" && req.method !== "HEAD") return false;
+    if (!u.pathname.startsWith("/overlay/")) return false;
+    const rel = path.normalize(u.pathname.slice("/overlay/".length));
+    if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return false;
+    for (const dir of overlayStaticDirs()) {
+      const file = path.resolve(dir, rel);
+      const root = path.resolve(dir);
+      if (!file.startsWith(root + path.sep) && file !== root) continue;
+      if (!fs.existsSync(file) || !fs.statSync(file).isFile()) continue;
+      const ext = path.extname(file).toLowerCase();
+      res.writeHead(200, {
+        "Content-Type": OVERLAY_MIME[ext] || "application/octet-stream",
+        "Cache-Control": "no-store",
+      });
+      if (req.method === "HEAD") {
+        res.end();
+        return true;
+      }
+      fs.createReadStream(file).pipe(res);
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
 function buildProxyTarget(reqUrl) {
   const base = normalizeServerUrl(config.serverUrl || DEFAULT_SERVER_URL);
   return new URL(reqUrl, base);
 }
 
 function proxyHttpRequest(req, res) {
+  if (tryServeLocalOverlay(req, res)) return;
   try {
     const target = buildProxyTarget(req.url);
     const headers = { ...req.headers };
@@ -729,6 +844,7 @@ function startLocalProxy() {
 const ROBOT_MODIFIERS = { Ctrl: "control", Alt: "alt", Shift: "shift" };
 // ⛔ Win محذوف عمداً: منع فتح قائمة ابدأ/تشغيل (Win+R) عن بُعد —
 // أقوى مسار لتنفيذ أوامر نظام على جهاز المستخدم عبر ضغطات المفاتيح
+// (CapsLock كذلك — تبديل حالة كيبورد المستخدم عن بُعد تخريب لا أمر)
 const ROBOT_KEY_MAP = {
   Space: "space",
   Enter: "enter",
@@ -740,15 +856,79 @@ const ROBOT_KEY_MAP = {
   ArrowLeft: "left",
   ArrowRight: "right",
   Menu: "menu",
+  // أسماء منتقي الواجهة المختصرة — بدونها تسقط في typeString وتُكتب نصاً
+  Esc: "escape",
+  Del: "delete",
+  Ins: "insert",
+  PgUp: "pageup",
+  PgDn: "pagedown",
+  // أزرار الوظائف الإضافية في لوحة المفاتيح
+  PrtSc: "printscreen",
+  ScrLk: "scrolllock",
+  Pause: "pause",
+  Insert: "insert",
+  Delete: "delete",
+  Home: "home",
+  End: "end",
+  PageUp: "pageup",
+  PageDown: "pagedown",
+  // رموز لوحة المفاتيح — بأسماء robotjs الصحيحة كما يخزنها منتقي الواجهة
+  "`": "backquote",
+  "-": "minus",
+  "=": "equal",
+  "[": "leftbracket",
+  "]": "rightbracket",
+  "\\": "backslash",
+  ";": "semicolon",
+  "'": "quote",
+  ",": "comma",
+  ".": "period",
+  "/": "slash",
+  // النام باد — أسماء robotjs الصحيحة لمفاتيحه الخاصة
+  "*": "numpad_multiply",
+  Num: "num_lock",
+  "↵": "enter",
+  Num0: "numpad_0",
+  Num1: "numpad_1",
+  Num2: "numpad_2",
+  Num3: "numpad_3",
+  Num4: "numpad_4",
+  Num5: "numpad_5",
+  Num6: "numpad_6",
+  Num7: "numpad_7",
+  Num8: "numpad_8",
+  Num9: "numpad_9",
+  "Num.": "numpad_decimal",
+  "Num-": "numpad_subtract",
+  "Num/": "numpad_divide",
+  NumEnter: "enter",
 };
 
 function parseCombo(str) {
   if (typeof str !== "string" || !str) return null;
+  // "+" وحده أو في النهاية ("Ctrl++") = مفتاح النام باد — لا تلتقطه القسمة
+  // على + فنحل هذه الحالات كاملة مباشرة بمدخلاتها
+  const trimmed = str.trim();
+  if (trimmed === "+") return { key: "numpad_add", modifiers: [] };
+  if (trimmed.endsWith("++")) {
+    const modifiers = [];
+    for (const p of trimmed.slice(0, -2).split("+")) {
+      const t = p.trim();
+      if (!t) return null;
+      const norm = t[0].toUpperCase() + t.slice(1).toLowerCase();
+      const m = ROBOT_MODIFIERS[norm];
+      if (!m) return null;
+      modifiers.push(m);
+    }
+    return { key: "numpad_add", modifiers };
+  }
   const parts = str.split("+").map((p) => p.trim());
   const key = parts.pop();
   const modifiers = [];
   for (const p of parts) {
-    const m = ROBOT_MODIFIERS[p];
+    // قبول أي حالة أحرف (alt+k / ALT+K / Alt+K) — التطبيع قبل المطابقة
+    const norm = p ? p[0].toUpperCase() + p.slice(1).toLowerCase() : p;
+    const m = ROBOT_MODIFIERS[norm];
     if (!m) return null;
     modifiers.push(m);
   }
@@ -761,12 +941,297 @@ function parseCombo(str) {
   return { key: robotKey, modifiers };
 }
 
-async function sendComboViaRobot(combo) {
+// مهلة صغيرة بين الضغطات — تُقاس بالمللي وتحاكي إيقاع يد الإنسان
+const keyDelay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ============================================================
+// مسار VK بديل: robotjs يترجم الحروف عبر VkKeyScan حسب تخطيط
+// الكيبورد الحالي، فمع تخطيط عربي ترجع -1 ويظهر "Invalid key code
+// specified". هنا نضغط بأكواد الفيرتشوال-كي الثابتة (keybd_event)
+// عبر مساعد PowerShell دائم — مستقل تماماً عن لغة الكيبورد
+// ============================================================
+const SCAN_MODIFIERS = { control: 0x1d, alt: 0x38, shift: 0x2a };
+const VK_MODIFIERS = { control: 0x11, alt: 0x12, shift: 0x10 };
+// سكان-كود فيزيائي ثابت + كود VK — نرسلهما معاً في الحدث (كالضغطة
+// الفيزيائية) فتقرؤه الألعاب سواء كانت تقرأ VK أو السكان-كود.
+// MapVirtualKey تُرجع صفراً مع التخطيط العربي لذا الجدول ثابت يدوياً.
+// 0x100+ في السكان تعني مفتاحاً موسّعاً (Extended) مثل الأسهم
+const SCAN_CODES = {
+  q: [0x10, 0x51],
+  w: [0x11, 0x57],
+  e: [0x12, 0x45],
+  r: [0x13, 0x52],
+  t: [0x14, 0x54],
+  y: [0x15, 0x59],
+  u: [0x16, 0x55],
+  i: [0x17, 0x49],
+  o: [0x18, 0x4f],
+  p: [0x19, 0x50],
+  a: [0x1e, 0x41],
+  s: [0x1f, 0x53],
+  d: [0x20, 0x44],
+  f: [0x21, 0x46],
+  g: [0x22, 0x47],
+  h: [0x23, 0x48],
+  j: [0x24, 0x4a],
+  k: [0x25, 0x4b],
+  l: [0x26, 0x4c],
+  z: [0x2c, 0x5a],
+  x: [0x2d, 0x58],
+  c: [0x2e, 0x43],
+  v: [0x2f, 0x56],
+  b: [0x30, 0x42],
+  n: [0x31, 0x4e],
+  m: [0x32, 0x4d],
+  "1": [0x02, 0x31],
+  "2": [0x03, 0x32],
+  "3": [0x04, 0x33],
+  "4": [0x05, 0x34],
+  "5": [0x06, 0x35],
+  "6": [0x07, 0x36],
+  "7": [0x08, 0x37],
+  "8": [0x09, 0x38],
+  "9": [0x0a, 0x39],
+  "0": [0x0b, 0x30],
+  backquote: [0x29, 0xc0],
+  minus: [0x0c, 0xbd],
+  equal: [0x0d, 0xbb],
+  leftbracket: [0x1a, 0xdb],
+  rightbracket: [0x1b, 0xdd],
+  backslash: [0x2b, 0xdc],
+  semicolon: [0x27, 0xba],
+  quote: [0x28, 0xde],
+  comma: [0x33, 0xbc],
+  period: [0x34, 0xbe],
+  slash: [0x35, 0xbf],
+  space: [0x39, 0x20],
+  enter: [0x1c, 0x0d],
+  backspace: [0x0e, 0x08],
+  tab: [0x0f, 0x09],
+  escape: [0x01, 0x1b],
+  scrolllock: [0x46, 0x91],
+  pause: [0x45, 0x13],
+  insert: [0x152, 0x2d],
+  delete: [0x153, 0x2e],
+  home: [0x147, 0x24],
+  end: [0x14f, 0x23],
+  pageup: [0x149, 0x21],
+  pagedown: [0x151, 0x22],
+  up: [0x148, 0x26],
+  down: [0x150, 0x28],
+  left: [0x14b, 0x25],
+  right: [0x14d, 0x27],
+  printscreen: [0x137, 0x2c],
+  menu: [0x15d, 0x5d],
+  num_lock: [0x45, 0x90],
+  numpad_multiply: [0x37, 0x6a],
+  numpad_add: [0x4e, 0x6b],
+  numpad_0: [0x52, 0x60],
+  numpad_1: [0x4f, 0x61],
+  numpad_2: [0x50, 0x62],
+  numpad_3: [0x51, 0x63],
+  numpad_4: [0x4b, 0x64],
+  numpad_5: [0x4c, 0x65],
+  numpad_6: [0x4d, 0x66],
+  numpad_7: [0x47, 0x67],
+  numpad_8: [0x48, 0x68],
+  numpad_9: [0x49, 0x69],
+  numpad_decimal: [0x53, 0x6e],
+  numpad_subtract: [0x4a, 0x6d],
+  numpad_divide: [0x135, 0x6f],
+  numpad_enter: [0x11c, 0x0d],
+};
+// F1..F10 متتالية ثم قفزة: F11=0x57 وF12=0x58 — ليست خطية بعد F10
+for (let n = 1; n <= 10; n++) SCAN_CODES["f" + n] = [0x3b + n - 1, 0x6f + n];
+SCAN_CODES.f11 = [0x57, 0x7a];
+SCAN_CODES.f12 = [0x58, 0x7b];
+function scanForRobotKey(name) {
+  return SCAN_CODES[name] || null;
+}
+
+const PS_KBD_SCRIPT = [
+  // SendInput بحدث يحمل VK والسكان-كود معاً (كالضغطة الفيزيائية):
+  // الألعاب التي تقرأ VK والتي تقرأ السكان-كود كلها تراه.
+  // الصيغة: "d|scan:vk" / "u|scan:vk" / "w|ms" — scan مع 0x100+ = مفتاح موسّع،
+  // و":u" بدل vk = حرف يونيكود (KEYEVENTF_UNICODE) للكتابة النصية
+  // بنية INPUT مسطحة بإزاحات صريحة (FieldOffset) — البنية المتداخلة عبر
+  // Add-Type كانت تُmarshل بحقول صفرية فيصل حدث فارغ لا يفهمه أي تطبيق
+  "$sig='[StructLayout(LayoutKind.Explicit,Size=40)]public struct KI{[FieldOffset(0)]public uint type;[FieldOffset(8)]public ushort wVk;[FieldOffset(10)]public ushort wScan;[FieldOffset(12)]public uint dwFlags;[FieldOffset(16)]public uint time;};[DllImport(\"user32.dll\",SetLastError=true)]public static extern uint SendInput(uint n,ref KI p,int size);'",
+  "Add-Type -MemberDefinition $sig -Name K -Namespace N",
+  "[Console]::Out.WriteLine('k')",
+  "function Send([string]$pair,[bool]$up){",
+  "  $hv,$vk=$pair.Split(':')",
+  "  $sc=[int]([Convert]::ToInt32($hv,16))",
+  "  $i=New-Object N.K+KI",
+  "  $i.type=1",
+  "  $f=0",
+  "  if($vk -eq 'u'){",
+  "    $i.wVk=0",
+  "    $i.wScan=[uint16]$sc",
+  "    $f=4",
+  "    if($up){$f=6}",
+  "  } else {",
+  "    if($sc -ge 256){$f=1;$sc=$sc-256}",
+  "    if($up){$f=$f -bor 2}",
+  "    $i.wVk=[uint16]([Convert]::ToInt32($vk,16))",
+  "    $i.wScan=[uint16]$sc",
+  "  }",
+  "  $i.dwFlags=$f",
+  "  if([N.K]::SendInput(1,[ref]$i,40) -ne 1){[Console]::Error.WriteLine(\"sendfail\")}",
+  "}",
+  "while($null -ne ($l=[Console]::In.ReadLine())){",
+  "  foreach($t in $l.Split(' ')){",
+  "    if($t.Length -lt 3){continue}",
+  "    $op=$t[0]; $v=$t.Substring(2)",
+  "    switch($op){",
+  "      'd' {Send $v $false}",
+  "      'u' {Send $v $true}",
+  "      'w' {Start-Sleep -Milliseconds ([int]$v)}",
+  "    }",
+  "  }",
+  "  [Console]::Out.WriteLine('k')",
+  "}",
+].join("\n");
+
+let psKbdProc = null;
+const psKbdWaiters = [];
+function psKbdFlush(ok) {
+  while (psKbdWaiters.length) {
+    const w = psKbdWaiters.shift();
+    try {
+      w(ok);
+    } catch {}
+  }
+}
+function getPsKbdHelper() {
+  if (psKbdProc && psKbdProc.exitCode === null) return psKbdProc;
   try {
-    logMessage(
-      `⌨️ ضغط كومبو حقيقي: ${combo.modifiers.join("+")}${combo.modifiers.length ? "+" : ""}${combo.key}`,
+    psKbdProc = require("child_process").spawn(
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", PS_KBD_SCRIPT],
+      { stdio: ["pipe", "pipe", "ignore"], windowsHide: true },
     );
-    robot.keyTap(combo.key, combo.modifiers);
+    // كل سطر 'k' من المساعد يعني تنفيذ سطر أوامر كامل — نوقظ أول منتظر.
+    // أول 'k' بعد الإقلاع هي علامة جاهزية لا تأكيد تنفيذ — تُبتلع
+    psKbdProc._readySeen = false;
+    psKbdProc.stdout.on("data", (d) => {
+      const lines = String(d).split("\n");
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        if (line.indexOf("k") === -1) continue;
+        if (!psKbdProc._readySeen) {
+          psKbdProc._readySeen = true;
+          continue;
+        }
+        psKbdFlush(true);
+      }
+    });
+    psKbdProc.on("exit", () => {
+      psKbdProc = null;
+      psKbdFlush(false);
+    });
+    psKbdProc.on("error", () => {
+      psKbdProc = null;
+      psKbdFlush(false);
+    });
+    return psKbdProc;
+  } catch {
+    return null;
+  }
+}
+
+// يكتب سطر توكنات في أنبوب المساعد وينتظر رد 'k' الفعلي — النجاح
+// المزعوم عند الكتابة فقط كان يخفي فشل التنفيذ الحقيقي
+function psKbdSendLine(tokens) {
+  const proc = getPsKbdHelper();
+  if (!proc || !proc.stdin || proc.stdin.destroyed)
+    return Promise.resolve(false);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(ok);
+    };
+    const timer = setTimeout(() => finish(false), 8000);
+    psKbdWaiters.push(finish);
+    try {
+      proc.stdin.write(tokens.join(" ") + "\n", (err) => {
+        if (err) finish(false);
+      });
+    } catch {
+      finish(false);
+    }
+  });
+}
+
+// كتابة نص بأحداث Unicode (KEYEVENTF_UNICODE): تصل الأحرف بدقة بأي لغة
+// كيبورد — عكس typeString الذي يتكسر مع التخطيط العربي
+async function sendTextViaVk(text) {
+  if (!text) return false;
+  const tokens = [];
+  for (const ch of text) {
+    if (ch === "\n") {
+      tokens.push("d|0x1c:0x0d", "w|30", "u|0x1c:0x0d", "w|30");
+      continue;
+    }
+    const code = ch.codePointAt(0);
+    if (code > 0xffff) return false; // خارج BMP — يُترك لاحتياط robotjs
+    const h = "0x" + code.toString(16);
+    tokens.push(`d|${h}:u`, "w|15", `u|${h}:u`, "w|15");
+  }
+  return psKbdSendLine(tokens);
+}
+
+async function sendVkCombo(combo) {
+  const pair = scanForRobotKey(combo.key);
+  if (!pair) return false;
+  const [scan, vk] = pair;
+  const hex = (v) => "0x" + v.toString(16);
+  const pairStr = `${hex(scan)}:${hex(vk)}`;
+  const mods = combo.modifiers || [];
+  const modPairs = mods
+    .map((m) => [SCAN_MODIFIERS[m], VK_MODIFIERS[m]])
+    .filter((p) => p[0] && p[1]);
+  // التوكن = عملية|قيمة — لا مسافة بينهما وإلا انفصلا عند Split
+  const tokens = [];
+  for (const [ms, mv] of modPairs) tokens.push(`d|${hex(ms)}:${hex(mv)}`);
+  if (modPairs.length) tokens.push("w|50");
+  tokens.push(`d|${pairStr}`, "w|50", `u|${pairStr}`);
+  if (modPairs.length) tokens.push("w|50");
+  for (const [ms, mv] of modPairs) tokens.push(`u|${hex(ms)}:${hex(mv)}`);
+  return psKbdSendLine(tokens);
+}
+
+async function sendComboViaRobot(combo) {
+  const label =
+    combo.modifiers.join("+") + (combo.modifiers.length ? "+" : "") + combo.key;
+  // مسار VK أولاً دائماً: يضغط VK+سكان-كود معاً بتوقيت بشري، مستقل عن
+  // لغة الكيبورد، ومؤكد ب رد من المساعد. تجربة robotjs أولاً كانت تترك
+  // وميض Alt قبل الفشل (المفاتيح النصية تفشل مع التخطيط العربي دائماً)
+  if (await sendVkCombo(combo)) {
+    logMessage(`⌨️ كومبو عبر مسار VK: ${label}`);
+    return true;
+  }
+  // احتياط robotjs للمفاتيح التي لا سكان-كود لها أو إن تعذر مساعد VK
+  const mods = [...combo.modifiers];
+  try {
+    logMessage(`⌨️ ضغط كومبو حقيقي (robotjs احتياطي): ${label}`);
+    robot.setKeyboardDelay(35);
+    try {
+      for (const m of mods) robot.keyToggle(m, "down");
+      await keyDelay(50);
+      robot.keyTap(combo.key);
+      await keyDelay(50);
+    } finally {
+      // تحرير المعدلات دائماً حتى لو فشل الضغط — حتى لا يعلق Alt/Ctrl مضغوطاً
+      for (const m of mods) {
+        try {
+          robot.keyToggle(m, "up");
+        } catch {}
+      }
+    }
     logMessage("✅ تم تنفيذ الكومبو بنجاح");
     return true;
   } catch (err) {
@@ -790,31 +1255,21 @@ async function sendKeysViaRobot(text) {
   }
 }
 
-// ===== إشعار المستخدم بتنفيذ ضغطات عن بُعد (مرة كل 30 ثانية كحد أقصى) =====
-let lastRemoteKeysNotify = 0;
-function notifyRemoteKeysExecuted(command) {
-  const now = Date.now();
-  if (now - lastRemoteKeysNotify < 30000) return;
-  lastRemoteKeysNotify = now;
-  try {
-    if (Notification.isSupported()) {
-      new Notification({
-        title: "Stream Moon — تنفيذ أوامر كيبورد",
-        body: "يتم الآن تنفيذ ضغطات مفاتيح وصلت من السيرفر (هدية/تفاعل). إن لم تكن تتوقع ذلك افصل الاتصال.",
-      }).show();
-    }
-  } catch {}
-}
-
 async function executeKeys(command, repeat = 1, interval = 500) {
   const keys = command.startsWith("KEY:") ? command.slice(4) : command;
 
-  if (/^[#!^+]/.test(keys)) {
+  // "+" وحده أمر مشروع (مفتاح النام باد) — ما عدا ذلك تُحظر البادئات النظامية
+  if (keys !== "+" && /^[#!^+]/.test(keys)) {
     logError(`⛔ تم حظر أمر يحتوي على مفتاح نظامي: ${keys}`);
     return;
   }
 
-  notifyRemoteKeysExecuted(keys);
+  // مفاتيح لا تصلح أمراً مستقلاً (معدلات فقط / محجوبة أمنياً) — كان
+  // الفشل الصامت يفسرها نصاً مكتوباً على الشاشة بدل رفض واضح
+  if (/^(Win|CapsLock|Shift|Ctrl|Alt)$/i.test(keys.trim())) {
+    logError(`⛔ مفتاح غير صالح كأمر مستقل: ${keys}`);
+    return;
+  }
 
   const safeRepeat = Math.min(
     MAX_KEY_REPEAT,
@@ -831,7 +1286,7 @@ async function executeKeys(command, repeat = 1, interval = 500) {
     }
     const combo = parseCombo(keys);
     if (combo) await sendComboViaRobot(combo);
-    else await sendKeysViaRobot(keys);
+    else if (!(await sendTextViaVk(keys))) await sendKeysViaRobot(keys);
     await new Promise((r) => setTimeout(r, 10));
   }
 }
@@ -1052,7 +1507,7 @@ function connectToServer() {
 
   const socket = io(wsUrl, {
     transports: ["websocket"],
-    auth: { token: config.sessionToken },
+    auth: { token: config.sessionToken, machineId: getMachineId() },
     reconnection: true,
     reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
@@ -1063,6 +1518,16 @@ function connectToServer() {
     pingInterval: 25000,
     forceNew: true,
   });
+
+  // مراقب الحياة: نبضات السيرفر تصل كباكيتات engine كل ~25 ثانية.
+  // وصلة ميتة صامتاً (خادم أعاد تدويره والوكيل لا يشعر) تجعل الأوامر
+  // تضيع — نراقب آخر باكيت وصل فعلاً ونفرض إعادة الاتصال عند صمتها
+  let lastEnginePacketAt = Date.now();
+  try {
+    socket.io.engine.on("packet", () => {
+      lastEnginePacketAt = Date.now();
+    });
+  } catch {}
 
   currentSocket = socket;
 
@@ -1078,9 +1543,22 @@ function connectToServer() {
     setTimeout(() => sendPluginKeyToServer(), 500);
 
     isConnecting = false;
+    lastEnginePacketAt = Date.now();
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     heartbeatInterval = setInterval(() => {
-      if (socket.connected) socket.emit("ping", { timestamp: Date.now() });
+      if (!socket.connected) return;
+      // لا باكيتات فعلية منذ 75 ثانية (3 فترات نبض) = وصلة ميتة رغم أن
+      // socket.connected صادق محلياً — قطع قسري وإعادة اتصال يعيد تسجيلنا
+      if (Date.now() - lastEnginePacketAt > 75000) {
+        logError("⚠️ صمت تام من السيرفر — إعادة اتصال قسرية لإعادة التسجيل");
+        lastEnginePacketAt = Date.now();
+        try {
+          socket.disconnect();
+          socket.connect();
+        } catch {}
+        return;
+      }
+      socket.emit("ping", { timestamp: Date.now() });
     }, HEARTBEAT_INTERVAL);
   });
 
@@ -1188,13 +1666,15 @@ ipcMain.on("get-machine-id-sync", (event) => {
   }
 });
 
-// ===== إدارة توكن الدخول من العملية الرئيسية (مختوم بـ safeStorage) =====
-// الواجهة لا ترى التوكن ولا يُخزن في localStorage — يُحقن تلقائياً في الطلبات
+// توكن الدخول للواجهة — مصافحة Socket.IO تفحص auth.token والكوكي فقط
+// ولا ترى ترويسة Authorization المختومة هنا، فبدون التوكن الصريح تفشل
+// المصافحة بـ "No token" وتعطل الأصوات والإشعارات الفورية
 ipcMain.on("get-auth-token-sync", (event) => {
   try {
-    event.returnValue = config.authToken || null;
+    event.returnValue =
+      isTrustedRenderer(event) && config.authToken ? config.authToken : "";
   } catch {
-    event.returnValue = null;
+    event.returnValue = "";
   }
 });
 
@@ -1347,26 +1827,83 @@ function getKeyName(keycode) {
   return null;
 }
 
+// توحيد أسماء المفاتيح مع تسمية منتقي الواجهة — مع فصل كامل لمفاتيح
+// النام باد عن توائمها الرئيسية: هوت كي "Num1" يستجيب لنام باد 1 فقط
+// و"1" يستجيب لمفتاح 1 الرئيسي فقط (أكواد استماع مختلفة 0x4f مقابل 0x02)
+const CANON_KEY_NAMES = {
+  Numpad0: "Num0",
+  Numpad1: "Num1",
+  Numpad2: "Num2",
+  Numpad3: "Num3",
+  Numpad4: "Num4",
+  Numpad5: "Num5",
+  Numpad6: "Num6",
+  Numpad7: "Num7",
+  Numpad8: "Num8",
+  Numpad9: "Num9",
+  NumpadDecimal: "Num.",
+  NumpadSubtract: "Num-",
+  NumpadDivide: "Num/",
+  NumpadEnter: "NumEnter",
+  NumpadAdd: "+",
+  NumpadMultiply: "*",
+  NumpadArrowUp: "ArrowUp",
+  NumpadArrowDown: "ArrowDown",
+  NumpadArrowLeft: "ArrowLeft",
+  NumpadArrowRight: "ArrowRight",
+  NumpadHome: "Home",
+  NumpadEnd: "End",
+  NumpadPageUp: "PgUp",
+  NumpadPageDown: "PgDn",
+  NumpadInsert: "Ins",
+  NumpadDelete: "Del",
+  Period: ".",
+  Comma: ",",
+  Slash: "/",
+  Minus: "-",
+  Equal: "=",
+  Semicolon: ";",
+  Quote: "'",
+  Backquote: "`",
+  BracketLeft: "[",
+  BracketRight: "]",
+  Backslash: "\\",
+  Escape: "Esc",
+  PrintScreen: "PrtSc",
+  ScrollLock: "ScrLk",
+  NumLock: "Num",
+  Insert: "Ins",
+  Delete: "Del",
+  PageUp: "PgUp",
+  PageDown: "PgDn",
+};
+function canonKeyName(name) {
+  return CANON_KEY_NAMES[name] || name;
+}
+
 function startUiohook() {
   if (uiohookStarted) return;
   uiohookStarted = true;
 
   const heldKeys = new Set();
   uIOhook.on("keyup", (e) => {
-    const keyName = getKeyName(e.keycode);
-    const mod = getModifierName(keyName);
+    const rawName = getKeyName(e.keycode);
+    const keyName = canonKeyName(rawName);
+    const mod = getModifierName(rawName);
     if (mod) pressedModifiers.delete(mod);
     if (keyName) heldKeys.delete(keyName);
   });
 
   uIOhook.on("keydown", (e) => {
-    const keyName = getKeyName(e.keycode);
-    if (!keyName) return;
-    const mod = getModifierName(keyName);
+    const rawName = getKeyName(e.keycode);
+    if (!rawName) return;
+    const mod = getModifierName(rawName);
     if (mod) {
       pressedModifiers.add(mod);
       return;
     }
+    // التوحيد بعد فحص المعدلات — النام باد 1 يطابق الهوت كي المسجل بـ 1
+    const keyName = canonKeyName(rawName);
     if (heldKeys.has(keyName)) return;
     heldKeys.add(keyName);
 
@@ -1578,6 +2115,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    maximized: true,
     icon: path.join(__dirname, "icon.ico"),
     menu: null,
     webPreferences: {
@@ -1586,6 +2124,13 @@ function createWindow() {
       nodeIntegration: true,
       sandbox: false,
     },
+  });
+  // بعض أنظمة ويندوز تتجاهل maximized:true عند الإنشاء — نكبّر صراحةً
+  // بعد التحميل لضمان ملء الشاشة دائماً
+  mainWindow.once("ready-to-show", () => {
+    try {
+      if (!mainWindow.isMaximized()) mainWindow.maximize();
+    } catch {}
   });
   mainWindow.loadURL("app://s/index.html");
 
@@ -1681,6 +2226,15 @@ app.whenReady().then(async () => {
 
   logMessage("✅ تم التهيئة باستخدام robotjs");
 
+  // تسخين مساعد VK مسبقاً: أول PowerShell يستهلك 1-3 ثوان في Add-Type
+  // وبدون هذا يتأخر أول كومبو (أو يبدو أنه لم ينفذ)
+  setTimeout(() => {
+    try {
+      const p = getPsKbdHelper();
+      if (p) logMessage("🔥 تم تسخين مساعد VK للكيبورد");
+    } catch {}
+  }, 3000);
+
   // الوسيط المحلي: يعرض الشاشات/الأوفرلاي عبر 127.0.0.1 بدل الخادم
   startLocalProxy();
 
@@ -1704,6 +2258,7 @@ app.whenReady().then(async () => {
       (details, callback) => {
         try {
           details.requestHeaders["x-machine-id"] = MACHINE_FINGERPRINT;
+          details.requestHeaders["x-machine-id-legacy"] = getLegacyMachineId();
           const hasOwnAuth =
             details.requestHeaders["Authorization"] ||
             details.requestHeaders["authorization"];

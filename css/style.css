@@ -2088,3 +2088,214 @@ tr.disabled-row button {
     text-align: center;
   }
 }
+
+/* ===== الإشعار العاجل — كارت علوي عائم فاخر يهتز لجذب الانتباه ===== */
+.sm-alert-bar {
+  position: fixed;
+  top: 22px;
+  left: 50%;
+  width: min(720px, calc(100% - 36px));
+  transform: translate(-50%, 0);
+  z-index: 100000;
+  background:
+    linear-gradient(135deg, rgba(120, 8, 30, 0.97) 0%, rgba(220, 53, 69, 0.97) 45%, rgba(150, 12, 40, 0.97) 100%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #fff;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 16.5px;
+  font-weight: 700;
+  direction: rtl;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 16px;
+  box-shadow:
+    0 14px 44px rgba(220, 53, 69, 0.5),
+    0 3px 12px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  animation:
+    sm-alert-drop 0.38s cubic-bezier(0.2, 0.9, 0.3, 1.2),
+    sm-alert-shake 0.7s ease-in-out 0.45s,
+    sm-alert-pulse 2.4s ease-in-out 1.4s infinite;
+}
+
+.sm-alert-bar .sm-alert-icon {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: inset 0 1px 3px rgba(255, 255, 255, 0.25);
+  animation: sm-bell-ring 0.7s ease-in-out 0.45s 2;
+}
+
+.sm-alert-bar .sm-alert-text {
+  flex: 1;
+  min-width: 200px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  line-height: 1.6;
+}
+
+.sm-alert-bar button {
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  cursor: pointer;
+  border-radius: 10px;
+  transition: background 0.2s, transform 0.15s;
+}
+.sm-alert-bar button:hover {
+  background: rgba(0, 0, 0, 0.5);
+  transform: scale(1.08);
+}
+
+@keyframes sm-alert-drop {
+  from { transform: translate(-50%, -160%); opacity: 0; }
+  to { transform: translate(-50%, 0); opacity: 1; }
+}
+@keyframes sm-alert-shake {
+  0%, 100% { transform: translate(-50%, 0); }
+  15%, 55%, 90% { transform: translate(calc(-50% - 9px), 0); }
+  35%, 75% { transform: translate(calc(-50% + 9px), 0); }
+}
+@keyframes sm-alert-pulse {
+  0%, 100% { box-shadow: 0 14px 44px rgba(220, 53, 69, 0.5), 0 3px 12px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.22); }
+  50% { box-shadow: 0 14px 54px rgba(255, 82, 82, 0.85), 0 3px 12px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.22); }
+}
+@keyframes sm-bell-ring {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(-16deg); }
+  40% { transform: rotate(14deg); }
+  60% { transform: rotate(-10deg); }
+  80% { transform: rotate(8deg); }
+}
+
+@media (max-width: 600px) {
+  .sm-alert-bar { font-size: 14px; top: 10px; padding: 11px 12px; gap: 10px; }
+  .sm-alert-bar .sm-alert-icon { width: 34px; height: 34px; font-size: 15px; }
+  .sm-alert-bar button { width: 30px; height: 30px; }
+}
+
+/* ============================================================
+   شريط التمرير (السكروول بار) — مظهر عصري بديل شريط النظام الافتراضي
+   متناسق مع الثيم الداكن: مقبض دائري متدرج يتوهج بالسماوي عند التمرير
+   ============================================================ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3d3d4a #131318;
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+::-webkit-scrollbar-track {
+  background: #131318;
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.02);
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #42424f 0%, #2c2c36 100%);
+  border-radius: 10px;
+  border: 2px solid #131318;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #1dd9e6e1 0%, #159aa8 100%);
+  box-shadow: 0 0 8px rgba(29, 217, 230, 0.35);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: #1dd9e6;
+}
+
+::-webkit-scrollbar-corner {
+  background: #131318;
+}
+
+/* إخفاء أسهم الشريط الافتراضية — المظهر النظيف فقط */
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* أحجام أصغر للحقول وجداول التحسين */
+textarea::-webkit-scrollbar,
+.select-dropdown::-webkit-scrollbar,
+.hotkeys-table ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+/* ================ حماية أيقونات Font Awesome من تجاوز الخطوط ================ */
+/* قواعد الخط الشامل (مثل #listsPanelNative * { font-family: Cairo }) كانت
+   تغير خط الأيقونات فتظهر مربعات — هذه القاعدة تضمن خط FA بأولوية أعلى */
+i.fas,
+i.fa-solid {
+  font-family: "Font Awesome 6 Free" !important;
+  font-weight: 900 !important;
+  margin-inline-end: 6px;
+}
+i.far,
+i.fa-regular {
+  font-family: "Font Awesome 6 Free" !important;
+  font-weight: 400 !important;
+  margin-inline-end: 6px;
+}
+i.fab,
+i.fa-brands {
+  font-family: "Font Awesome 6 Brands" !important;
+  font-weight: 400 !important;
+  margin-inline-end: 6px;
+}
+
+/* ================ خانة التنفيذ مرة واحدة في اللايف ================ */
+.once-live-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 14px auto 4px;
+  padding: 10px 18px;
+  width: fit-content;
+  background: rgba(29, 217, 230, 0.08);
+  border: 1px solid rgba(29, 217, 230, 0.35);
+  border-radius: 10px;
+  clear: both;
+}
+.once-live-box input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #1dd9e6;
+  cursor: pointer;
+}
+.once-live-box label {
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 14px;
+  margin: 0;
+}
+.once-live-box label i {
+  color: #1dd9e6;
+  margin-inline-end: 4px;
+}

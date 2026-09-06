@@ -5,3 +5,5 @@ repomix
 
 npm run compile
 node scripts/encrypt.js
+
+npm start

@@ -15,9 +15,14 @@ const TARGETS = [
   "index.html",
   "css/normalize.css",
   "css/style.css",
+  "css/responsive.css",
   "css/all.min.css",
   "vendor/fontawesome/all.min.css",
   "vendor/Sortable.min.js",
+  "i18n.js",
+  // وحدة السكيلتون — بدونها تختفي من حزمة البناء
+  "skeleton/skeleton.css",
+  "skeleton/skeleton.js",
 ];
 
 fs.rmSync(OUT, { recursive: true, force: true });

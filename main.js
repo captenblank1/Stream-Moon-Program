@@ -2,11 +2,22 @@
 // main.js - Stream Moon Full Application
 // ============================================================
 
-// عنوان السيرفر يتبع إعدادات التطبيق، مع الرابط السحابي كافتراضي
-// الرابط الافتراضي — يُغيَّر من هنا فقط في الفرونت
+// نطاق الودجت — Worker كلود فلير (شغال فورًا)
+// لاحقًا: أضف Custom Domain من الداشبورد وبدّل السطر التالي إلى widget.streammoon.net
+const WIDGET_BASE = "https://www.streammoon.net";
+
+// عنوان السيرفر يتبع إعدادات التطبيق — الرابط الاحتياطي مشفر XOR
+// (لا يظهر كنص صريح في الملفات المترجمة)
+const _BK = [44, 145, 71, 109, 179, 94];
+const _BE = [68, 229, 51, 29, 192, 100, 3, 190, 37, 12, 208, 53, 73, 255, 35, 64, 132, 54, 70, 169, 105, 2, 221, 44, 73, 255, 35, 8, 193, 112, 79, 254, 42];
 window.API_BASE = (
   window.electronAPI?.getServerUrlSync?.() ||
-  "https://backend-7hj8.onrender.com"
+  (() => {
+    let s = "";
+    for (let i = 0; i < _BE.length; i++)
+      s += String.fromCharCode(_BE[i] ^ _BK[i % _BK.length]);
+    return s;
+  })()
 )
   .trim()
   .replace(/\/+$/, "");
@@ -26,6 +37,8 @@ try {
 // المتغيرات العامة
 // ============================================================
 let isLiveConnected = false;
+// 🔒 حراسة الجلسة الواحدة: صار الحساب/اليوزر مطروداً لأنه فُتح من جهاز آخر
+let sessionConflictHit = false;
 let liveCheckInterval = null;
 let liveStatusCheckInProgress = false;
 let lastEnteredUsername = "";
@@ -45,7 +58,6 @@ let saveInProgress = false;
 // قفل أي زر أثناء تنفيذ مهمة غير متزامنة لمنع التنفيذ المكرر
 async function withButtonLock(btn, fn) {
   if (!btn || btn.disabled) return;
-  const originalHtml = btn.innerHTML;
   btn.disabled = true;
   btn.style.opacity = 0.6;
   btn.style.pointerEvents = "none";
@@ -55,7 +67,8 @@ async function withButtonLock(btn, fn) {
     btn.disabled = false;
     btn.style.opacity = "";
     btn.style.pointerEvents = "";
-    btn.innerHTML = originalHtml;
+    // ملاحظة: لا نسترجع نص الزر القديم — العملية قد تكون غيرته لحالة نهائية
+    // (مثل Connect → Disconnect) واسترجاعه كان يخفي الحالة الجديدة
   }
 }
 let currentUserPlan = "free";
@@ -108,6 +121,8 @@ let screensLoaded = false;
 // ============================================================
 // إعدادات Hotkey
 // ============================================================
+// تم تحميل بيانات الهوت كي عند فتح البرنامج — التنقل للقسم يصبح فورياً
+let hotkeySectionLoaded = false;
 let hotkeySettings = {
   key: "",
   commandId: null,
@@ -170,7 +185,7 @@ function decodeHtmlEntities(str) {
 
 function showMessage(msg) {
   const m = document.getElementById("message");
-  m.textContent = msg;
+  m.innerHTML = window.AppI18n ? AppI18n.t(msg) : msg;
   m.classList.add("show");
   setTimeout(() => m.classList.remove("show"), 2500);
 }
@@ -204,6 +219,14 @@ function fetchWithAuth(url, options = {}) {
       credentials: "include",
     });
 
+    if (res.status === 403) {
+      try {
+        const maybeBlocked = await res.clone().json();
+        if (maybeBlocked && maybeBlocked.blocked) {
+          showBlockScreen(maybeBlocked.message || "");
+        }
+      } catch (e) {}
+    }
     if (res.status === 401) {
       try {
         const refreshRes = await fetch(`${API_BASE}/api/auth/refresh`, {
@@ -211,7 +234,8 @@ function fetchWithAuth(url, options = {}) {
           credentials: "include",
         });
         if (refreshRes.ok) {
-          const newToken = getCookie("token");
+          const refreshData = await refreshRes.json().catch(() => ({}));
+          const newToken = refreshData.token || getCookie("token");
           if (newToken) {
             saveAuthToken(newToken);
             headers["Authorization"] = `Bearer ${newToken}`;
@@ -252,14 +276,14 @@ async function checkPluginStatus() {
       inputGroup.style.display = 'none';
       pairedActions.style.display = 'flex';
       if (statusSpan) {
-        statusSpan.textContent = '✅ مقترن';
+        statusSpan.innerHTML = '<i class="fas fa-circle-check"></i> مقترن';
         statusSpan.style.color = '#4caf50';
       }
     } else {
       inputGroup.style.display = 'block';
       pairedActions.style.display = 'none';
       if (statusSpan) {
-        statusSpan.textContent = '❌ غير مقترن';
+        statusSpan.innerHTML = '<i class="fas fa-circle-xmark"></i> غير مقترن';
         statusSpan.style.color = '#f44336';
       }
     }
@@ -286,16 +310,16 @@ document.getElementById('unpairPluginBtn').addEventListener('click', async funct
     });
     const data = await res.json();
     if (data.success) {
-      resultDiv.textContent = '✅ تم فك الربط — اضغط Send ببيانات مطابقة لإعادة الربط تلقائياً';
+      resultDiv.innerHTML = '<i class="fas fa-circle-check"></i> تم فك الربط — اضغط Send ببيانات مطابقة لإعادة الربط تلقائياً';
       resultDiv.style.color = '#4caf50';
       await checkPluginStatus();
-      showMessage('🔓 تم فك الربط');
+      showMessage('<i class="fas fa-lock-open"></i> تم فك الربط');
     } else {
-      resultDiv.textContent = '❌ ' + (data.message || 'فشل فك الربط');
+      resultDiv.innerHTML = '<i class="fas fa-circle-xmark"></i> ' + (data.message || 'فشل فك الربط');
       resultDiv.style.color = '#f44336';
     }
   } catch (err) {
-    resultDiv.textContent = '❌ خطأ في الاتصال بالخادم';
+    resultDiv.innerHTML = '<i class="fas fa-circle-xmark"></i> خطأ في الاتصال بالخادم';
     resultDiv.style.color = '#f44336';
   }
 });
@@ -308,11 +332,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function getAuthToken() {
   try {
-    return localStorage.getItem("sm_token") || getCookie("token");
+    // مصدر أخير: التوكن المختوم من العملية الرئيسية — الكوكي httpOnly
+    // غير مقروء من JS وsm_token قد لا يكون محفوظًا، وبدونه تفشل مصافحة
+    // Socket.IO (No token) فتعطل الأصوات والإشعارات الفورية
+    return (
+      localStorage.getItem("sm_token") ||
+      getCookie("token") ||
+      window.electronAPI?.getAuthTokenSync?.() ||
+      ""
+    );
   } catch {
-    return getCookie("token");
+    return getCookie("token") || window.electronAPI?.getAuthTokenSync?.() || "";
   }
 }
+
+// ترويسات المصادقة للاستخدام مع XHR الرفع (شريط التقدم)
+window.__getAuthHeaders = function () {
+  const h = {};
+  try {
+    const token = getAuthToken();
+    if (token) h["Authorization"] = "Bearer " + token;
+    h["x-device-id"] = getDeviceId();
+  } catch (e) {}
+  return h;
+};
 
 function saveAuthToken(token) {
   try {
@@ -364,17 +407,17 @@ if (window.electronAPI) {
   const ipc = require("electron").ipcRenderer;
   ipc.on("update-available", (_, info) => {
     showUpdateBanner(
-      `🔄 يتوفر تحديث جديد (${escapeHtml(info.version || "")}) - جاري التحميل…`,
+      `<i class="fas fa-rotate"></i> يتوفر تحديث جديد (${escapeHtml(info.version || "")}) - جاري التحميل…`,
     );
   });
   ipc.on("update-progress", (_, p) => {
     showUpdateBanner(
-      `⬇️ جاري تحميل التحديث… ${p.percent || 0}% - سيُثبَّت تلقائياً`,
+      `<i class="fas fa-arrow-down"></i> جاري تحميل التحديث… ${p.percent || 0}% - سيُثبَّت تلقائياً`,
     );
   });
   ipc.on("update-installing", (_, info) => {
     showUpdateBanner(
-      `⚙️ جاري تثبيت التحديث (${escapeHtml(info.version || "")}) - سيعود التطبيق تلقائياً خلال لحظات، لا تغلقه…`,
+      `<i class="fas fa-gear"></i> جاري تثبيت التحديث (${escapeHtml(info.version || "")}) - سيعود التطبيق تلقائياً خلال لحظات، لا تغلقه…`,
     );
   });
 }
@@ -390,8 +433,8 @@ function showConfirm(message, title = "تأكيد") {
     const yesBtn = document.getElementById("confirmYesBtn");
     const noBtn = document.getElementById("confirmNoBtn");
 
-    titleEl.textContent = title;
-    messageEl.textContent = message;
+    titleEl.textContent = window.AppI18n ? AppI18n.t(title) : title;
+    messageEl.textContent = window.AppI18n ? AppI18n.t(message) : message;
     modal.style.display = "flex";
     yesBtn.focus();
 
@@ -510,6 +553,7 @@ async function updateAuthUI() {
           await loadRconConfig();
           await loadProfiles();
           await initHotkey();
+          hotkeySectionLoaded = true;
         } catch (err) {
           console.warn("⚠️ فشل تحميل بعض البيانات:", err.message);
         }
@@ -564,12 +608,15 @@ async function updateAuthUI() {
             document.getElementById("startSection4").style.display = "block";
             document.getElementById("startSectionHotkey").style.display =
               "none";
+            const s5 = document.getElementById("startSection5");
+            if (s5) s5.style.display = "none";
             document
               .querySelectorAll(".button-select-slide")
               .forEach((el) => el.classList.remove("active"));
             adminSidebar.classList.add("active");
-            if (typeof loadAdminDashboard === "function") loadAdminDashboard();
           };
+          // تحميل مسبق عند فتح البرنامج — التحديثات الحية تصل عبر Socket
+          if (typeof loadAdminDashboard === "function") loadAdminDashboard();
         } else {
           adminSidebar.style.display = "none";
         }
@@ -588,9 +635,9 @@ async function updateAuthUI() {
           planText = `سنوي (ينتهي ${new Date(user.subscriptionExpiry).toLocaleDateString("ar-EG")})`;
         else planText = "مدفوع";
       } else if (subscription.status === "warning")
-        planText = `⚠️ تحذير: ينتهي بعد ${Math.floor(subscription.hoursLeft)} ساعة`;
+        planText = `<i class="fas fa-triangle-exclamation"></i> تحذير: ينتهي بعد ${Math.floor(subscription.hoursLeft)} ساعة`;
       else if (subscription.status === "grace")
-        planText = `⏳ فترة سماح: متبقي ${Math.floor(subscription.hoursLeft)} ساعة للتجديد`;
+        planText = `<i class="fas fa-spinner fa-spin"></i> فترة سماح: متبقي ${Math.floor(subscription.hoursLeft)} ساعة للتجديد`;
       else planText = user.plan === "paid" ? "مدفوع (منتهي)" : "مجاني";
       if (statusEl)
         statusEl.innerHTML = `<i class="fas fa-user-circle"></i> مرحباً ${escapeHtml(user.email)} | ${planText}`;
@@ -630,6 +677,122 @@ async function updateAuthUI() {
   }
 }
 
+// ============================================================
+// سكيلتون الأقسام — طبقة تحميل فوق القسم حتى تجهز بياناته
+// حارس مدمج: أي طبقة سابقة في القسم تُستبدل فوراً — لا تكدس ولا تكرار
+// ============================================================
+function withSectionSkeleton(sectionEl, loader, opts) {
+  const run = async () => {
+    if (typeof loader === 'function') await loader();
+  };
+  if (!sectionEl || !window.Skeleton?.overlay) return run();
+  sectionEl.querySelectorAll(':scope > .sk-overlay').forEach((o) => o.remove());
+  const remove = window.Skeleton.overlay(sectionEl, opts);
+  const startedAt = Date.now();
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    const wait = Math.max(0, 150 - (Date.now() - startedAt));
+    setTimeout(remove, wait);
+  };
+  setTimeout(finish, 8000);
+  return run().then(finish, finish);
+}
+
+// سكيلتون جدول الأوامر (الأكشنز) — يظهر مع كل تحميل أو تبديل بروفايل
+// (التنفيذ/التجربة مستثنى — لا يمر من هنا). النداءات المتزامنة تتنفذ متسلسلة
+// تحت نفس الطبقة بدل تكدس السكيلتون.
+let commandsTablePending = null;
+function withTableSkeleton(loader) {
+  const target = document.querySelector('.start-section-2');
+  if (!target || target.offsetParent === null) return Promise.resolve(loader());
+  const run = () =>
+    withSectionSkeleton(target, loader, {
+      build: () => window.Skeleton.commandsTable(Math.max(6, Math.min(document.querySelectorAll('.start-section-2 tbody tr').length || 8, 14))),
+    }).then(
+      (r) => {
+        commandsTablePending = null;
+        return r;
+      },
+      (e) => {
+        commandsTablePending = null;
+        throw e;
+      },
+    );
+  if (commandsTablePending) {
+    commandsTablePending = commandsTablePending.then(run, run);
+    return commandsTablePending;
+  }
+  commandsTablePending = run();
+  return commandsTablePending;
+}
+
+// سكيلتون قائمة الهوت كي — يستهدف حاوية الجدول فقط.
+// يُعرض مرة واحدة عند أول تحميل للبيانات — أي إعادة رندر بعدها صامتة
+// حتى لا يعلق القسم وتتكدس طبقات السكيلتون مع كل تحديث خلفي (حفظ/تفعيل/تبديل بروفايل)
+let hotkeysListRendered = false;
+let hotkeysListPending = null;
+// force = تغيير صريح (إضافة/تحديث/حذف/تفعيل) — يعرض السكيلتون حتى بعد أول تحميل
+function withHotkeySkeleton(loader, force) {
+  const target = document.getElementById('hotkeysListContainer');
+  if (!target || target.offsetParent === null) return Promise.resolve(loader());
+  // التحديثات الخلفية (غير الإجبارية) صامتة بعد أول تحميل
+  if (hotkeysListRendered && !force) return Promise.resolve(loader());
+  // النداءات المتزامنة تُدمج في تشغيل واحد بدل 3-4 سكيلتون متتالية
+  if (hotkeysListPending) return hotkeysListPending;
+  const run = () =>
+    _hotkeyListRun(target, loader).then(
+      (r) => {
+        hotkeysListRendered = true;
+        hotkeysListPending = null;
+        return r;
+      },
+      (e) => {
+        hotkeysListPending = null;
+        throw e;
+      },
+    );
+  if (hotkeysListPending) {
+    // انضم للعملية الجارية — التحميل يتنفذ بعدها تحت نفس الطبقة
+    hotkeysListPending = hotkeysListPending.then(run, run);
+    return hotkeysListPending;
+  }
+  hotkeysListPending = run();
+  return hotkeysListPending;
+}
+
+function _hotkeyListRun(target, loader) {
+  const liveRows = document.querySelectorAll('#hotkeysListTable tbody tr').length;
+  return withSectionSkeleton(target, loader, {
+    build: () => window.Skeleton.hotkeyTable(Math.max(4, Math.min(liveRows || 5, 10))),
+  });
+}
+
+// أي تغيير في الهوت كي (إضافة/تحديث/حذف/تفعيل): السكيلتون يبدأ فوراً لحظة
+// الضغط — قبل نداءات الشبكة — ويغطي الحفظ وإعادة التسجيل وتحديث القائمة
+// كلها تحت طبقة واحدة تُزال فور الجهوز. التغييرات المتزامنة تتنفذ تحتها بالترتيب.
+function withHotkeyChange(work) {
+  const target = document.getElementById('hotkeysListContainer');
+  if (!target || target.offsetParent === null || !window.Skeleton?.overlay)
+    return Promise.resolve(work());
+  const run = () => _hotkeyListRun(target, work);
+  if (hotkeysListPending) {
+    hotkeysListPending = hotkeysListPending.then(run, run);
+    return hotkeysListPending;
+  }
+  hotkeysListPending = run().then(
+    () => {
+      hotkeysListRendered = true;
+      hotkeysListPending = null;
+    },
+    (e) => {
+      hotkeysListPending = null;
+      throw e;
+    },
+  );
+  return hotkeysListPending;
+}
 // ============================================================
 // دوال الحالة المباشرة (Live Status)
 // ============================================================
@@ -719,23 +882,30 @@ function renderProfileSelect(profiles, selectedId) {
   const finalOptionsUl = newOptionsUl;
 
   async function selectProfile(profileId) {
-    const res = await fetchWithAuth(`${API_BASE}/api/profile/select`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile: profileId }),
+    // إغلاق قائمة البروفايلات فوراً + سكيلتون الجدول يبدأ لحظة الاختيار
+    // ويغطي التبديل وإعادة تحميل الأوامر حتى تجهز بيانات البروفايل الجديد
+    const optionsUlNew = document.querySelector("#select-profile .options");
+    if (optionsUlNew) optionsUlNew.style.display = "none";
+    return withTableSkeleton(async () => {
+      const res = await fetchWithAuth(`${API_BASE}/api/profile/select`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile: profileId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        currentUserSelectedProfile = profileId;
+        await loadProfilesData();
+        // تحديث بيانات الهوت كي في الخلفية لتعكس البروفايل الجديد
+        loadHotkeyCommands();
+        renderHotkeysList();
+        showMessage(
+          `<i class="fas fa-circle-check"></i> تم التبديل إلى ${profileNames[profileId] || `Profile ${profileId}`}`,
+        );
+      } else {
+        showMessage("<i class='fas fa-circle-xmark'></i> فشل تبديل البروفايل");
+      }
     });
-    const data = await res.json();
-    if (data.success) {
-      currentUserSelectedProfile = profileId;
-      await loadProfiles();
-      const optionsUlNew = document.querySelector("#select-profile .options");
-      if (optionsUlNew) optionsUlNew.style.display = "none";
-      showMessage(
-        `✅ تم التبديل إلى ${profileNames[profileId] || `Profile ${profileId}`}`,
-      );
-    } else {
-      showMessage("❌ فشل تبديل البروفايل");
-    }
   }
 
   profiles.forEach((profile) => {
@@ -810,27 +980,34 @@ function renderProfileSelect(profiles, selectedId) {
   document.addEventListener("click", closeOptionsListener);
 }
 
+// جلب بيانات البروفايلات + رسم القائمة + تحميل أوامر البروفايل مباشرة
+// (بدون غلاف سكيلتون — يُستدعى داخل withTableSkeleton عند تبديل البروفايل
+// لتجنب انتظار دائري مع الطبقة الجارية)
+async function loadProfilesData() {
+  const res = await fetchWithAuth(`${API_BASE}/api/profiles`);
+  if (!res.ok) throw new Error("فشل تحميل البروفايلات");
+  const data = await res.json();
+  if (data.success && data.profiles) {
+    profileNames = {};
+    data.profiles.forEach((p) => {
+      profileNames[p.id] = p.name;
+    });
+    if (
+      currentUserSelectedProfile &&
+      data.profiles.some((p) => p.id === currentUserSelectedProfile)
+    ) {
+      renderProfileSelect(data.profiles, currentUserSelectedProfile);
+    } else {
+      const firstProfileId = data.profiles[0]?.id || 1;
+      renderProfileSelect(data.profiles, firstProfileId);
+    }
+    await _loadCommandsImpl();
+  }
+}
+
 async function loadProfiles() {
   try {
-    const res = await fetchWithAuth(`${API_BASE}/api/profiles`);
-    if (!res.ok) throw new Error("فشل تحميل البروفايلات");
-    const data = await res.json();
-    if (data.success && data.profiles) {
-      profileNames = {};
-      data.profiles.forEach((p) => {
-        profileNames[p.id] = p.name;
-      });
-      if (
-        currentUserSelectedProfile &&
-        data.profiles.some((p) => p.id === currentUserSelectedProfile)
-      ) {
-        renderProfileSelect(data.profiles, currentUserSelectedProfile);
-      } else {
-        const firstProfileId = data.profiles[0]?.id || 1;
-        renderProfileSelect(data.profiles, firstProfileId);
-      }
-      await loadCommands();
-    }
+    await loadProfilesData();
   } catch (err) {
     console.warn("⚠️ فشل تحميل البروفايلات:", err.message);
   }
@@ -849,12 +1026,12 @@ async function updateProfileName(profileId, newName) {
     const data = await res.json();
     if (data.success) {
       profileNames[profileId] = newName;
-      showMessage("✅ تم تحديث اسم البروفايل");
+      showMessage("<i class='fas fa-circle-check'></i> تم تحديث اسم البروفايل");
       await loadProfiles();
-    } else showMessage("❌ فشل تحديث الاسم");
+    } else showMessage("<i class='fas fa-circle-xmark'></i> فشل تحديث الاسم");
   } catch (err) {
     console.error(err);
-    showMessage("❌ خطأ في الاتصال");
+    showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال");
   }
 }
 
@@ -885,7 +1062,7 @@ document
       const password = document.getElementById("player-password").value.trim();
       const player = document.getElementById("player-name").value.trim();
       if (!host || !port || !password || !player) {
-        showMessage("⚠️ جميع حقول ماين كرافت مطلوبة");
+        showMessage("<i class='fas fa-triangle-exclamation'></i> جميع حقول ماين كرافت مطلوبة");
         return;
       }
       try {
@@ -901,13 +1078,13 @@ document
         });
         const data = await res.json();
         if (data.success) {
-          showMessage("✅ تم حفظ الإعدادات — جارٍ محاولة الربط التلقائي بالسيرفر");
+          showMessage("<i class='fas fa-circle-check'></i> تم حفظ الإعدادات — جارٍ محاولة الربط التلقائي بالسيرفر");
           // حدّث حالة الاقتران بعد ثانية لإعطاء الباك فرصة الربط التلقائي
           setTimeout(() => checkPluginStatus(), 1000);
-        } else showMessage("❌ فشل حفظ الإعدادات: " + (data.message || ""));
+        } else showMessage("<i class='fas fa-circle-xmark'></i> فشل حفظ الإعدادات: " + (data.message || ""));
       } catch (err) {
         console.error(err);
-        showMessage("❌ خطأ في الاتصال بالسيرفر");
+        showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال بالسيرفر");
       }
     }),
   );
@@ -1032,7 +1209,7 @@ function updateGiftDropdown() {
 
   if (!dropdown || !selected) return;
   if (!gifts || !gifts.length) {
-    selected.textContent = "⚠️ لا توجد هدايا";
+    selected.innerHTML = "<i class='fas fa-triangle-exclamation'></i> لا توجد هدايا";
     return;
   }
 
@@ -1040,7 +1217,7 @@ function updateGiftDropdown() {
 
   const searchInput = document.createElement("input");
   searchInput.type = "text";
-  searchInput.placeholder = "🔍 بحث عن هدية...";
+  searchInput.placeholder = "بحث عن هدية...";
   searchInput.id = "giftSearchInput";
   searchInput.style.cssText =
     "width:100%; padding:8px; margin:0 0 8px 0; background:#333; color:white; border:none; border-radius:4px; position: sticky; top: 0; z-index: 2;";
@@ -1083,7 +1260,7 @@ function updateGiftDropdown() {
       this.style.display = "none";
     };
     const span = document.createElement("span");
-    span.textContent = `${gift.name} - ${gift.diamond_count || 0} 💎`;
+    span.innerHTML = `${escapeHtml(gift.name)} - ${gift.diamond_count || 0} <i class="fas fa-gem"></i>`;
 
     option.appendChild(img);
     option.appendChild(span);
@@ -1195,7 +1372,7 @@ async function loadAudios() {
         const emptyDiv = document.createElement("div");
         emptyDiv.className = "audio-option";
         emptyDiv.style.justifyContent = "center";
-        emptyDiv.textContent = "❌ لا توجد نتائج";
+        emptyDiv.innerHTML = "<i class='fas fa-circle-xmark'></i> لا توجد نتائج";
         modalContainer.appendChild(emptyDiv);
         return;
       }
@@ -1256,7 +1433,7 @@ async function loadAudios() {
             if (audio.cloudinaryUrl) {
               audioUrl = audio.cloudinaryUrl;
             } else {
-              showMessage("❌ رابط الصوت غير متوفر، تأكد من رفعه بنجاح");
+              showMessage("<i class='fas fa-circle-xmark'></i> رابط الصوت غير متوفر، تأكد من رفعه بنجاح");
               return;
             }
           }
@@ -1327,7 +1504,7 @@ async function loadAudios() {
     );
 
     if (globalAudios.length === 0) {
-      finalSelectedField.textContent = "⚠️ لا توجد أصوات - ارفع ملفاً";
+      finalSelectedField.innerHTML = "<i class='fas fa-triangle-exclamation'></i> لا توجد أصوات - ارفع ملفاً";
     } else {
       const currentFile = hiddenInput.value;
       if (currentFile) {
@@ -1366,8 +1543,8 @@ async function deleteAudioFile(filename, skipConfirm = false, keep = false) {
     if (data.success) {
       showMessage(
         keep
-          ? "✅ تم إزالة الصوت من حسابك (يبقى في السحابة)"
-          : "✅ تم حذف الصوت نهائياً",
+          ? "<i class='fas fa-circle-check'></i> تم إزالة الصوت من حسابك (يبقى في السحابة)"
+          : "<i class='fas fa-circle-check'></i> تم حذف الصوت نهائياً",
       );
       if (!keep) {
         globalAudios = globalAudios.filter((a) => a.file !== filename);
@@ -1385,11 +1562,11 @@ async function deleteAudioFile(filename, skipConfirm = false, keep = false) {
         renderModalOptionsGlobal(searchValue);
       }
     } else {
-      showMessage("❌ فشل حذف الصوت: " + (data.message || ""));
+      showMessage("<i class='fas fa-circle-xmark'></i> فشل حذف الصوت: " + (data.message || ""));
     }
   } catch (err) {
     console.error(err);
-    showMessage("❌ خطأ أثناء حذف الصوت");
+    showMessage("<i class='fas fa-circle-xmark'></i> خطأ أثناء حذف الصوت");
   }
 }
 
@@ -1414,16 +1591,16 @@ async function deleteVideoFile(filename, skipConfirm = false, keep = false) {
     if (data.success) {
       showMessage(
         keep
-          ? "✅ تم إزالة الفيديو من حسابك (يبقى في السحابة)"
-          : "✅ تم حذف الفيديو نهائياً",
+          ? "<i class='fas fa-circle-check'></i> تم إزالة الفيديو من حسابك (يبقى في السحابة)"
+          : "<i class='fas fa-circle-check'></i> تم حذف الفيديو نهائياً",
       );
       await checkStorageNotifications();
     } else {
-      showMessage("❌ فشل حذف الفيديو: " + (data.message || ""));
+      showMessage("<i class='fas fa-circle-xmark'></i> فشل حذف الفيديو: " + (data.message || ""));
     }
   } catch (err) {
     console.error(err);
-    showMessage("❌ خطأ أثناء حذف الفيديو");
+    showMessage("<i class='fas fa-circle-xmark'></i> خطأ أثناء حذف الفيديو");
   }
 }
 
@@ -1539,6 +1716,9 @@ async function checkForChangesAndClose() {
     );
     if (confirmed) {
       uploadsCancelled = true;
+      // إلغاء فعلي للرفع الجاري — لا نهاية في الخلفية بعد الخروج من الكارت
+      try { window.__audioXhr && window.__audioXhr.abort(); } catch (e) {}
+      try { window.__videoXhr && window.__videoXhr.abort(); } catch (e) {}
       hideAddCard();
       Promise.allSettled([pendingUploads.audio, pendingUploads.video]).finally(
         () => {
@@ -1629,7 +1809,7 @@ function _showAddCard(commandData = null) {
       "#addCard .custom-select.action-select .selected span",
     );
     const labelMap = {
-      gift: "🎁 Gift",
+      gift: "<i class='fas fa-gift'></i> Gift",
       follow: "Follow",
       like: "Like",
       comment: "Comment",
@@ -1733,7 +1913,7 @@ function _showAddCard(commandData = null) {
     const actionSelectSpan = document.querySelector(
       "#addCard .custom-select.action-select .selected span",
     );
-    if (actionSelectSpan) actionSelectSpan.textContent = "🎁 Gift";
+    if (actionSelectSpan) actionSelectSpan.innerHTML = "<i class='fas fa-gift'></i> Gift";
     document.getElementById("actionType").value = "gift";
     giftSection.style.display = "block";
     document.getElementById("giftSelect").value = "";
@@ -1804,13 +1984,13 @@ async function confirmAdd(event) {
 
   const saveBtn = document.querySelector("#addCard .confirm-btn");
   if (!saveBtn) {
-    showMessage("❌ خطأ: زر الحفظ غير موجود");
+    showMessage("<i class='fas fa-circle-xmark'></i> خطأ: زر الحفظ غير موجود");
     return;
   }
 
   const actionName = document.getElementById("actionName").value.trim();
   if (!actionName) {
-    showMessage("⚠️ يرجى إدخال اسم الإجراء");
+    showMessage("<i class='fas fa-triangle-exclamation'></i> يرجى إدخال اسم الإجراء");
     return;
   }
 
@@ -1834,12 +2014,12 @@ async function confirmAdd(event) {
   saveBtn.disabled = true;
   saveBtn.style.opacity = 0.6;
   saveBtn.style.pointerEvents = "none";
-  saveBtn.innerHTML = "⏳ جاري الحفظ...";
+  saveBtn.innerHTML = "<i class='fas fa-spinner fa-spin'></i> جاري الحفظ...";
 
   try {
     // انتظار أي رفع ملفات جارٍ قبل الحفظ حتى لا يضيع اسم الملف
     if (pendingUploads.audio || pendingUploads.video) {
-      showMessage("⏳ انتظار انتهاء رفع الملفات قبل الحفظ...");
+      showMessage("<i class='fas fa-spinner fa-spin'></i> انتظار انتهاء رفع الملفات قبل الحفظ...");
       const active = [pendingUploads.audio, pendingUploads.video].filter(
         Boolean,
       );
@@ -1917,7 +2097,7 @@ async function confirmAdd(event) {
         let url, bodyData;
         if (actionType === "gift") {
           if (!giftId) {
-            showMessage("⚠️ يرجى اختيار هدية");
+            showMessage("<i class='fas fa-triangle-exclamation'></i> يرجى اختيار هدية");
             return;
           }
           url = GIFT_API;
@@ -1940,7 +2120,7 @@ async function confirmAdd(event) {
           const details = errorData.message || `فشل الإضافة (${res.status})`;
           throw new Error(details);
         }
-        showMessage("✅ تم تغيير نوع الأمر بنجاح");
+        showMessage("<i class='fas fa-circle-check'></i> تم تغيير نوع الأمر بنجاح");
       } else if (isEditing) {
         // تحديث عادي (نفس النوع)
         let url, bodyData;
@@ -1965,13 +2145,13 @@ async function confirmAdd(event) {
           const details = errorData.message || `فشل التحديث (${res.status})`;
           throw new Error(details);
         }
-        showMessage("✅ تم تحديث الأمر");
+        showMessage("<i class='fas fa-circle-check'></i> تم تحديث الأمر");
       } else {
         // إنشاء جديد
         let url, bodyData;
         if (actionType === "gift") {
           if (!giftId) {
-            showMessage("⚠️ يرجى اختيار هدية");
+            showMessage("<i class='fas fa-triangle-exclamation'></i> يرجى اختيار هدية");
             return;
           }
           url = GIFT_API;
@@ -1994,7 +2174,7 @@ async function confirmAdd(event) {
           const details = errorData.message || `فشل الإضافة (${res.status})`;
           throw new Error(details);
         }
-        showMessage("✅ تم إضافة الأمر");
+        showMessage("<i class='fas fa-circle-check'></i> تم إضافة الأمر");
         document.getElementById("shortcutData").value = "";
         document.getElementById("shortcutDisplay").textContent =
           "لم يتم التعيين";
@@ -2008,7 +2188,7 @@ async function confirmAdd(event) {
       await loadCommands();
     } catch (err) {
       console.error(err);
-      showMessage("❌ خطأ أثناء الحفظ: " + err.message);
+      showMessage("<i class='fas fa-circle-xmark'></i> خطأ أثناء الحفظ: " + err.message);
       await loadCommands();
     }
   } finally {
@@ -2021,6 +2201,10 @@ async function confirmAdd(event) {
 }
 
 async function loadCommands(profileIdParam = null, noCache = false) {
+  return withTableSkeleton(() => _loadCommandsImpl(profileIdParam, noCache));
+}
+
+async function _loadCommandsImpl(profileIdParam, noCache) {
   try {
     // إلغاء المؤقتات القديمة
     for (const [id, timer] of autoSaveTimers) {
@@ -2050,10 +2234,13 @@ async function loadCommands(profileIdParam = null, noCache = false) {
       ...interactList.map((ic) => ({ ...ic, __type: "interaction" })),
     ];
 
+    // الترتيب حسب order ثم الأحدث أولاً عند التعادل —
+    // حتى يظهر الأمر المُنشأ حديثاً (هدية أو تفاعل) في أول الجدول
     merged.sort((a, b) => {
       const orderA = a.order !== undefined ? a.order : 0;
       const orderB = b.order !== undefined ? b.order : 0;
-      return orderA - orderB;
+      if (orderA !== orderB) return orderA - orderB;
+      return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
     });
 
     window.currentCommandsList = merged;
@@ -2156,10 +2343,10 @@ async function loadCommands(profileIdParam = null, noCache = false) {
         commandCellContent = `<textarea class="input-like-textarea" data-field="command" rows="1" placeholder="/Command (ضع أمرًا في كل سطر)" ${isDisabled ? "disabled" : ""}>${safeCommand}</textarea>`;
       } else if (hasWebhook) {
         const safeWebhook = escapeHtml(decodeHtmlEntities(cmd.webhookUrl));
-        commandCellContent = `<div style="font-size:12px; color:#1dd9e6e1; word-break:break-all;">🔗 ${safeWebhook}</div>`;
+        commandCellContent = `<div style="font-size:12px; color:#1dd9e6e1; word-break:break-all;"><i class="fas fa-link"></i> ${safeWebhook}</div>`;
       } else if (hasCombo) {
         const safeCombo = escapeHtml(decodeHtmlEntities(cmd.combo));
-        commandCellContent = `<div style="font-size:12px; color:#ff9800;">⌨️ ${safeCombo}</div>`;
+        commandCellContent = `<div style="font-size:12px; color:#ff9800;"><i class="fas fa-keyboard"></i> ${safeCombo}</div>`;
       } else {
         commandCellContent = `<div style="font-size:12px; color:#888;">—</div>`;
       }
@@ -2263,9 +2450,9 @@ async function loadCommands(profileIdParam = null, noCache = false) {
     });
 
     enableDragAndDrop();
+    // تحديث قائمة أوامر الهوت كي فقط — بدون applyHotkeySettings (تمس النموذج
+    // وتعيد تسجيل الاختصارات) وبدون renderHotkeysList (تكرار سكيلتون بلا داعٍ)
     loadHotkeyCommands();
-    applyHotkeySettings();
-    renderHotkeysList();
   } catch (err) {
     console.error("خطأ في تحميل الأوامر:", err);
   }
@@ -2286,7 +2473,7 @@ function scheduleAutoSave(tr) {
 async function saveRowFromTr(tr) {
   const id = tr.dataset.id;
   const rowType = tr.dataset.type;
-  if (!id) return showMessage("⚠️ لا يمكن حفظ أمر بدون ID");
+  if (!id) return showMessage("<i class='fas fa-triangle-exclamation'></i> لا يمكن حفظ أمر بدون ID");
   const inputs = tr.querySelectorAll(
     "input[data-field], textarea[data-field], select[data-field]",
   );
@@ -2322,7 +2509,7 @@ async function saveRowFromTr(tr) {
       tr.dataset.actionKind || (rowType === "gift" ? "gift" : "comment");
   }
   if (!body.name || String(body.name).trim() === "") {
-    showMessage("⚠️ لازم تحط اسم للأمر قبل الحفظ");
+    showMessage("<i class='fas fa-triangle-exclamation'></i> لازم تحط اسم للأمر قبل الحفظ");
     return;
   }
   const profileId = getSelectedProfileId();
@@ -2342,17 +2529,17 @@ async function saveRowFromTr(tr) {
         body: JSON.stringify(body),
       });
     }
-    showMessage("✅ تم الحفظ تلقائيًا");
+    showMessage("<i class='fas fa-circle-check'></i> تم الحفظ تلقائيًا");
   } catch (err) {
     console.error(err);
-    showMessage("❌ خطأ أثناء الحفظ");
+    showMessage("<i class='fas fa-circle-xmark'></i> خطأ أثناء الحفظ");
   }
 }
 
 async function moveRowUp(tr) {
   const prev = tr.previousElementSibling;
   if (!prev) {
-    showMessage("⚠️ هذا الأمر في الأعلى بالفعل");
+    showMessage("<i class='fas fa-triangle-exclamation'></i> هذا الأمر في الأعلى بالفعل");
     return;
   }
   const tbody = tr.parentElement;
@@ -2372,14 +2559,14 @@ async function moveRowUp(tr) {
     });
     const data = await res.json();
     if (!data.success) {
-      showMessage("❌ فشل حفظ الترتيب، جاري استعادة الحالة السابقة");
+      showMessage("<i class='fas fa-circle-xmark'></i> فشل حفظ الترتيب، جاري استعادة الحالة السابقة");
       await loadCommands();
     } else {
-      showMessage("✅ تم نقل الأمر لأعلى");
+      showMessage("<i class='fas fa-circle-check'></i> تم نقل الأمر لأعلى");
     }
   } catch (err) {
     console.error(err);
-    showMessage("❌ خطأ في الاتصال، جاري استعادة الحالة السابقة");
+    showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال، جاري استعادة الحالة السابقة");
     await loadCommands();
   }
 }
@@ -2387,7 +2574,7 @@ async function moveRowUp(tr) {
 async function moveRowDown(tr) {
   const next = tr.nextElementSibling;
   if (!next) {
-    showMessage("⚠️ هذا الأمر في الأسفل بالفعل");
+    showMessage("<i class='fas fa-triangle-exclamation'></i> هذا الأمر في الأسفل بالفعل");
     return;
   }
   const tbody = tr.parentElement;
@@ -2407,26 +2594,31 @@ async function moveRowDown(tr) {
     });
     const data = await res.json();
     if (!data.success) {
-      showMessage("❌ فشل حفظ الترتيب، جاري استعادة الحالة السابقة");
+      showMessage("<i class='fas fa-circle-xmark'></i> فشل حفظ الترتيب، جاري استعادة الحالة السابقة");
       await loadCommands();
     } else {
-      showMessage("✅ تم نقل الأمر لأسفل");
+      showMessage("<i class='fas fa-circle-check'></i> تم نقل الأمر لأسفل");
     }
   } catch (err) {
     console.error(err);
-    showMessage("❌ خطأ في الاتصال، جاري استعادة الحالة السابقة");
+    showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال، جاري استعادة الحالة السابقة");
     await loadCommands();
   }
 }
 
 async function executeCommand(id, rowType) {
+  // تنفيذ مباشر بدون سكيلتون — التجربة لا تغطي قسم الأكشنز بطبقة تحميل
+  return _executeCommandImpl(id, rowType);
+}
+
+async function _executeCommandImpl(id, rowType) {
   const tr = document.querySelector(`tr[data-id="${id}"]`);
-  if (!tr) return showMessage("⚠️ لم يتم العثور على السطر");
+  if (!tr) return showMessage("<i class='fas fa-triangle-exclamation'></i> لم يتم العثور على السطر");
   const activeCheckbox = tr.querySelector(".active-checkbox");
   const isActive = !!(activeCheckbox && activeCheckbox.checked);
-  if (!isActive) return showMessage("⚠️ الأمر متوقف لأنه غير مفعل");
+  if (!isActive) return showMessage("<i class='fas fa-triangle-exclamation'></i> الأمر متوقف لأنه غير مفعل");
 
-  showMessage("⚡ جاري تنفيذ الأمر...");
+  showMessage("<i class='fas fa-bolt'></i> جاري تنفيذ الأمر...");
 
   const audioFile =
     tr.querySelector('input[data-field="audio"]')?.value || null;
@@ -2474,13 +2666,13 @@ async function executeCommand(id, rowType) {
         : `${INTERACT_API}/${id}/execute`;
     const execRes = await fetchWithAuth(execUrl, { method: "POST" });
     if (execRes.ok) {
-      showMessage("✅ تم تنفيذ الأمر بنجاح");
+      showMessage("<i class='fas fa-circle-check'></i> تم تنفيذ الأمر بنجاح");
     } else {
-      showMessage("❌ فشل تنفيذ الأمر — راجع الكونسول");
+      showMessage("<i class='fas fa-circle-xmark'></i> فشل تنفيذ الأمر — راجع الكونسول");
     }
   } catch (err) {
     console.error("خطأ أثناء تنفيذ الأمر:", err);
-    showMessage("❌ خطأ أثناء تنفيذ الأمر");
+    showMessage("<i class='fas fa-circle-xmark'></i> خطأ أثناء تنفيذ الأمر");
   }
 }
 
@@ -2491,14 +2683,14 @@ async function deleteCommand(id, rowType) {
   );
   if (!confirmed) return;
   if (!id) {
-    showMessage("⚠️ معرف الأمر غير صالح");
+    showMessage("<i class='fas fa-triangle-exclamation'></i> معرف الأمر غير صالح");
     return;
   }
 
   const tr = document.querySelector(`tr[data-id="${id}"]`);
   if (tr) {
     tr.remove();
-    showMessage("🗑 تم حذف الأمر محلياً، جاري المزامنة مع الخادم...");
+    showMessage("<i class='fas fa-trash-can'></i> تم حذف الأمر محلياً، جاري المزامنة مع الخادم...");
   }
   if (autoSaveTimers.has(id)) {
     clearTimeout(autoSaveTimers.get(id));
@@ -2549,16 +2741,16 @@ async function deleteCommand(id, rowType) {
 
     const deleteRes = await fetchWithAuth(url, { method: "DELETE" });
     if (deleteRes.ok) {
-      showMessage("✅ تم حذف الأمر نهائياً");
+      showMessage("<i class='fas fa-circle-check'></i> تم حذف الأمر نهائياً");
     } else if (deleteRes.status === 404) {
-      showMessage("🗑 الأمر غير موجود بالفعل (تم حذفه محلياً)");
+      showMessage("<i class='fas fa-trash-can'></i> الأمر غير موجود بالفعل (تم حذفه محلياً)");
     } else {
-      showMessage("⚠️ فشل حذف الأمر من الخادم، لكن تم حذفه محلياً");
+      showMessage("<i class='fas fa-triangle-exclamation'></i> فشل حذف الأمر من الخادم، لكن تم حذفه محلياً");
     }
     await checkStorageNotifications();
   } catch (err) {
     console.error("❌ خطأ أثناء حذف الأمر:", err);
-    showMessage("❌ خطأ أثناء حذف الأمر: " + err.message);
+    showMessage("<i class='fas fa-circle-xmark'></i> خطأ أثناء حذف الأمر: " + err.message);
     await loadCommands(true);
   }
 }
@@ -2593,14 +2785,14 @@ function enableDragAndDrop() {
         });
         const data = await res.json();
         if (data.success) {
-          showMessage("✅ تم حفظ الترتيب الجديد");
+          showMessage("<i class='fas fa-circle-check'></i> تم حفظ الترتيب الجديد");
         } else {
-          showMessage("❌ فشل حفظ الترتيب، جاري الاستعادة");
+          showMessage("<i class='fas fa-circle-xmark'></i> فشل حفظ الترتيب، جاري الاستعادة");
           await loadCommands();
         }
       } catch (err) {
         console.error(err);
-        showMessage("❌ خطأ في الاتصال، جاري الاستعادة");
+        showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال، جاري الاستعادة");
         await loadCommands();
       }
     },
@@ -2637,7 +2829,7 @@ function buildCommandSelectionTable(commands, defaultChecked = true) {
       const span = document.createElement("span");
       span.style.color = "#ff9800";
       span.style.fontSize = "12px";
-      span.textContent = ` ⌨️ ${cmd.combo}`;
+      span.innerHTML = ` <i class="fas fa-keyboard"></i> ${escapeHtml(String(cmd.combo))}`;
       tdName.appendChild(span);
     }
     tr.appendChild(tdName);
@@ -2654,7 +2846,7 @@ function buildCommandSelectionTable(commands, defaultChecked = true) {
     if (cmd.webhookUrl) {
       const small = document.createElement("small");
       small.style.color = "#1dd9e6e1";
-      small.textContent = ` 🔗 ${cmd.webhookUrl}`;
+      small.innerHTML = ` <i class="fas fa-link"></i> ${escapeHtml(cmd.webhookUrl)}`;
       tdCommand.appendChild(small);
     }
     tr.appendChild(tdCommand);
@@ -2676,11 +2868,11 @@ function buildCommandSelectionTable(commands, defaultChecked = true) {
     tr.appendChild(tdDelay);
 
     const tdSound = document.createElement("td");
-    tdSound.textContent = cmd.audio ? "🎵" : "";
+    tdSound.innerHTML = cmd.audio ? "<i class='fas fa-music'></i>" : "";
     tr.appendChild(tdSound);
 
     const tdVideo = document.createElement("td");
-    tdVideo.textContent = cmd.video ? "🎬" : "";
+    tdVideo.innerHTML = cmd.video ? "<i class='fas fa-film'></i>" : "";
     tr.appendChild(tdVideo);
 
     const tdVideoVol = document.createElement("td");
@@ -2724,7 +2916,7 @@ function buildDuplicateTable(commands) {
     if (cmd.webhookUrl) {
       const small = document.createElement("small");
       small.style.color = "#1dd9e6e1";
-      small.textContent = ` 🔗 ${cmd.webhookUrl}`;
+      small.innerHTML = ` <i class="fas fa-link"></i> ${escapeHtml(cmd.webhookUrl)}`;
       tdCommand.appendChild(small);
     }
     tr.appendChild(tdCommand);
@@ -2746,11 +2938,11 @@ function buildDuplicateTable(commands) {
     tr.appendChild(tdDelay);
 
     const tdSound = document.createElement("td");
-    tdSound.textContent = cmd.audio ? "🎵" : "";
+    tdSound.innerHTML = cmd.audio ? "<i class='fas fa-music'></i>" : "";
     tr.appendChild(tdSound);
 
     const tdVideo = document.createElement("td");
-    tdVideo.textContent = cmd.video ? "🎬" : "";
+    tdVideo.innerHTML = cmd.video ? "<i class='fas fa-film'></i>" : "";
     tr.appendChild(tdVideo);
 
     const tdVideoVol = document.createElement("td");
@@ -2821,7 +3013,7 @@ function describeHotkeyCommand(hk) {
     const parts = [ref.type || "تفاعل"];
     if (ref.keyword) parts.push(`كلمة: ${ref.keyword}`);
     if (ref.threshold) parts.push(`عدد: ${ref.threshold}`);
-    if (ref.combo) parts.push(`⌨️ ${ref.combo}`);
+    if (ref.combo) parts.push(`<i class="fas fa-keyboard"></i> ${ref.combo}`);
     return parts.join(" - ");
   }
   const cmd = (window.currentCommandsList || []).find(
@@ -2919,7 +3111,7 @@ async function showExportModal() {
 
   const profileId = getSelectedProfileId();
   if (!profileId) {
-    showMessage("⚠️ اختر بروفايل أولاً");
+    showMessage("<i class='fas fa-triangle-exclamation'></i> اختر بروفايل أولاً");
     return;
   }
   try {
@@ -2947,7 +3139,7 @@ async function showExportModal() {
     document.getElementById("commandSelectionModal").style.display = "flex";
   } catch (err) {
     console.error(err);
-    showMessage("❌ فشل تحميل الأوامر");
+    showMessage("<i class='fas fa-circle-xmark'></i> فشل تحميل الأوامر");
   }
 }
 
@@ -3055,7 +3247,7 @@ function fallbackDownload(jsonStr, filename) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  showMessage("✅ تم التحميل إلى مجلد التنزيلات");
+  showMessage("<i class='fas fa-circle-check'></i> تم التحميل إلى مجلد التنزيلات");
 }
 
 // --- نسخ البروفايل (الواجهة القديمة: يعمل تلقائياً على البروفايل الحالي) ---
@@ -3063,7 +3255,7 @@ function fallbackDownload(jsonStr, filename) {
 async function showCopyProfileModal() {
   const sourceId = getSelectedProfileId();
   if (!sourceId) {
-    showMessage("⚠️ اختر بروفايل أولاً");
+    showMessage("<i class='fas fa-triangle-exclamation'></i> اختر بروفايل أولاً");
     return;
   }
   currentCommandModalMode = "copy";
@@ -3087,7 +3279,7 @@ async function showCopyProfileModal() {
       ...interactCommands.map((c) => ({ ...c, __type: "interaction" })),
     ];
     if (allCommands.length === 0) {
-      showMessage("⚠️ لا توجد أوامر في هذا البروفايل لنسخها");
+      showMessage("<i class='fas fa-triangle-exclamation'></i> لا توجد أوامر في هذا البروفايل لنسخها");
       return;
     }
     buildCommandSelectionTable(allCommands, true);
@@ -3111,7 +3303,7 @@ async function showCopyProfileModal() {
     document.getElementById("commandSelectionModal").style.display = "flex";
   } catch (err) {
     console.error(err);
-    showMessage("❌ فشل تحميل الأوامر");
+    showMessage("<i class='fas fa-circle-xmark'></i> فشل تحميل الأوامر");
   }
 }
 
@@ -3124,7 +3316,7 @@ function showAddProfileFromFile() {
   fileInput.onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    showMessage("⏳ جارٍ قراءة الملف من الخادم...");
+    showMessage("<i class='fas fa-spinner fa-spin'></i> جارٍ قراءة الملف من الخادم...");
     try {
       const formData = new FormData();
       formData.append("tfcFile", file);
@@ -3134,16 +3326,16 @@ function showAddProfileFromFile() {
       });
       const data = await res.json();
       if (!data.success || !Array.isArray(data.commands)) {
-        showMessage("❌ " + (data.message || "ملف غير صالح"));
+        showMessage("<i class='fas fa-circle-xmark'></i> " + (data.message || "ملف غير صالح"));
         return;
       }
-      showMessage(`✅ تم قراءة ${data.commands.length} أمر من الملف`);
+      showMessage(`<i class="fas fa-circle-check"></i> تم قراءة ${data.commands.length} أمر من الملف`);
       importedCommands = data.commands;
       importedHotkeys = Array.isArray(data.hotkeys) ? data.hotkeys : [];
       showImportModal();
     } catch (err) {
       console.error(err);
-      showMessage("❌ خطأ في الاتصال أثناء قراءة الملف");
+      showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال أثناء قراءة الملف");
     }
   };
   fileInput.click();
@@ -3169,7 +3361,7 @@ document
         // مثل القديم: يعمل تلقائياً على البروفايل الحالي - تصدير الأوامر المحددة
         const sourceId = getSelectedProfileId();
         if (!sourceId) {
-          showMessage("⚠️ لا يوجد بروفايل محدد");
+          showMessage("<i class='fas fa-triangle-exclamation'></i> لا يوجد بروفايل محدد");
           return;
         }
         const checkedIndices = Array.from(
@@ -3181,7 +3373,7 @@ document
           (i) => window.currentCommandsList[i],
         );
         if (selectedCommands.length === 0) {
-          showMessage("⚠️ لم تختر أي أمر");
+          showMessage("<i class='fas fa-triangle-exclamation'></i> لم تختر أي أمر");
           return;
         }
         const commandIds = selectedCommands
@@ -3215,7 +3407,7 @@ document
             try {
               msg = (await res.json()).message || "";
             } catch {}
-            showMessage("❌ فشل تصدير الملف: " + msg);
+            showMessage("<i class='fas fa-circle-xmark'></i> فشل تصدير الملف: " + msg);
             return;
           }
           const blob = await res.blob();
@@ -3228,18 +3420,18 @@ document
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
           showMessage(
-            "✅ تم تحميل الملف المشفر — أرسله لمن تريد، لا يُفتح إلا داخل التطبيق",
+            "<i class='fas fa-circle-check'></i> تم تحميل الملف المشفر — أرسله لمن تريد، لا يُفتح إلا داخل التطبيق",
           );
           document.getElementById("commandSelectionModal").style.display =
             "none";
         } catch (err) {
           console.error(err);
-          showMessage("❌ خطأ في الاتصال أثناء التصدير");
+          showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال أثناء التصدير");
         }
       } else if (currentCommandModalMode === "export") {
         const profileId = getSelectedProfileId();
         if (!profileId) {
-          showMessage("⚠️ لا يوجد بروفايل محدد");
+          showMessage("<i class='fas fa-triangle-exclamation'></i> لا يوجد بروفايل محدد");
           return;
         }
         // التصدير يتم من الباك اند: ملف .tfc مشفر بالكامل (AES-256-GCM)
@@ -3251,7 +3443,7 @@ document
           try {
             msg = (await res.json()).message || "";
           } catch {}
-          showMessage("❌ فشل تصدير البروفايل: " + msg);
+          showMessage("<i class='fas fa-circle-xmark'></i> فشل تصدير البروفايل: " + msg);
           return;
         }
         const blob = await res.blob();
@@ -3263,7 +3455,7 @@ document
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        showMessage("✅ تم تحميل البروفايل المشفر (.tfc)");
+        showMessage("<i class='fas fa-circle-check'></i> تم تحميل البروفايل المشفر (.tfc)");
         document.getElementById("commandSelectionModal").style.display = "none";
       } else if (currentCommandModalMode === "import") {
         const selectedNonDuplicateIndices = Array.from(
@@ -3299,7 +3491,7 @@ document
           selectedDuplicate.length === 0 &&
           selectedHotkeys.length === 0
         ) {
-          showMessage("⚠️ لم تختر أي أمر");
+          showMessage("<i class='fas fa-triangle-exclamation'></i> لم تختر أي أمر");
           return;
         }
 
@@ -3308,7 +3500,7 @@ document
         if (window.isSharedExport) {
           const allSelected = [...selectedNonDuplicate, ...selectedDuplicate];
           if (allSelected.length === 0 && selectedHotkeys.length === 0) {
-            showMessage("⚠️ لم تختر أي أمر");
+            showMessage("<i class='fas fa-triangle-exclamation'></i> لم تختر أي أمر");
             return;
           }
           const gifts = allSelected.filter(
@@ -3333,20 +3525,20 @@ document
             const data = await res.json();
             if (data.success) {
               showMessage(
-                "✅ تم استيراد البروفايل المشترك بنجاح (مع رفع الوسائط)",
+                "<i class='fas fa-circle-check'></i> تم استيراد البروفايل المشترك بنجاح (مع رفع الوسائط)",
               );
               await loadCommands(true);
               await loadHotkeyCommands();
               await applyHotkeySettings();
             } else {
               showMessage(
-                "❌ فشل استيراد البروفايل المشترك: " +
+                "<i class='fas fa-circle-xmark'></i> فشل استيراد البروفايل المشترك: " +
                   (data.message || "خطأ غير معروف"),
               );
             }
           } catch (err) {
             console.error(err);
-            showMessage("❌ خطأ في الاتصال أثناء الاستيراد المشترك");
+            showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال أثناء الاستيراد المشترك");
           }
         } else {
           let importSuccess = true;
@@ -3371,7 +3563,7 @@ document
               if (!data.success) {
                 importSuccess = false;
                 showMessage(
-                  "❌ فشل استيراد الأوامر الجديدة: " +
+                  "<i class='fas fa-circle-xmark'></i> فشل استيراد الأوامر الجديدة: " +
                     (data.message || "خطأ غير معروف"),
                 );
               }
@@ -3395,7 +3587,7 @@ document
               if (!data.success) {
                 importSuccess = false;
                 showMessage(
-                  "❌ فشل استيراد الاختصارات: " +
+                  "<i class='fas fa-circle-xmark'></i> فشل استيراد الاختصارات: " +
                     (data.message || "خطأ غير معروف"),
                 );
               }
@@ -3418,7 +3610,7 @@ document
               if (!data.success) {
                 importSuccess = false;
                 showMessage(
-                  "❌ فشل استيراد الأوامر المكررة: " +
+                  "<i class='fas fa-circle-xmark'></i> فشل استيراد الأوامر المكررة: " +
                     (data.message || "خطأ غير معروف"),
                 );
               }
@@ -3426,10 +3618,10 @@ document
           } catch (err) {
             console.error(err);
             importSuccess = false;
-            showMessage("❌ خطأ في الاتصال أثناء الاستيراد");
+            showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال أثناء الاستيراد");
           }
           if (importSuccess) {
-            showMessage("✅ تم الاستيراد بنجاح");
+            showMessage("<i class='fas fa-circle-check'></i> تم الاستيراد بنجاح");
             await loadCommands(true);
             await loadHotkeyCommands();
             await applyHotkeySettings();
@@ -3439,7 +3631,7 @@ document
       }
     } catch (err) {
       console.error(err);
-      showMessage("❌ حدث خطأ غير متوقع: " + err.message);
+      showMessage("<i class='fas fa-circle-xmark'></i> حدث خطأ غير متوقع: " + err.message);
     } finally {
       btn.disabled = false;
       btn.style.opacity = "1";
@@ -3457,7 +3649,7 @@ document.getElementById("close-command-modal").addEventListener("click", () => {
 // ============================================================
 // دوال الاتصال بـ TikTok
 // ============================================================
-async function performDisconnect() {
+async function performDisconnect(silent = false) {
   try {
     const res = await fetchWithAuth(`${API_BASE}/api/tiktok-disconnect`, {
       method: "POST",
@@ -3465,7 +3657,8 @@ async function performDisconnect() {
     if (!res.ok) throw new Error(`فشل الاتصال: ${res.status}`);
     const data = await res.json();
     if (data.success) {
-      showMessage("✅ تم قطع الاتصال");
+      if (!silent)
+        showMessage("<i class='fas fa-circle-check'></i> تم قطع الاتصال");
       isLiveConnected = false;
       document.getElementById("send-usertik").textContent =
         "Connect to TikTok LIVE";
@@ -3477,11 +3670,11 @@ async function performDisconnect() {
       document.getElementById("connect-profile-aside").style.opacity = 1;
       updateStreamerImages(true);
     } else {
-      showMessage("❌ فشل قطع الاتصال: " + (data.message || "خطأ غير معروف"));
+      showMessage("<i class='fas fa-circle-xmark'></i> فشل قطع الاتصال: " + (data.message || "خطأ غير معروف"));
     }
   } catch (err) {
     console.error(err);
-    showMessage("❌ خطأ في الاتصال بالسيرفر (تعذر قطع الاتصال)");
+    showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال بالسيرفر (تعذر قطع الاتصال)");
   }
 }
 
@@ -3527,7 +3720,7 @@ async function performConnect(username) {
             connectBtn.textContent = "Disconnect";
             connectBtn.style.backgroundColor = "#f44336";
           } else {
-            showMessage("⚠️ الحساب غير متصل أو ليس لايف");
+            showMessage("<i class='fas fa-triangle-exclamation'></i> الحساب غير متصل أو ليس لايف");
             connectText.textContent = "Disconnected";
             connectText.style.color = "red";
             connectBtn.textContent = "Connect to TikTok LIVE";
@@ -3541,7 +3734,7 @@ async function performConnect(username) {
       await checkAndUpdate();
     } else {
       showMessage(
-        "❌ فشل تعيين اسم المستخدم: " + (data.message || "خطأ غير معروف"),
+        "<i class='fas fa-circle-xmark'></i> فشل تعيين اسم المستخدم: " + (data.message || "خطأ غير معروف"),
       );
       connectBtn.disabled = false;
       connectProfile.style.pointerEvents = "auto";
@@ -3556,7 +3749,7 @@ async function performConnect(username) {
     updateStreamerImages(true);
   } catch (err) {
     console.error(err);
-    showMessage("❌ خطأ في الاتصال بالسيرفر");
+    showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال بالسيرفر");
     connectBtn.disabled = false;
     connectProfile.style.pointerEvents = "auto";
     connectBtn.style.opacity = 1;
@@ -3583,7 +3776,23 @@ function closeDisconnectModal() {
 
 async function confirmDisconnect() {
   closeDisconnectModal();
-  await performDisconnect();
+  // واجهة فورية: الحالة تتغير في نفس اللحظة قبل انتظار الخادم
+  isLiveConnected = false;
+  updateUIForDisconnected();
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/tiktok-disconnect`, {
+      method: "POST",
+    });
+    if (res.ok) {
+      showMessage("<i class='fas fa-circle-check'></i> تم قطع الاتصال");
+      updateStreamerImages(true);
+    } else {
+      showMessage("<i class='fas fa-circle-xmark'></i> فشل قطع الاتصال — تأكد من حالة الاتصال");
+    }
+  } catch (err) {
+    console.error(err);
+    showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال بالسيرفر (تعذر قطع الاتصال)");
+  }
   if (pendingUsername) {
     await performConnect(pendingUsername);
     pendingUsername = null;
@@ -3594,11 +3803,15 @@ document.getElementById("send-usertik").addEventListener("click", (event) =>
   withButtonLock(event.currentTarget, async () => {
     const username = document.getElementById("user-tiktok").value.trim();
     lastEnteredUsername = username;
-    if (isLiveConnected) {
+    // القرار من متغير الحالة أو من نص الزر نفسه — الكونفيرم لا يضيع أبداً
+    if (
+      isLiveConnected ||
+      event.currentTarget.textContent.trim() === "Disconnect"
+    ) {
       showDisconnectConfirm(username);
     } else {
       if (!username) {
-        showMessage("⚠️ الرجاء إدخال اسم المستخدم");
+        showMessage("<i class='fas fa-triangle-exclamation'></i> الرجاء إدخال اسم المستخدم");
         return;
       }
       await performConnect(username);
@@ -3617,22 +3830,23 @@ async function loadScreens(force = false) {
     return;
   }
   container.innerHTML =
-    '<div class="loading-screens">⏳ جاري تحميل روابط الشاشات...</div>';
+    '<div class="loading-screens"><i class="fas fa-spinner fa-spin"></i> جاري تحميل روابط الشاشات...</div>';
   try {
     const res = await fetchWithAuth(`${API_BASE}/api/user/screen-token`);
     const data = await res.json();
     if (!data.success) throw new Error(data.message);
     const token = data.token;
+    // ✅ الصيغة القصيرة الجميلة
+    const cid = data.widgetId || token;
     let html = '<div class="screens-grid">';
     for (let i = 1; i <= 10; i++) {
-      // ✅ الرابط الطويل مباشرة (دون widgetId)
-      const screenUrl = `${API_BASE}/screens/${token}/${i}.html`;
+      const screenUrl = `${WIDGET_BASE}/widget/screens?cid=${encodeURIComponent(cid)}&screen=${i}`;
       const safeUrl = escapeHtml(screenUrl);
       html += `
         <div class="screen-card">
           <div class="screen-number">${i}</div>
           <div class="screen-url" dir="ltr">${safeUrl}</div>
-          <button class="copy-url-btn" data-url="${safeUrl}">📋 نسخ الرابط</button>
+          <button class="copy-url-btn" data-url="${safeUrl}"><i class="fas fa-clipboard"></i> نسخ الرابط</button>
         </div>
       `;
     }
@@ -3644,12 +3858,12 @@ async function loadScreens(force = false) {
       btn.addEventListener("click", () => {
         const url = btn.getAttribute("data-url");
         navigator.clipboard.writeText(url);
-        btn.textContent = "✅ تم النسخ!";
-        setTimeout(() => (btn.textContent = "📋 نسخ الرابط"), 2000);
+        btn.innerHTML = "<i class='fas fa-circle-check'></i> تم النسخ!";
+        setTimeout(() => (btn.innerHTML = "<i class='fas fa-clipboard'></i> نسخ الرابط"), 2000);
       });
     });
   } catch (err) {
-    container.innerHTML = `<div class="error-message">❌ فشل تحميل الروابط: ${escapeHtml(err.message)}</div>`;
+    container.innerHTML = `<div class="error-message"><i class="fas fa-circle-xmark"></i> فشل تحميل الروابط: ${escapeHtml(err.message)}</div>`;
     screensLoaded = false;
   }
 }
@@ -3661,7 +3875,13 @@ async function loadAdminDashboard() {
   const adminContainer = document.getElementById("adminDashboardContainer");
   if (!adminContainer) return;
 
-  adminContainer.innerHTML = `<div class="loading-dashboard">⏳ جاري تحميل بيانات لوحة التحكم...</div>`;
+  // سكيلتون لوحة الأدمن يظهر فور بدء التحميل ويُزال عند جهوز البيانات
+  const removeAdminSkeleton =
+    window.Skeleton && window.Skeleton.overlay
+      ? window.Skeleton.overlay(adminContainer, {
+          build: () => window.Skeleton.adminPage(),
+        })
+      : null;
 
   try {
     const [statsRes, usersRes] = await Promise.all([
@@ -3732,28 +3952,28 @@ async function loadAdminDashboard() {
 
     const statsHtml = `
       <div class="lux-header">
-        <div class="lux-icon">👑</div>
+        <div class="lux-icon"><i class="fas fa-crown"></i></div>
         <div>
           <h2>لوحة تحكم Stream Moon<span class="lux-live-dot"></span></h2>
           <div class="lux-sub">إدارة شاملة — تتحدث تلقائياً بدون إعادة تشغيل</div>
         </div>
       </div>
       <div class="lux-grid">
-        ${card("👥", stats.stats.totalUsers, "إجمالي المستخدمين", "cyan", "totalUsers")}
-        ${card("💎", stats.stats.paidUsers, "مشتركين مدفوعين", "gold", "paidUsers")}
-        ${card("🆓", stats.stats.freeUsers, "مستخدمين مجانيين", "", "freeUsers")}
-        ${card("⚡", stats.stats.totalCommands, "إجمالي الأوامر", "purple", "totalCommands")}
-        ${card("🔴", stats.stats.activeLiveUsers, "بثوث حية الآن", "red", "activeLiveUsers")}
-        ${card("🔗", stats.stats.connectsToday, "كونكت اليوم", "green", "connectsToday")}
-        ${card("🎁", stats.stats.giftsToday, "هدايا اليوم", "gold", "giftsToday")}
-        ${card("🏆", stats.stats.giftsThisMonth, "هدايا الشهر", "cyan", "giftsThisMonth")}
+        ${card("<i class='fas fa-users'></i>", stats.stats.totalUsers, "إجمالي المستخدمين", "cyan", "totalUsers")}
+        ${card("<i class='fas fa-gem'></i>", stats.stats.paidUsers, "مشتركين مدفوعين", "gold", "paidUsers")}
+        ${card("<i class='fas fa-user'></i>", stats.stats.freeUsers, "مستخدمين مجانيين", "", "freeUsers")}
+        ${card("<i class='fas fa-bolt'></i>", stats.stats.totalCommands, "إجمالي الأوامر", "purple", "totalCommands")}
+        ${card("<i class='fas fa-circle' style='color:#f44336'></i>", stats.stats.activeLiveUsers, "بثوث حية الآن", "red", "activeLiveUsers")}
+        ${card("<i class='fas fa-link'></i>", stats.stats.connectsToday, "كونكت اليوم", "green", "connectsToday")}
+        ${card("<i class='fas fa-gift'></i>", stats.stats.giftsToday, "هدايا اليوم", "gold", "giftsToday")}
+        ${card("<i class='fas fa-trophy'></i>", stats.stats.giftsThisMonth, "هدايا الشهر", "cyan", "giftsThisMonth")}
       </div>
     `;
 
     // ===== قسم إدارة الإشعارات =====
     const notificationsHtml = `
     <div class="lux-section">
-      <h3>🔔 إدارة الإشعارات العاجلة</h3>
+      <h3><i class="fas fa-bell"></i> إدارة الإشعارات العاجلة</h3>
       
       <!-- نموذج الإضافة -->
       <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 20px; background: #2a2a2a; padding: 15px; border-radius: 8px;">
@@ -3789,17 +4009,17 @@ async function loadAdminDashboard() {
 
     const searchHtml = `
       <div class="admin-search-bar" style="display:flex; gap:10px; align-items:center; margin:15px 0; flex-wrap:wrap; background:#1e1e1e; padding:12px; border-radius:8px; direction:rtl;">
-        <input type="text" id="adminSearchEmail" placeholder="🔍 بحث بالبريد الإلكتروني..." style="flex:1; min-width:200px; padding:8px 12px; border:1px solid #333; border-radius:4px; background:#2a2a2a; color:white; outline:none;">
-        <input type="text" id="adminSearchTiktok" placeholder="🔍 بحث بـ TikTok Username..." style="flex:1; min-width:200px; padding:8px 12px; border:1px solid #333; border-radius:4px; background:#2a2a2a; color:white; outline:none;">
-        <input type="text" id="adminSearchDevice" placeholder="🔍 بحث ببصمة الجهاز..." style="flex:1; min-width:200px; padding:8px 12px; border:1px solid #333; border-radius:4px; background:#2a2a2a; color:white; outline:none; direction:ltr;">
-        <button id="adminSearchClear" style="padding:8px 16px; background:#555; border:none; border-radius:4px; color:white; cursor:pointer;">✖ مسح</button>
+        <input type="text" id="adminSearchEmail" placeholder="بحث بالبريد الإلكتروني..." style="flex:1; min-width:200px; padding:8px 12px; border:1px solid #333; border-radius:4px; background:#2a2a2a; color:white; outline:none;">
+        <input type="text" id="adminSearchTiktok" placeholder="بحث بـ TikTok Username..." style="flex:1; min-width:200px; padding:8px 12px; border:1px solid #333; border-radius:4px; background:#2a2a2a; color:white; outline:none;">
+        <input type="text" id="adminSearchDevice" placeholder="بحث ببصمة الجهاز..." style="flex:1; min-width:200px; padding:8px 12px; border:1px solid #333; border-radius:4px; background:#2a2a2a; color:white; outline:none; direction:ltr;">
+        <button id="adminSearchClear" style="padding:8px 16px; background:#555; border:none; border-radius:4px; color:white; cursor:pointer;"><i class="fas fa-xmark"></i> مسح</button>
       </div>
     `;
 
     // ===== قسم الأجهزة المحظورة =====
     const blockedHtml = `
     <div class="lux-section" style="border-color: rgba(255,83,112,.25);">
-      <h3>🚫 الأجهزة المحظورة</h3>
+      <h3><i class="fas fa-ban"></i> الأجهزة المحظورة</h3>
       <p class="lux-note">الجهاز المحظور لا يستطيع استخدام الموقع نهائياً — حتى بحساب جديد أو بعد تغيير الـ IP المعروف.</p>
       <div style="max-height: 250px; overflow-y: auto;">
         <table style="width:100%; border-collapse: collapse; font-size: 13px;">
@@ -3855,7 +4075,7 @@ async function loadAdminDashboard() {
               <td style="padding:8px;">${escapeHtml(device.email || "—")}</td>
               <td style="padding:8px; direction:ltr; text-align:right;">${(device.ips || []).map(escapeHtml).join("<br>") || "—"}</td>
               <td style="padding:8px; text-align:center;">${new Date(device.createdAt).toLocaleDateString("ar-EG")}</td>
-              <td style="padding:8px; text-align:center;"><button class="admin-unblock-device" data-id="${device._id}" style="padding:6px 14px; background:#4caf50; border:none; border-radius:4px; color:white; cursor:pointer;">✅ فك الحظر</button></td>
+              <td style="padding:8px; text-align:center;"><button class="admin-unblock-device" data-id="${device._id}" style="padding:6px 14px; background:#4caf50; border:none; border-radius:4px; color:white; cursor:pointer;"><i class="fas fa-circle-check"></i> فك الحظر</button></td>
             `;
             blockedTbody.appendChild(tr);
           });
@@ -3878,8 +4098,7 @@ async function loadAdminDashboard() {
           ) || 1;
         const unit = document.getElementById("adminNotificationUnit").value;
         if (!text) {
-          document.getElementById("adminNotificationResult").textContent =
-            "⚠️ أدخل نص الإشعار";
+          document.getElementById("adminNotificationResult").innerHTML ="<i class='fas fa-triangle-exclamation'></i> أدخل نص الإشعار";
           return;
         }
         try {
@@ -3897,17 +4116,16 @@ async function loadAdminDashboard() {
           );
           const data = await res.json();
           if (data.success) {
-            document.getElementById("adminNotificationResult").textContent =
-              "✅ تم إرسال الإشعار بنجاح";
+            document.getElementById("adminNotificationResult").innerHTML ="<i class='fas fa-circle-check'></i> تم إرسال الإشعار بنجاح";
             document.getElementById("adminNotificationText").value = "";
             loadAdminNotifications();
+            // عرضه فوراً في شريط الإشعارات هنا كذلك
+            if (data.notification) showNotification(data.notification);
           } else {
-            document.getElementById("adminNotificationResult").textContent =
-              "❌ فشل الإرسال: " + (data.message || "");
+            document.getElementById("adminNotificationResult").innerHTML ="<i class='fas fa-circle-xmark'></i> فشل الإرسال: " + (data.message || "");
           }
         } catch (err) {
-          document.getElementById("adminNotificationResult").textContent =
-            "❌ خطأ في الاتصال";
+          document.getElementById("adminNotificationResult").innerHTML ="<i class='fas fa-circle-xmark'></i> خطأ في الاتصال";
         }
       });
 
@@ -3916,7 +4134,7 @@ async function loadAdminDashboard() {
       if (!tbody) return;
       tbody.innerHTML = "";
       if (!filteredUsers || filteredUsers.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:30px; color:#888;">❌ لا توجد نتائج مطابقة</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:30px; color:#888;"><i class="fas fa-circle-xmark"></i> لا توجد نتائج مطابقة</td></tr>`;
         return;
       }
       const now = new Date();
@@ -3938,8 +4156,8 @@ async function loadAdminDashboard() {
             ? '<span class="badge-admin">مدير</span>'
             : '<span class="badge-user">مستخدم</span>';
         const liveStatusHtml = user.isLiveNow
-          ? '<span class="status-live">🟢 مباشر</span>'
-          : '<span class="status-offline">⚫ غير متصل</span>';
+          ? '<span class="status-live"><i class="fas fa-circle" style="color:#4caf50"></i> مباشر</span>'
+          : '<span class="status-offline"><i class="fas fa-circle" style="color:#444"></i> غير متصل</span>';
         const tiktokHtml = user.tiktokUsername
           ? `<span class="tiktok-user">@${escapeHtml(user.tiktokUsername)}</span>`
           : "—";
@@ -3973,7 +4191,7 @@ async function loadAdminDashboard() {
           <button class="admin-downgrade" data-id="${user.id}" ${downgradeDisabled}>الغاء الاشتراك</button>
           <button class="admin-renew-yearly" data-id="${user.id}" data-plan="yearly" ${renewDisabled}>اشتراك سنه</button>
           <button class="admin-renew-monthly" data-id="${user.id}" data-plan="monthly" ${renewDisabled}>اشتراك شهر</button>
-          <button class="admin-block-device" data-id="${user.id}" ${user.deviceBlocked ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ""}>${user.deviceBlocked ? "الجهاز محظور" : "🚫 حظر الجهاز"}</button>
+          <button class="admin-block-device" data-id="${user.id}" ${user.deviceBlocked ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ""}>${user.deviceBlocked ? "الجهاز محظور" : "<i class='fas fa-ban'></i> حظر الجهاز"}</button>
         `;
 
         const tr = document.createElement("tr");
@@ -3989,7 +4207,7 @@ async function loadAdminDashboard() {
           <td class="cell-connects" style="text-align:center; color:#7fd7e8; font-weight:700;">${user.connectsToday ?? 0}</td>
           <td class="cell-gifts-today" style="text-align:center; color:#ffd54f; font-weight:700;">${user.giftsToday ?? 0}</td>
           <td class="cell-gifts-month" style="text-align:center; color:#ffd54f;">${user.giftsThisMonth ?? 0}</td>
-          <td class="lux-dev cell-device" title="اضغط للنسخ" onclick="navigator.clipboard.writeText('${escapeHtml(user.deviceId || "")}').then(()=>showMessage('📋 تم نسخ البصمة'))">${user.deviceId ? escapeHtml(user.deviceId) : "—"}</td>
+          <td class="lux-dev cell-device" title="اضغط للنسخ" onclick="navigator.clipboard.writeText('${escapeHtml(user.deviceId || "")}').then(()=>showMessage('<i class='fas fa-clipboard'></i> تم نسخ البصمة'))">${user.deviceId ? escapeHtml(user.deviceId) : "—"}</td>
           <td class="cell-commands">${user.commandCount}</td>
           <td>${new Date(user.createdAt).toLocaleDateString("ar-EG")}</td>
           <td>${actionsHtml}</td>
@@ -4051,8 +4269,11 @@ async function loadAdminDashboard() {
       });
     loadAdminNotifications();
     attachAdminButtonEvents();
+    if (window.AppI18n) AppI18n.applyDOM();
   } catch (err) {
-    adminContainer.innerHTML = `<div class="error-message">❌ فشل تحميل لوحة التحكم: ${err.message}</div>`;
+    adminContainer.innerHTML = `<div class="error-message"><i class="fas fa-circle-xmark"></i> فشل تحميل لوحة التحكم: ${err.message}</div>`;
+  } finally {
+    if (removeAdminSkeleton) removeAdminSkeleton();
   }
 }
 
@@ -4081,10 +4302,10 @@ async function loadAdminNotifications() {
         <td style="text-align:center;">${n.durationValue || "?"}</td>
         <td style="text-align:center;">${n.durationUnit === "hour" ? "ساعة" : n.durationUnit === "minute" ? "دقيقة" : "ثانية"}</td>
         <td style="text-align:center;">${new Date(n.expiresAt).toLocaleString("ar-EG")}</td>
-        <td style="text-align:center;">${isActive ? "🟢 نشط" : "🔴 منتهي/غير نشط"}</td>
+        <td style="text-align:center;">${isActive ? "<i class='fas fa-circle' style='color:#4caf50'></i> نشط" : "<i class='fas fa-circle' style='color:#f44336'></i> منتهي/غير نشط"}</td>
         <td style="text-align:center;">
-          <button class="admin-edit-notification" data-id="${n._id}" style="background:#ffc107; border:none; padding:4px 10px; border-radius:4px; cursor:pointer;">✏️ تعديل</button>
-          <button class="admin-delete-notification" data-id="${n._id}" style="background:#dc3545; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; color:white;">🗑️ حذف</button>
+          <button class="admin-edit-notification" data-id="${n._id}" style="background:#ffc107; border:none; padding:4px 10px; border-radius:4px; cursor:pointer;"><i class="fas fa-pen-to-square"></i> تعديل</button>
+          <button class="admin-delete-notification" data-id="${n._id}" style="background:#dc3545; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; color:white;"><i class="fas fa-trash-can"></i> حذف</button>
         </td>
       `;
       tbody.appendChild(tr);
@@ -4118,7 +4339,7 @@ function showNotificationEditModal(current) {
     box.style.cssText =
       "background:#1e1e2e; border:1px solid rgba(29,217,230,.3); border-radius:14px; padding:24px; width:min(420px, 90vw); color:#fff; font-family:inherit; box-shadow:0 20px 60px rgba(0,0,0,.6);";
     box.innerHTML = `
-      <h3 style="margin:0 0 16px; color:#9fd8e8;">✏️ تعديل الإشعار</h3>
+      <h3 style="margin:0 0 16px; color:#9fd8e8;"><i class="fas fa-pen-to-square"></i> تعديل الإشعار</h3>
       <label style="display:block; font-size:13px; color:#9fb4cc; margin-bottom:6px;">النص</label>
       <textarea id="notifEditText" style="width:100%; box-sizing:border-box; height:200px; resize:vertical; padding:10px; background:#15151f; border:1px solid #333; color:#fff; border-radius:8px; margin-bottom:14px; font-family:inherit; line-height:1.6;">${escapeHtml(current.text || "")}</textarea>
       <div style="display:flex; gap:10px; margin-bottom:14px;">
@@ -4156,11 +4377,11 @@ function showNotificationEditModal(current) {
       const durationValue = parseInt(box.querySelector("#notifEditDuration").value, 10);
       const durationUnit = box.querySelector("#notifEditUnit").value;
       if (!text) {
-        showMessage("⚠️ النص مطلوب");
+        showMessage("<i class='fas fa-triangle-exclamation'></i> النص مطلوب");
         return;
       }
       if (!durationValue || durationValue < 1) {
-        showMessage("⚠️ أدخل مدة صحيحة");
+        showMessage("<i class='fas fa-triangle-exclamation'></i> أدخل مدة صحيحة");
         return;
       }
       close({ text, durationValue, durationUnit, isActive: true });
@@ -4178,7 +4399,7 @@ async function handleEditNotification(e) {
     (n) => n._id === id,
   );
   if (!current) {
-    showMessage("❌ تعذر العثور على الإشعار — أعد تحميل اللوحة");
+    showMessage("<i class='fas fa-circle-xmark'></i> تعذر العثور على الإشعار — أعد تحميل اللوحة");
     return;
   }
   const result = await showNotificationEditModal(current);
@@ -4194,13 +4415,13 @@ async function handleEditNotification(e) {
     );
     const data = await res.json();
     if (data.success) {
-      showMessage("✅ تم تعديل الإشعار");
+      showMessage("<i class='fas fa-circle-check'></i> تم تعديل الإشعار");
       loadAdminNotifications();
     } else {
-      showMessage("❌ فشل التعديل: " + data.message);
+      showMessage("<i class='fas fa-circle-xmark'></i> فشل التعديل: " + data.message);
     }
   } catch (err) {
-    showMessage("❌ خطأ في الاتصال");
+    showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال");
   }
 }
 
@@ -4221,13 +4442,13 @@ async function handleDeleteNotification(e) {
     );
     const data = await res.json();
     if (data.success) {
-      showMessage("✅ تم حذف الإشعار");
+      showMessage("<i class='fas fa-circle-check'></i> تم حذف الإشعار");
       loadAdminNotifications();
     } else {
-      showMessage("❌ فشل الحذف: " + data.message);
+      showMessage("<i class='fas fa-circle-xmark'></i> فشل الحذف: " + data.message);
     }
   } catch (err) {
-    showMessage("❌ خطأ في الاتصال");
+    showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال");
   }
 }
 
@@ -4269,10 +4490,10 @@ function attachAdminButtonEvents() {
           },
         );
         const data = await res.json();
-        showMessage(data.success ? "✅ تم التجديد بنجاح" : "❌ فشل التجديد");
+        showMessage(data.success ? "<i class='fas fa-circle-check'></i> تم التجديد بنجاح" : "<i class='fas fa-circle-xmark'></i> فشل التجديد");
         if (data.success) setTimeout(() => loadAdminDashboard(), 500);
       } catch (err) {
-        showMessage("❌ خطأ في الاتصال");
+        showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال");
       }
       return;
     }
@@ -4292,12 +4513,12 @@ function attachAdminButtonEvents() {
         const data = await res.json();
         showMessage(
           data.success
-            ? "✅ " + (data.message || "تم حظر الجهاز")
-            : "❌ " + (data.message || "فشل حظر الجهاز"),
+            ? "<i class='fas fa-circle-check'></i> " + (data.message || "تم حظر الجهاز")
+            : "<i class='fas fa-circle-xmark'></i> " + (data.message || "فشل حظر الجهاز"),
         );
         if (data.success) setTimeout(() => loadAdminDashboard(), 500);
       } catch (err) {
-        showMessage("❌ خطأ في الاتصال");
+        showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال");
       }
       return;
     }
@@ -4317,12 +4538,12 @@ function attachAdminButtonEvents() {
         const data = await res.json();
         showMessage(
           data.success
-            ? "✅ " + (data.message || "تم فك الحظر")
-            : "❌ " + (data.message || "فشل فك الحظر"),
+            ? "<i class='fas fa-circle-check'></i> " + (data.message || "تم فك الحظر")
+            : "<i class='fas fa-circle-xmark'></i> " + (data.message || "فشل فك الحظر"),
         );
         if (data.success) setTimeout(() => loadAdminDashboard(), 500);
       } catch (err) {
-        showMessage("❌ خطأ في الاتصال");
+        showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال");
       }
       return;
     }
@@ -4340,10 +4561,10 @@ function attachAdminButtonEvents() {
           { method: "POST" },
         );
         const data = await res.json();
-        showMessage(data.success ? "✅ تمت إزالة الترقية" : "❌ فشلت العملية");
+        showMessage(data.success ? "<i class='fas fa-circle-check'></i> تمت إزالة الترقية" : "<i class='fas fa-circle-xmark'></i> فشلت العملية");
         if (data.success) setTimeout(() => loadAdminDashboard(), 500);
       } catch (err) {
-        showMessage("❌ خطأ في الاتصال");
+        showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال");
       }
       return;
     }
@@ -4361,10 +4582,10 @@ function attachAdminButtonEvents() {
           { method: "POST" },
         );
         const data = await res.json();
-        showMessage(data.success ? "✅ تمت الترقية" : "❌ فشلت الترقية");
+        showMessage(data.success ? "<i class='fas fa-circle-check'></i> تمت الترقية" : "<i class='fas fa-circle-xmark'></i> فشلت الترقية");
         if (data.success) setTimeout(() => loadAdminDashboard(), 500);
       } catch (err) {
-        showMessage("❌ خطأ في الاتصال");
+        showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال");
       }
       return;
     }
@@ -4384,12 +4605,12 @@ function attachAdminButtonEvents() {
         const data = await res.json();
         showMessage(
           data.success
-            ? "✅ تمت إزالة صلاحية المدير"
-            : "❌ فشلت العملية: " + (data.message || ""),
+            ? "<i class='fas fa-circle-check'></i> تمت إزالة صلاحية المدير"
+            : "<i class='fas fa-circle-xmark'></i> فشلت العملية: " + (data.message || ""),
         );
         if (data.success) setTimeout(() => loadAdminDashboard(), 500);
       } catch (err) {
-        showMessage("❌ خطأ في الاتصال");
+        showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال");
       }
       return;
     }
@@ -4406,10 +4627,10 @@ function attachAdminButtonEvents() {
           method: "DELETE",
         });
         const data = await res.json();
-        showMessage(data.success ? "✅ تم الحذف" : "❌ فشل الحذف");
+        showMessage(data.success ? "<i class='fas fa-circle-check'></i> تم الحذف" : "<i class='fas fa-circle-xmark'></i> فشل الحذف");
         if (data.success) setTimeout(() => loadAdminDashboard(), 500);
       } catch (err) {
-        showMessage("❌ خطأ في الاتصال");
+        showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال");
       }
       return;
     }
@@ -4418,6 +4639,123 @@ function attachAdminButtonEvents() {
   container.addEventListener("click", handler);
   container._adminClickHandler = handler;
 }
+
+// ============================================================
+// نافذة لوحة تحكم الأوفرلاي العائمة — تُفتح من زر "لوحة التحكم"
+// وتُغلق بالضغط خارجها. Save يجبر الحفظ وCancel يرجع الإعدادات من الخادم.
+// ============================================================
+let overlayFloatHome = null; // موضع اللوحة الأصلي في الصفحة
+let overlayFloatKind = null;
+
+window.updateOverlayPreviews = function () {
+  if (typeof AppI18n === "undefined" && !window.AppI18n) { /* ملاحظة: لا شيء */ }
+  const esc = (s) =>
+    String(s || "").replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
+    );
+  // معاينة قوائم الأساطير — مطابقة لصفحة overlay.html
+  [1, 2].forEach((id) => {
+    const wrap = document.getElementById("ovlLive" + id);
+    const titleEl = document.getElementById("smlTitle" + id);
+    if (!wrap || !titleEl) return;
+    const title = titleEl.value || "";
+    const theme = document.getElementById("smlTheme" + id)?.value || "theme-neon";
+    const glow = document.getElementById("smlGlow" + id)?.value || "#00ffe1";
+    const badge = document.getElementById("smlBadge" + id)?.value || "#ff0055";
+    const names = (document.getElementById("smlNames" + id)?.value || "")
+.split(String.fromCharCode(10))
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const ctrl = window._smlCtrls ? window._smlCtrls[id - 1] : null;
+    const crowned = ctrl ? ctrl.crowned : new Set();
+    // العرض والارتفاع الحقيقيان — تصغير خفيف فقط عند تجاوز مساحة البطاقة
+    const wpx = parseInt(document.getElementById("smlWidth" + id)?.value) || 285;
+    const hpx = parseInt(document.getElementById("smlHeight" + id)?.value) || 500;
+    const availW = Math.max(200, wrap.clientWidth - 20);
+    const scale = Math.min(1, availW / wpx, 520 / hpx);
+    wrap.style.height = Math.round(hpx * scale) + "px";
+    const rows = names.length
+      ? names
+          .map((name, idx) => {
+            const crown = crowned.has(idx)
+              ? '<i class="fas fa-crown"></i>'
+              : "";
+            return `<div class="ovl-box-row"><span class="ovl-box-num" style="background:${badge}">${idx + 1}</span><span class="ovl-box-name">${esc(name)}</span>${crown}</div>`;
+          })
+          .join("")
+      : '<div class="ovl-box-empty">No names yet</div>';
+    wrap.innerHTML = `<div class="ovl-box ${theme}" style="border-color:${esc(glow)}; box-shadow:0 0 16px ${esc(glow)}66; width:${wpx}px; height:${hpx}px; transform:scale(${scale.toFixed(3)})"><div class="ovl-box-head"><h2><i class="fas fa-trophy"></i> ${esc(title)}</h2></div><div class="ovl-box-list">${rows}</div></div>`;
+  });
+  // معاينة عداد الفوز/الخسارة — تعيد استخدام ستايلات .smw-box الموجودة
+  const winsWrap = document.getElementById("ovlLiveWins");
+  const winLabel = document.getElementById("smwWinLabel");
+  if (winsWrap && winLabel) {
+    const theme = document.getElementById("smwTheme")?.value || "pscontroller";
+    const w = document.getElementById("smwWinVal")?.textContent || "0";
+    const l = document.getElementById("smwLossVal")?.textContent || "0";
+    const wl = winLabel.value || "WIN";
+    const ll = document.getElementById("smwLossLabel")?.value || "LOSE";
+    winsWrap.style.height = "auto";
+    winsWrap.innerHTML = `<div class="smw-box ${theme}"><div class="smw-item smw-w"><span class="lbl">${esc(wl)}</span><span>${esc(w)}</span></div><div class="smw-line"></div><div class="smw-item smw-l"><span class="lbl">${esc(ll)}</span><span>${esc(l)}</span></div></div>`;
+  }
+};
+// تحديث المعاينة كل ثانية — يجعلها حية مع أي تعديل في اللوحات
+setInterval(() => {
+  if (window.updateOverlayPreviews) window.updateOverlayPreviews();
+}, 1000);
+
+function openOverlayPanel(panelId, kind, title) {
+  const panel = document.getElementById(panelId);
+  const modal = document.getElementById("overlayFloatModal");
+  if (!panel || !modal) return;
+  overlayFloatHome = panel.parentNode;
+  overlayFloatKind = kind;
+  document.getElementById("overlayFloatTitle").textContent =
+    (window.AppI18n ? AppI18n.t(title) : title) || "";
+  const body = document.getElementById("overlayFloatBody");
+  body.innerHTML = "";
+  body.appendChild(panel); // نقل اللوحة القائمة بكل ارتباطاتها
+  modal.style.display = "block";
+}
+
+function closeOverlayPanel() {
+  const modal = document.getElementById("overlayFloatModal");
+  if (!modal || modal.style.display === "none") return;
+  const body = document.getElementById("overlayFloatBody");
+  const panel = body.firstElementChild;
+  // الحفظ تلقائي مع كل تعديل — الإغلاق لا يلمس الإعدادات
+  if (panel && overlayFloatHome) overlayFloatHome.appendChild(panel);
+  overlayFloatHome = null;
+  overlayFloatKind = null;
+  modal.style.display = "none";
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll(".ovl-open-panel").forEach((btn) => {
+    btn.addEventListener("click", () =>
+      openOverlayPanel(btn.dataset.panel, btn.dataset.kind, btn.dataset.title),
+    );
+  });
+  const modal = document.getElementById("overlayFloatModal");
+  if (!modal) return;
+  // الضغط خارج الكارت = إغلاق (إرجاع بدون تغيير — الحفظ تلقائي داخلياً)
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeOverlayPanel();
+  });
+  document.getElementById("overlayFloatX")?.addEventListener("click", () =>
+    closeOverlayPanel(),
+  );
+  // نسخ رابط OBS لعداد الفوز/الخسارة من بطاقة المعاينة
+  document.getElementById("smwCardCopy")?.addEventListener("click", () => {
+    const link = document.getElementById("smwLinkUrl")?.value || "";
+    if (!link.startsWith("http")) {
+      showMessage("<i class='fas fa-triangle-exclamation'></i> الرابط لم يجهز بعد — جاري الاتصال، جرّب بعد لحظات");
+      return;
+    }
+    navigator.clipboard.writeText(link);
+    showMessage("<i class='fas fa-circle-check'></i> تم نسخ رابط العداد لـ OBS");
+  });
+});
 
 // ============================================================
 // لوحة عداد الفوز/الخسارة الأصلية (بدون حقن صفحات خارجية)
@@ -4443,9 +4781,10 @@ async function initWinsPanel() {
     const linkInput = $("smwLinkUrl");
     if (data.success) {
       screenToken = data.token;
-      // ✅ الرابط الطويل فقط (تجاهل widgetId تماماً)
       if (linkInput) {
-        linkInput.value = `${API_BASE}/overlay/wins.html?token=${screenToken}`;
+        // ✅ الصيغة القصيرة الجميلة فقط — الروابط القديمة أُزيلت
+        linkInput.value = `${WIDGET_BASE}/widget/wins?cid=${encodeURIComponent(data.widgetId)}`;
+        if (window.updateOverlayPreviews) window.updateOverlayPreviews();
       }
     } else if (linkInput) {
       linkInput.value = "فشل تحميل الرابط — تأكد من تسجيل الدخول";
@@ -4551,12 +4890,12 @@ async function initWinsPanel() {
   $("smwCopyLink").onclick = async () => {
     try {
       const token = await getScreenToken();
-      if (!token) return showMessage("❌ فشل الحصول على التوكن");
+      if (!token) return showMessage("<i class='fas fa-circle-xmark'></i> فشل الحصول على التوكن");
       const url = $("smwLinkUrl").value;
       await navigator.clipboard.writeText(url);
-      showMessage("✅ تم نسخ رابط العداد لـ OBS");
+      showMessage("<i class='fas fa-circle-check'></i> تم نسخ رابط العداد لـ OBS");
     } catch (e) {
-      showMessage("❌ خطأ في النسخ");
+      showMessage("<i class='fas fa-circle-xmark'></i> خطأ في النسخ");
     }
   };
 
@@ -4636,7 +4975,7 @@ async function initListsPanel() {
   }
   // رابط قصير للأوفرلاي عبر الدومين الرئيسي مع الرجوع للطويل عند غياب cid
   function overlayLink(token, id) {
-    return `${API_BASE}/overlay/overlay.html?token=${token}&id=${id}`;
+    return `${WIDGET_BASE}/widget/overlay?cid=${encodeURIComponent(widgetCid || "")}&id=${id}`;
   }
   async function getSettings(token) {
     const res = await fetchWithAuth(
@@ -4715,10 +5054,10 @@ async function initListsPanel() {
             maxHeight: parseInt(this.heightEl.value) || 500,
           };
           await postSettings(token, payload);
-          this.statusEl.textContent = "✓ تم الحفظ";
+          this.statusEl.innerHTML = "<i class='fas fa-check'></i> تم الحفظ";
           setTimeout(() => (this.statusEl.textContent = ""), 1500);
         } catch (e) {
-          this.statusEl.textContent = "⚠️ فشل الحفظ";
+          this.statusEl.innerHTML = "<i class='fas fa-triangle-exclamation'></i> فشل الحفظ";
         }
       }, 400);
     }
@@ -4736,7 +5075,11 @@ async function initListsPanel() {
         const btn = document.createElement("button");
         const isCrowned = this.crowned.has(idx);
         btn.className = "sml-crown-btn" + (isCrowned ? " active" : "");
-        btn.textContent = (isCrowned ? "👑 " : "⚪ ") + name.trim();
+        btn.innerHTML =
+          (isCrowned
+            ? '<i class="fas fa-crown"></i> '
+            : '<i class="fas fa-circle" style="color:#888"></i> ') +
+          escapeHtml(name.trim());
         btn.onclick = () => {
           if (this.crowned.has(idx)) this.crowned.delete(idx);
           else this.crowned.add(idx);
@@ -4761,6 +5104,7 @@ async function initListsPanel() {
   }
 
   const ctrls = [new ListController(1), new ListController(2)];
+  window._smlCtrls = ctrls;
 
   // دالة تحديث الروابط والإعدادات — تُستدعى عند كل فتح للسيكشن وعند إعادة المحاولة
   window.listsRefreshData = async () => {
@@ -4769,6 +5113,7 @@ async function initListsPanel() {
       if (!token) return;
       document.getElementById("smlLink1").textContent = overlayLink(token, 1);
       document.getElementById("smlLink2").textContent = overlayLink(token, 2);
+      if (window.updateOverlayPreviews) window.updateOverlayPreviews();
       const data = await getSettings(token);
       if (data.success) ctrls.forEach((c) => c.load());
     } catch (e) {}
@@ -4793,11 +5138,41 @@ async function initListsPanel() {
     btn.onclick = () => {
       const link = document.getElementById("smlLink" + btn.dataset.overlay);
       if (!link.textContent.startsWith("http")) {
-        showMessage("⚠️ الرابط لم يجهز بعد — جاري الاتصال، جرّب بعد لحظات");
+        showMessage("<i class='fas fa-triangle-exclamation'></i> الرابط لم يجهز بعد — جاري الاتصال، جرّب بعد لحظات");
         return;
       }
       navigator.clipboard.writeText(link.textContent);
-      showMessage("✅ تم نسخ رابط OBS");
+      showMessage("<i class='fas fa-circle-check'></i> تم نسخ رابط OBS");
+    };
+  });
+  // استعادة كل الإعدادات الافتراضية للقائمة
+  document.querySelectorAll(".sml-restore").forEach((btn) => {
+    btn.onclick = async () => {
+      const id = parseInt(btn.dataset.overlay);
+      const ctrl = ctrls[id - 1];
+      try {
+        const token = await getToken();
+        if (!token) return;
+        const defaults = {
+          title: id === 1 ? "قائمة الأساطير" : "كبار الداعمين",
+          names: "",
+          theme: id === 1 ? "theme-neon" : "theme-gold",
+          glowColor: id === 1 ? "#00ffe1" : "#ffcc00",
+          badgeColor: id === 1 ? "#ff0055" : "#a855f7",
+          crowns: [],
+          width: 285,
+          maxHeight: 500,
+        };
+        const payload = {};
+        payload[id === 1 ? "overlay1" : "overlay2"] = defaults;
+        const result = await postSettings(token, payload);
+        if (result.success) {
+          showMessage("<i class='fas fa-circle-check'></i> تمت استعادة الإعدادات الافتراضية");
+          ctrl.load();
+        }
+      } catch (e) {
+        showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاستعادة");
+      }
     };
   });
   document.querySelectorAll(".sml-reset").forEach((btn) => {
@@ -4820,11 +5195,11 @@ async function initListsPanel() {
         };
         const result = await postSettings(token, payload);
         if (result.success) {
-          showMessage("✅ تم مسح الأسماء");
+          showMessage("<i class='fas fa-circle-check'></i> تم مسح الأسماء");
           ctrl.load();
         }
       } catch (e) {
-        showMessage("❌ خطأ في المسح");
+        showMessage("<i class='fas fa-circle-xmark'></i> خطأ في المسح");
       }
     };
   });
@@ -4898,6 +5273,23 @@ const HOTKEY_VALID_KEYS = [
   "7",
   "8",
   "9",
+  // مفاتيح النام باد — نفس التسمية التي يوحّد بها electron-main الأكواد
+  "Num0",
+  "Num1",
+  "Num2",
+  "Num3",
+  "Num4",
+  "Num5",
+  "Num6",
+  "Num7",
+  "Num8",
+  "Num9",
+  "Num.",
+  "Num-",
+  "Num/",
+  "NumEnter",
+  "+",
+  "*",
 ];
 
 function isValidHotkeyKey(key) {
@@ -4957,7 +5349,7 @@ async function loadHotkeySettings() {
     console.warn("⚠️ فشل تحميل إعدادات hotkey من السيرفر", err);
     const statusEl = document.getElementById("hotkeyStatus");
     if (statusEl) {
-      statusEl.textContent = "❌ فشل تحميل الإعدادات";
+      statusEl.innerHTML = "<i class='fas fa-circle-xmark'></i> فشل تحميل الإعدادات";
       statusEl.style.color = "var(--error-color, #f44336)";
     }
     hotkeySettings = {
@@ -5022,7 +5414,7 @@ async function updateHotkeyRegistration() {
       );
       if (!result || !result.success) {
         console.warn(
-          `⚠️ فشل تسجيل الاختصار ${combo}:`,
+          `<i class="fas fa-triangle-exclamation"></i> فشل تسجيل الاختصار ${combo}:`,
           result?.error || "خطأ غير معروف",
         );
       } else {
@@ -5060,13 +5452,13 @@ async function applyHotkeySettings() {
   const statusEl = document.getElementById("hotkeyStatus");
   if (statusEl) {
     if (!registered) {
-      statusEl.textContent = "⚠️ فشل تسجيل الاختصارات في النظام";
+      statusEl.innerHTML = "<i class='fas fa-triangle-exclamation'></i> فشل تسجيل الاختصارات في النظام";
       statusEl.style.color = "var(--warning-color, #ff9800)";
     } else if (activeCount > 0) {
-      statusEl.textContent = `✅ الاختصارات النشطة: ${activeCount}`;
+      statusEl.innerHTML = `<i class="fas fa-circle-check"></i> الاختصارات النشطة: ${activeCount}`;
       statusEl.style.color = "var(--success-color, #4caf50)";
     } else {
-      statusEl.textContent = "⏸️ لا توجد اختصارات نشطة";
+      statusEl.innerHTML = "<i class='fas fa-pause'></i> لا توجد اختصارات نشطة";
       statusEl.style.color = "var(--text-muted, #888)";
     }
   }
@@ -5105,7 +5497,7 @@ let hotkeyStatusTimer = null;
 function showHotkeyStatus(text, color) {
   const el = document.getElementById("hotkeyStatus");
   if (!el) return;
-  el.textContent = text;
+  el.innerHTML = window.AppI18n ? AppI18n.t(text) : text;
   el.style.color = color;
   if (hotkeyStatusTimer) clearTimeout(hotkeyStatusTimer);
   hotkeyStatusTimer = setTimeout(() => {
@@ -5122,7 +5514,7 @@ async function saveHotkeySettings() {
 
   if (!keyInput || !select) {
     showHotkeyStatus(
-      "❌ عناصر الواجهة غير موجودة",
+      "<i class='fas fa-circle-xmark'></i> عناصر الواجهة غير موجودة",
       "var(--error-color, #f44336)",
     );
     return;
@@ -5136,32 +5528,34 @@ async function saveHotkeySettings() {
 
   if (!newKey) {
     showHotkeyStatus(
-      "⚠️ يرجى اختيار مفتاح من لوحة المفاتيح",
+      "<i class='fas fa-triangle-exclamation'></i> يرجى اختيار مفتاح من لوحة المفاتيح",
       "var(--warning-color, #ff9800)",
     );
-    showMessage("⚠️ يرجى اختيار مفتاح من لوحة المفاتيح أولاً");
+    showMessage("<i class='fas fa-triangle-exclamation'></i> يرجى اختيار مفتاح من لوحة المفاتيح أولاً");
     return;
   }
 
   if (!isValidHotkeyKey(newKey)) {
     showHotkeyStatus(
-      `⚠️ المفتاح "${newKey}" غير مدعوم`,
+      `<i class="fas fa-triangle-exclamation"></i> المفتاح "${newKey}" غير مدعوم`,
       "var(--warning-color, #ff9800)",
     );
-    showMessage(`⚠️ المفتاح "${newKey}" غير مدعوم`);
+    showMessage(`<i class="fas fa-triangle-exclamation"></i> المفتاح "${newKey}" غير مدعوم`);
     return;
   }
 
   if (!commandId || !commandType) {
     showHotkeyStatus(
-      "⚠️ يرجى اختيار أمر من القائمة",
+      "<i class='fas fa-triangle-exclamation'></i> يرجى اختيار أمر من القائمة",
       "var(--warning-color, #ff9800)",
     );
-    showMessage("⚠️ يرجى اختيار أمر من القائمة");
+    showMessage("<i class='fas fa-triangle-exclamation'></i> يرجى اختيار أمر من القائمة");
     return;
   }
 
-  try {
+  // السكيلتون يبدأ فوراً لحظة الحفظ — يغطي الحفظ وإعادة التسجيل وتحديث القائمة
+  return withHotkeyChange(async () => {
+    try {
     // ✅ جلب جميع اختصارات البروفايل الحالي من السيرفر
     const res = await fetchWithAuth(
       `${API_BASE}/api/hotkey${hotkeyProfileQuery()}`,
@@ -5179,10 +5573,10 @@ async function saveHotkeySettings() {
         // إذا لم نجد الاختصار القديم، هذا يعني أنه تم حذفه أو أن المعرف غير صحيح
         if (!oldHotkey) {
           showHotkeyStatus(
-            "❌ الاختصار المطلوب تعديله غير موجود",
+            "<i class='fas fa-circle-xmark'></i> الاختصار المطلوب تعديله غير موجود",
             "var(--error-color, #f44336)",
           );
-          showMessage("❌ الاختصار المطلوب تعديله غير موجود");
+          showMessage("<i class='fas fa-circle-xmark'></i> الاختصار المطلوب تعديله غير موجود");
           editingHotkeyId = null;
           clearHotkeyFormFields();
           return;
@@ -5197,10 +5591,10 @@ async function saveHotkeySettings() {
 
         if (existingHotkey) {
           showHotkeyStatus(
-            `⚠️ المفتاح "${newKey}" مستخدم بالفعل مع أمر آخر`,
+            `<i class="fas fa-triangle-exclamation"></i> المفتاح "${newKey}" مستخدم بالفعل مع أمر آخر`,
             "var(--warning-color, #ff9800)",
           );
-          showMessage(`⚠️ المفتاح "${newKey}" مستخدم بالفعل مع أمر آخر`);
+          showMessage(`<i class="fas fa-triangle-exclamation"></i> المفتاح "${newKey}" مستخدم بالفعل مع أمر آخر`);
           return;
         }
 
@@ -5213,11 +5607,11 @@ async function saveHotkeySettings() {
         );
         if (dupCommand) {
           showHotkeyStatus(
-            `⚠️ هذا الأمر مستخدم بالفعل مع المفتاح "${dupCommand.key}"`,
+            `<i class="fas fa-triangle-exclamation"></i> هذا الأمر مستخدم بالفعل مع المفتاح "${dupCommand.key}"`,
             "var(--warning-color, #ff9800)",
           );
           showMessage(
-            `⚠️ هذا الأمر مستخدم بالفعل مع المفتاح "${dupCommand.key}"`,
+            `<i class="fas fa-triangle-exclamation"></i> هذا الأمر مستخدم بالفعل مع المفتاح "${dupCommand.key}"`,
           );
           return;
         }
@@ -5246,14 +5640,13 @@ async function saveHotkeySettings() {
         if (updateRes.ok) {
           hotkeySettings = settings;
           await updateHotkeyRegistration();
-          await loadHotkeyCommands();
-          await renderHotkeysList();
+          await _renderHotkeysListImpl();
 
           showHotkeyStatus(
-            `✅ تم تحديث الاختصار: ${newKey}`,
+            `<i class="fas fa-circle-check"></i> تم تحديث الاختصار: ${newKey}`,
             "var(--success-color, #4caf50)",
           );
-          showMessage(`✅ تم تحديث الاختصار من "${oldKey}" إلى "${newKey}"`);
+          showMessage(`<i class="fas fa-circle-check"></i> تم تحديث الاختصار من "${oldKey}" إلى "${newKey}"`);
 
           // ✅ مسح حالة التعديل وتصفير الحقول بعد التحديث
           clearHotkeyFormFields();
@@ -5262,11 +5655,11 @@ async function saveHotkeySettings() {
         } else {
           const errorData = await updateRes.json().catch(() => ({}));
           showHotkeyStatus(
-            `❌ فشل تحديث الاختصار: ${errorData.message || "خطأ غير معروف"}`,
+            `<i class="fas fa-circle-xmark"></i> فشل تحديث الاختصار: ${errorData.message || "خطأ غير معروف"}`,
             "var(--error-color, #f44336)",
           );
           showMessage(
-            `❌ فشل تحديث الاختصار: ${errorData.message || "خطأ غير معروف"}`,
+            `<i class="fas fa-circle-xmark"></i> فشل تحديث الاختصار: ${errorData.message || "خطأ غير معروف"}`,
           );
           return;
         }
@@ -5276,10 +5669,10 @@ async function saveHotkeySettings() {
       const existingHotkey = data.hotkeys.find((h) => h.key === newKey);
       if (existingHotkey) {
         showHotkeyStatus(
-          `⚠️ المفتاح "${newKey}" مستخدم بالفعل`,
+          `<i class="fas fa-triangle-exclamation"></i> المفتاح "${newKey}" مستخدم بالفعل`,
           "var(--warning-color, #ff9800)",
         );
-        showMessage(`⚠️ المفتاح "${newKey}" مستخدم بالفعل`);
+        showMessage(`<i class="fas fa-triangle-exclamation"></i> المفتاح "${newKey}" مستخدم بالفعل`);
         return;
       }
 
@@ -5289,11 +5682,11 @@ async function saveHotkeySettings() {
       );
       if (dupCommand) {
         showHotkeyStatus(
-          `⚠️ هذا الأمر مستخدم بالفعل مع المفتاح "${dupCommand.key}"`,
+          `<i class="fas fa-triangle-exclamation"></i> هذا الأمر مستخدم بالفعل مع المفتاح "${dupCommand.key}"`,
           "var(--warning-color, #ff9800)",
         );
         showMessage(
-          `⚠️ هذا الأمر مستخدم بالفعل مع المفتاح "${dupCommand.key}"`,
+          `<i class="fas fa-triangle-exclamation"></i> هذا الأمر مستخدم بالفعل مع المفتاح "${dupCommand.key}"`,
         );
         return;
       }
@@ -5313,34 +5706,43 @@ async function saveHotkeySettings() {
 
     if (saved) {
       showHotkeyStatus(
-        `✅ تم حفظ الاختصار: ${newKey}`,
+        `<i class="fas fa-circle-check"></i> تم حفظ الاختصار: ${newKey}`,
         "var(--success-color, #4caf50)",
       );
       // تحديث hotkeySettings بالقيم الجديدة
       hotkeySettings = { key: newKey, commandId, commandType, active };
       await updateHotkeyRegistration();
-      await loadHotkeyCommands();
-      await renderHotkeysList();
-      showMessage(`✅ تم تعيين الاختصار: ${newKey}`);
+      await _renderHotkeysListImpl();
+      showMessage(`<i class="fas fa-circle-check"></i> تم تعيين الاختصار: ${newKey}`);
       // ✅ تصفير الحقول بعد الحفظ حتى لا يبقى آخر أمر محددًا
       clearHotkeyFormFields();
       updateClearShortcutButton();
     } else {
       showHotkeyStatus(
-        "❌ فشل حفظ الإعدادات على السيرفر",
+        "<i class='fas fa-circle-xmark'></i> فشل حفظ الإعدادات على السيرفر",
         "var(--error-color, #f44336)",
       );
-      showMessage("❌ فشل حفظ الاختصار");
+      showMessage("<i class='fas fa-circle-xmark'></i> فشل حفظ الاختصار");
     }
-  } catch (err) {
-    console.error("❌ خطأ في saveHotkeySettings:", err);
-    showHotkeyStatus("❌ خطأ في الاتصال", "var(--error-color, #f44336)");
-    showMessage("❌ خطأ في الاتصال");
-  }
+    } catch (err) {
+      console.error("❌ خطأ في saveHotkeySettings:", err);
+      showHotkeyStatus("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال", "var(--error-color, #f44336)");
+      showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال");
+    }
+  });
 }
 
 // ملء القائمة المنسدلة بأسماء الأوامر
+// قائمة أوامر الهوت كي — النداءات المتزامنة تتنفذ بالترتيب
+// حتى لا تتداخل وتكرر الخيارات في القائمة المنسدلة
+let hotkeyCmdLoadChain = null;
 async function loadHotkeyCommands() {
+  const run = () => _loadHotkeyCommandsImpl();
+  if (hotkeyCmdLoadChain) return (hotkeyCmdLoadChain = hotkeyCmdLoadChain.then(run, run));
+  return (hotkeyCmdLoadChain = run());
+}
+
+async function _loadHotkeyCommandsImpl() {
   const select = document.getElementById("hotkeyCommandSelect");
   if (!select) return;
 
@@ -5370,7 +5772,7 @@ async function loadHotkeyCommands() {
       opt.dataset.id = g._id;
       opt.dataset.type = "gift";
       const giftName = g.name || g.giftName || "هدية";
-      opt.textContent = `🎁 ${giftName}`;
+      opt.textContent = giftName;
       if (
         hotkeySettings.commandId === g._id &&
         hotkeySettings.commandType === "gift"
@@ -5387,12 +5789,12 @@ async function loadHotkeyCommands() {
       opt.dataset.type = "interaction";
       const typeLabel =
         {
-          follow: "👤 متابعة",
-          like: "❤️ لايك",
-          comment: "💬 تعليق",
-          share: "🔁 مشاركة",
-          gift: "🎁 هدية",
-          all: "🌟 الكل",
+          follow: "متابعة",
+          like: "لايك",
+          comment: "تعليق",
+          share: "مشاركة",
+          gift: "هدية",
+          all: "الكل",
         }[cmd.type] || cmd.type;
       opt.textContent = `${typeLabel} - ${cmd.name || "بدون اسم"}`;
       if (
@@ -5410,12 +5812,25 @@ async function loadHotkeyCommands() {
     }
   } catch (err) {
     console.warn("⚠️ فشل تحميل الأوامر لقائمة hotkey", err);
-    select.innerHTML = '<option value="">❌ فشل تحميل الأوامر</option>';
+    select.innerHTML = '<option value=""><i class="fas fa-circle-xmark"></i> فشل تحميل الأوامر</option>';
   }
 }
 
 // عرض قائمة Hotkey المسجلة
-async function renderHotkeysList() {
+async function renderHotkeysList(force) {
+  return withHotkeySkeleton(() => _renderHotkeysListImpl(), force);
+}
+
+// رسم قائمة الاختصارات — النداءات المتزامنة تتنفذ بالترتيب
+// حتى لا تتداخل وتضاعف الصفوف في الجدول
+let hotkeyRenderChain = null;
+function _renderHotkeysListImpl() {
+  const run = () => _renderHotkeysListNow();
+  if (hotkeyRenderChain) return (hotkeyRenderChain = hotkeyRenderChain.then(run, run));
+  return (hotkeyRenderChain = run());
+}
+
+async function _renderHotkeysListNow() {
   const tbody = document.getElementById("hotkeysTbody");
   if (!tbody) return;
 
@@ -5427,7 +5842,7 @@ async function renderHotkeysList() {
     td.style.textAlign = "center";
     td.style.padding = "20px";
     td.style.color = "#888";
-    td.textContent = text;
+    td.textContent = window.AppI18n ? AppI18n.t(text) : text;
     tr.appendChild(td);
     tbody.appendChild(tr);
   };
@@ -5438,7 +5853,7 @@ async function renderHotkeysList() {
     );
     const data = await res.json();
     if (!data.success || !Array.isArray(data.hotkeys)) {
-      emptyRow("❌ فشل تحميل الاختصارات");
+      emptyRow("<i class='fas fa-circle-xmark'></i> فشل تحميل الاختصارات");
       return;
     }
     window.currentHotkeys = data.hotkeys;
@@ -5478,12 +5893,56 @@ async function renderHotkeysList() {
 
       const tdType = document.createElement("td");
       tdType.style.textAlign = "center";
-      tdType.textContent = hk.commandType === "gift" ? "هدية" : "تفاعل";
+      // نوع الأمر بالاسم: لايك/متابعة/تعليق/مشاركة/هدية
+      const hotkeyTypeLabels = {
+        like: "لايك",
+        follow: "متابعة",
+        comment: "تعليق",
+        share: "مشاركة",
+        gift: "هدية",
+        all: "الكل",
+      };
+      tdType.textContent =
+        window.AppI18n
+          ? AppI18n.t(
+              hk.commandType === "gift"
+                ? "هدية"
+                : hotkeyTypeLabels[cmd && cmd.type] || "تفاعل",
+            )
+          : hk.commandType === "gift"
+            ? "هدية"
+            : hotkeyTypeLabels[cmd && cmd.type] || "تفاعل";
       tr.appendChild(tdType);
 
       const tdGift = document.createElement("td");
       tdGift.style.textAlign = "center";
-      tdGift.textContent = cmd && cmd.giftId ? `🎁 ${cmd.giftId}` : "";
+      if (cmd && (cmd.__type || hk.commandType) === "gift") {
+        // هدية — صورة الهدية نفسها بدل الـ ID
+        const rawImgUrl = getGiftImage(cmd.giftId);
+        const safeImg = safeImageUrl(rawImgUrl);
+        const safeTitle = escapeHtml(cmd.giftName || cmd.name || "");
+        tdGift.innerHTML = `<img src="${safeImg}" style="width:30px;height:30px;object-fit:cover;border-radius:4px;vertical-align:middle;" onerror="this.style.display='none'" title="${safeTitle}">`;
+      } else if (cmd) {
+        // تفاعل — أيقونة نوعه (لايك/متابعة/تعليق/مشاركة)
+        let iconFile = "";
+        switch (cmd.type || "") {
+          case "like":
+            iconFile = "like.png";
+            break;
+          case "follow":
+            iconFile = "follow.png";
+            break;
+          case "share":
+            iconFile = "share.png";
+            break;
+          case "comment":
+            iconFile = "comment.png";
+            break;
+          default:
+            iconFile = "default.png";
+        }
+        tdGift.innerHTML = `<img src="images/${iconFile}" style="width:30px;height:30px;object-fit:cover;border-radius:4px;vertical-align:middle;" onerror="this.style.display='none'" title="${escapeHtml(cmd.type || "")}">`;
+      }
       tr.appendChild(tdGift);
 
       const tdActive = document.createElement("td");
@@ -5500,7 +5959,7 @@ async function renderHotkeysList() {
       tdActions.style.textAlign = "center";
       const editBtn = document.createElement("button");
       editBtn.className = "hotkey-edit-btn";
-      editBtn.textContent = "✏️";
+      editBtn.innerHTML = '<i class="fas fa-pen-to-square"></i>';
       editBtn.title = "تعديل";
       editBtn.dataset.key = hk.key;
       editBtn.dataset.id = hk.commandId;
@@ -5509,7 +5968,7 @@ async function renderHotkeysList() {
       tdActions.appendChild(editBtn);
       const deleteBtn = document.createElement("button");
       deleteBtn.className = "hotkey-delete-btn";
-      deleteBtn.textContent = "🗑️";
+      deleteBtn.innerHTML = '<i class="fas fa-trash-can"></i>';
       deleteBtn.title = "حذف";
       deleteBtn.dataset.key = hk.key;
       tdActions.appendChild(deleteBtn);
@@ -5521,9 +5980,10 @@ async function renderHotkeysList() {
     attachHotkeyToggleEvents(tbody);
     attachHotkeyDeleteEvents(tbody);
     attachHotkeyEditEvents(tbody);
+    if (window.AppI18n) AppI18n.applyDOM();
   } catch (err) {
     console.warn("⚠️ فشل عرض قائمة الاختصارات", err);
-    emptyRow("❌ فشل تحميل الاختصارات");
+    emptyRow("<i class='fas fa-circle-xmark'></i> فشل تحميل الاختصارات");
   }
 }
 
@@ -5539,14 +5999,15 @@ async function handleToggleChange(e) {
   const key = cb.dataset.key;
   const active = cb.checked;
 
-  try {
+  return withHotkeyChange(async () => {
+    try {
     const res = await fetchWithAuth(
       `${API_BASE}/api/hotkey${hotkeyProfileQuery()}`,
     );
     const data = await res.json();
     const hk = data.hotkeys.find((h) => h.key === key);
     if (!hk) {
-      showMessage("❌ لم يتم العثور على الاختصار");
+      showMessage("<i class='fas fa-circle-xmark'></i> لم يتم العثور على الاختصار");
       cb.checked = !active;
       return;
     }
@@ -5565,34 +6026,21 @@ async function handleToggleChange(e) {
     });
 
     if (saveRes.ok) {
-      if (hotkeySettings.key === key) {
-        hotkeySettings.active = active;
-        applyHotkeySettings(); // تحديث الواجهة فوراً
-        await updateHotkeyRegistration(); // إعادة تسجيل الاختصار أو إلغاءه
-      } else {
-        if (window.electronAPI && window.electronAPI.hotkey) {
-          await window.electronAPI.hotkey.unregister(key);
-          if (active) {
-            await window.electronAPI.hotkey.register(
-              hk.key,
-              hk.commandId,
-              hk.commandType,
-            );
-          }
-        }
-      }
-      showMessage(`✅ ${active ? "تفعيل" : "إلغاء تفعيل"} الاختصار ${hk.key}`);
-      await renderHotkeysList();
-      await loadHotkeySettings(); // لتحديث hotkeySettings إذا تغير الاختصار النشط
+      if (hotkeySettings.key === key) hotkeySettings.active = active;
+      showMessage(`<i class="fas fa-circle-check"></i> ${active ? "تفعيل" : "إلغاء تفعيل"} الاختصار ${hk.key}`);
+      // إعادة تسجيل كل الاختصارات الفعالة من السيرفر (يلغي القديم ويسجل الجديد)
+      await updateHotkeyRegistration();
+      await _renderHotkeysListImpl();
     } else {
-      showMessage("❌ فشل تحديث الحالة");
+      showMessage("<i class='fas fa-circle-xmark'></i> فشل تحديث الحالة");
       cb.checked = !active;
     }
-  } catch (err) {
-    console.error(err);
-    showMessage("❌ خطأ في الاتصال");
-    cb.checked = !active;
-  }
+    } catch (err) {
+      console.error(err);
+      showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال");
+      cb.checked = !active;
+    }
+  });
 }
 
 function attachHotkeyDeleteEvents(tbody) {
@@ -5634,7 +6082,7 @@ async function handleEditClick(e) {
     if (option) {
       select.value = option.value;
     } else {
-      showMessage("⚠️ الأمر غير موجود في القائمة (ربما محذوف)");
+      showMessage("<i class='fas fa-triangle-exclamation'></i> الأمر غير موجود في القائمة (ربما محذوف)");
       return;
     }
   }
@@ -5646,7 +6094,7 @@ async function handleEditClick(e) {
 
   const saveBtn = document.getElementById("saveHotkeyBtn");
   if (saveBtn) {
-    saveBtn.textContent = "💾 تحديث الاختصار";
+    saveBtn.innerHTML = '<i class="fas fa-floppy-disk"></i> تحديث الاختصار';
     saveBtn.style.backgroundColor = "#ff9800";
   }
 
@@ -5654,7 +6102,7 @@ async function handleEditClick(e) {
     .querySelector(".hotkey-settings")
     ?.scrollIntoView({ behavior: "smooth", block: "start" });
   showMessage(
-    `✅ تم تحميل بيانات الاختصار "${key}" للتعديل. اضغط "تحديث الاختصار" لتطبيق التغييرات.`,
+    `<i class="fas fa-circle-check"></i> تم تحميل بيانات الاختصار "${key}" للتعديل. اضغط "تحديث الاختصار" لتطبيق التغييرات.`,
   );
 }
 
@@ -5668,7 +6116,8 @@ async function handleDeleteClick(e) {
   );
   if (!confirmed) return;
 
-  try {
+  return withHotkeyChange(async () => {
+    try {
     const res = await fetchWithAuth(
       `${API_BASE}/api/hotkey/${encodeURIComponent(key)}${hotkeyProfileQuery()}`,
       { method: "DELETE" },
@@ -5688,18 +6137,17 @@ async function handleDeleteClick(e) {
         };
         // لا نستدعي clearHotkeyFormFields هنا، بل نترك loadHotkeySettings يعيد تعبئة الحقول
       }
-      showMessage(`✅ تم حذف الاختصار ${key}`);
-      await renderHotkeysList();
-      await loadHotkeyCommands();
-      // إعادة تحميل الإعدادات بالكامل لعرض الاختصار الجديد (أو فارغ)
-      await loadHotkeySettings();
+      showMessage(`<i class="fas fa-circle-check"></i> تم حذف الاختصار ${key}`);
+      await updateHotkeyRegistration();
+      await _renderHotkeysListImpl();
     } else {
-      showMessage("❌ فشل حذف الاختصار");
+      showMessage("<i class='fas fa-circle-xmark'></i> فشل حذف الاختصار");
     }
-  } catch (err) {
-    console.error(err);
-    showMessage("❌ خطأ في الاتصال");
-  }
+    } catch (err) {
+      console.error(err);
+      showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال");
+    }
+  });
 }
 
 // ===== معالج حفظ الاختصار من مودال الكيبورد =====
@@ -5710,7 +6158,7 @@ function handleSaveShortcut() {
   const shift = document.getElementById("modalModShift").checked;
 
   if (!key) {
-    showMessage("⚠️ يرجى اختيار مفتاح");
+    showMessage("<i class='fas fa-triangle-exclamation'></i> يرجى اختيار مفتاح");
     return;
   }
 
@@ -5734,7 +6182,7 @@ function handleSaveShortcut() {
 
   // ✅ إغلاق المودال
   closeKeyboardShortcutModal();
-  showMessage(`✅ تم اختيار المفتاح: ${combo}`);
+  showMessage(`<i class="fas fa-circle-check"></i> تم اختيار المفتاح: ${combo}`);
 }
 
 // ===== ربط أحداث Hotkey =====
@@ -5780,7 +6228,7 @@ function setupHotkeyEvents() {
     window._hotkeyExecuteListener = (data) => {
       if (data.commandId && data.commandType) {
         console.log(
-          `⚡ تنفيذ Hotkey للأمر: ${data.commandId} (${data.commandType})`,
+          `<i class="fas fa-bolt"></i> تنفيذ Hotkey للأمر: ${data.commandId} (${data.commandType})`,
         );
         executeCommand(data.commandId, data.commandType);
       }
@@ -5931,14 +6379,50 @@ async function init() {
       if (!file) return;
       const formData = new FormData();
       formData.append("audio", file);
-      showMessage("⏳ جاري رفع الصوت...");
+      showMessage("<i class='fas fa-spinner fa-spin'></i> جاري رفع الصوت...");
       pendingUploads.audio = (async () => {
         try {
-          const res = await fetchWithAuth(`${API_BASE}/api/upload-audio`, {
-            method: "POST",
-            body: formData,
+          // رفع بـ XHR لعرض شريط تقدم حقيقي (fetch لا يدعم progress)
+          const data = await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            window.__audioXhr = xhr;
+            xhr.open("POST", `${API_BASE}/api/upload-audio`);
+            const authHeaders = window.__getAuthHeaders
+              ? window.__getAuthHeaders()
+              : {};
+            for (const [k, v] of Object.entries(authHeaders))
+              xhr.setRequestHeader(k, v);
+            xhr.withCredentials = true;
+            xhr.upload.onprogress = (e) => {
+              if (e.lengthComputable) {
+                const pct = Math.round((e.loaded / e.total) * 100);
+                const box = document.getElementById("audioProgressContainer");
+                const bar = document.getElementById("audioProgress");
+                if (box) box.style.display = "block";
+                if (bar) {
+                  bar.value = pct;
+                  bar.textContent = pct + "%";
+                }
+                const sp = document.getElementById("audioProgressPercent");
+                if (sp) sp.textContent = pct + "%";
+              }
+            };
+            xhr.onload = () => {
+              window.__audioXhr = null;
+              try {
+                resolve(JSON.parse(xhr.responseText));
+              } catch (e) {
+                resolve({ success: xhr.status >= 200 && xhr.status < 300 });
+              }
+            };
+            xhr.onabort = () => {
+              window.__audioXhr = null;
+              resolve({ success: false, aborted: true });
+            };
+            xhr.onerror = () => reject(new Error("network"));
+            xhr.send(formData);
           });
-          const data = await res.json();
+          if (data.aborted) return;
           if (data.success) {
             if (uploadsCancelled) {
               // الرفع أُلغي أثناء التنفيذ: نحذف الملف المؤقت فوراً
@@ -5950,12 +6434,12 @@ async function init() {
             document.querySelector("#audioDropdown .selected").textContent =
               data.filename;
             document.getElementById("audioSelect").value = data.filename;
-            showMessage("✅ تم رفع الصوت بنجاح");
+            showMessage("<i class='fas fa-circle-check'></i> تم رفع الصوت بنجاح");
           } else {
-            showMessage("❌ فشل رفع الصوت: " + (data.message || ""));
+            showMessage("<i class='fas fa-circle-xmark'></i> فشل رفع الصوت: " + (data.message || ""));
           }
         } catch (err) {
-          showMessage("❌ خطأ في الاتصال");
+          showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال");
         } finally {
           pendingUploads.audio = null;
         }
@@ -5969,14 +6453,48 @@ async function init() {
       if (!file) return;
       const formData = new FormData();
       formData.append("video", file);
-      showMessage("⏳ جاري رفع الفيديو...");
+      showMessage("<i class='fas fa-spinner fa-spin'></i> جاري رفع الفيديو...");
       pendingUploads.video = (async () => {
         try {
-          const res = await fetchWithAuth(`${API_BASE}/api/upload-video`, {
-            method: "POST",
-            body: formData,
+          const data = await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            window.__videoXhr = xhr;
+            xhr.open("POST", `${API_BASE}/api/upload-video`);
+            const authHeaders2 = window.__getAuthHeaders
+              ? window.__getAuthHeaders()
+              : {};
+            for (const [k, v] of Object.entries(authHeaders2))
+              xhr.setRequestHeader(k, v);
+            xhr.withCredentials = true;
+            xhr.upload.onprogress = (e) => {
+              if (e.lengthComputable) {
+                const pct = Math.round((e.loaded / e.total) * 100);
+                const box = document.getElementById("videoProgressContainer");
+                const bar = document.getElementById("videoProgress");
+                if (box) box.style.display = "block";
+                if (bar) {
+                  bar.value = pct;
+                  bar.textContent = pct + "%";
+                }
+                const sp = document.getElementById("videoProgressPercent");
+                if (sp) sp.textContent = pct + "%";
+              }
+            };
+            xhr.onload = () => {
+              window.__videoXhr = null;
+              try {
+                resolve(JSON.parse(xhr.responseText));
+              } catch (e) {
+                resolve({ success: xhr.status >= 200 && xhr.status < 300 });
+              }
+            };
+            xhr.onabort = () => {
+              window.__videoXhr = null;
+              resolve({ success: false, aborted: true });
+            };
+            xhr.onerror = () => reject(new Error("network"));
+            xhr.send(formData);
           });
-          const data = await res.json();
           if (data.success) {
             if (uploadsCancelled) {
               // الرفع أُلغي أثناء التنفيذ: نحذف الملف المؤقت فوراً
@@ -5987,12 +6505,12 @@ async function init() {
             document.getElementById("video").value = data.filename;
             document.getElementById("videoFileName").textContent =
               data.filename;
-            showMessage("✅ تم رفع الفيديو بنجاح");
+            showMessage("<i class='fas fa-circle-check'></i> تم رفع الفيديو بنجاح");
           } else {
-            showMessage("❌ فشل رفع الفيديو: " + (data.message || ""));
+            showMessage("<i class='fas fa-circle-xmark'></i> فشل رفع الفيديو: " + (data.message || ""));
           }
         } catch (err) {
-          showMessage("❌ خطأ في الاتصال");
+          showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال");
         } finally {
           pendingUploads.video = null;
         }
@@ -6001,10 +6519,25 @@ async function init() {
 
   await connectFrontendSocket();
   await initHotkey();
+  hotkeySectionLoaded = true;
   startStreamerUpdates();
 
   // ✅ طلب أولي للحالة
-  checkLiveStatus();
+  await checkLiveStatus();
+  // الحالة المتبقية من جلسة سابقة: الخادم قد يظن المستخدم متصلاً — تصفير فوري
+  if (isLiveConnected) {
+    await performDisconnect(true);
+  }
+  // فحص دوري كل 30 ثانية — انتهاء البث يظهر تلقائياً بدون تدخل
+  if (liveCheckInterval) clearInterval(liveCheckInterval);
+  liveCheckInterval = setInterval(() => checkLiveStatus(), 15000);
+  // سحب الإشعارات النشطة دورياً — يضمن ظهورها حتى لو بث السوكت غير متاح
+  fetchAndShowNotification();
+  setInterval(() => fetchAndShowNotification(), 5000);
+
+  // البيانات جاهزة — إخفاء صفحة السكيلتون الافتتاحية فوراً (بدون انتظار مهلة الأمان)
+  if (window.Skeleton && window.Skeleton.hideAppSkeleton)
+    window.Skeleton.hideAppSkeleton();
 }
 
 init();
@@ -6043,6 +6576,25 @@ function handleKeyClick(e) {
     .querySelectorAll(".kb-key")
     .forEach((el) => el.classList.remove("selected"));
   key.classList.add("selected");
+  // أزرار النام باد تُسجل بأسمائها المستقلة (Num7 لا 7) حتى يستجيب لها الهوت كي
+  if (key.classList.contains("numpad")) {
+    const np = key.textContent.trim();
+    const npMap = {
+      ".": "Num.",
+      "/": "Num/",
+      "-": "Num-",
+      "+": "+",
+      "*": "*",
+      "↵": "NumEnter",
+      Num: "Num",
+    };
+    const mapped = /^\d$/.test(np) ? "Num" + np : npMap[np];
+    if (mapped) {
+      document.getElementById("modalSelectedKey").value = mapped;
+      document.getElementById("modalSelectedKeyDisplay").textContent = mapped;
+      return;
+    }
+  }
   let keyText = key.textContent.trim();
   if (keyText === "⌫ Back") keyText = "Backspace";
   else if (keyText === "↵ Enter") keyText = "Enter";
@@ -6115,7 +6667,7 @@ document.addEventListener("DOMContentLoaded", function () {
       const alt = document.getElementById("modalModAlt").checked;
       const shift = document.getElementById("modalModShift").checked;
       if (!key) {
-        showMessage("⚠️ يرجى اختيار مفتاح");
+        showMessage("<i class='fas fa-triangle-exclamation'></i> يرجى اختيار مفتاح");
         return;
       }
       let combo = "";
@@ -6128,7 +6680,7 @@ document.addEventListener("DOMContentLoaded", function () {
       currentShortcutCombo = combo;
       updateClearShortcutButton();
       closeKeyboardShortcutModal();
-      showMessage("✅ تم تعيين الاختصار: " + combo);
+      showMessage("<i class='fas fa-circle-check'></i> تم تعيين الاختصار: " + combo);
     });
   }
   const closeModalBtn = document.querySelector(
@@ -6137,6 +6689,27 @@ document.addEventListener("DOMContentLoaded", function () {
   if (closeModalBtn)
     closeModalBtn.addEventListener("click", closeKeyboardShortcutModal);
 });
+
+// ============================================================
+// التجاوب: زر القائمة الجانبية على الشاشات الصغيرة
+// ============================================================
+(function () {
+  const toggle = document.getElementById("sidebarToggle");
+  const backdrop = document.getElementById("sidebarBackdrop");
+  const closeSidebar = () => document.body.classList.remove("sidebar-open");
+  if (toggle)
+    toggle.addEventListener("click", () =>
+      document.body.classList.toggle("sidebar-open"),
+    );
+  if (backdrop) backdrop.addEventListener("click", closeSidebar);
+  // اختيار أي قسم يغلق السايد بار المنزلق
+  document.querySelectorAll(".button-select-slide").forEach((el) =>
+    el.addEventListener("click", closeSidebar),
+  );
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 1100) closeSidebar();
+  });
+})();
 
 // ============================================================
 // دوال التنقل في القائمة الجانبية
@@ -6164,8 +6737,16 @@ if (hotkeyNav && startSectionHotkey) {
       .querySelectorAll(".button-select-slide")
       .forEach((el) => el.classList.remove("active"));
     this.classList.add("active");
-    loadHotkeyCommands();
-    applyHotkeySettings();
+    // السكيلتون والتحميل في أول زيارة فقط — الزيارات التالية تعرض القسم فوراً
+    // (القائمة تتحدث تلقائياً عند أي حفظ/حذف/تفعيل لاختصار)
+    if (!hotkeySectionLoaded) {
+      withSectionSkeleton(startSectionHotkey, async () => {
+        await loadHotkeyCommands();
+        await applyHotkeySettings();
+      }, { build: () => window.Skeleton.hotkeyPage() })
+        .then(() => { hotkeySectionLoaded = true; })
+        .catch(() => {});
+    }
   };
 }
 
@@ -6193,8 +6774,7 @@ if (allNav) {
     if (startSectionHotkey) startSectionHotkey.style.display = "none";
     if (startSection5) startSection5.style.display = "none";
     if (currentUserRole === "admin") {
-      startSection4.style.display = "block";
-      if (typeof loadAdminDashboard === "function") loadAdminDashboard();
+      startSection4.style.display = "block"; // البيانات محملة مسبقاً عند الفتح
     } else {
       startSection4.style.display = "none";
     }
@@ -6344,11 +6924,39 @@ async function connectFrontendSocket() {
       frontendSocket = null;
     }
 
-    const token = getAuthToken();
+    // ✅ ضمان توكن قبل الاتصال: لو مش مخزن — تجديده من الكوكيز أولاً
+    let token = getAuthToken();
+    if (!token) {
+      try {
+        const r = await fetch(`${API_BASE}/api/auth/refresh`, {
+          method: "POST",
+          credentials: "include",
+        });
+        if (r.ok) {
+          const d = await r.json().catch(() => ({}));
+          const t = d.token || getCookie("token");
+          if (t) {
+            saveAuthToken(t);
+            token = t;
+          }
+        }
+      } catch (e) {}
+    }
     frontendSocket = io(API_BASE, {
       withCredentials: true,
-      transports: ["websocket", "polling"],
-      auth: { token },
+      // polling أولاً: مصادقة المصافحة تعتمد على كوكي httpOnly الذي لا
+      // يُرسل مع websocket handshake من أصل التطبيق — بعد المصادقة تتم
+      // الترقية لـ websocket تلقائياً
+      transports: ["polling", "websocket"],
+      // دالة auth: كل محاولة اتصال/إعادة اتصال تأخذ أحدث توكن مخزَّن —
+      // فلو وصل بعد ما حفظ التوكن تتصل بنجاح بدون إعادة تشغيل
+      auth: (cb) =>
+        cb({
+          token: getAuthToken(),
+          deviceId: getDeviceId(),
+          // بصمة العتاد — توحيد مفتاح الجلسة مع وكيل الأوامر (حراسة الجهاز الواحد)
+          machineId: window.electronAPI?.getMachineIdSync?.() || "",
+        }),
     });
 
     let reconnectAttempts = 0;
@@ -6370,7 +6978,7 @@ async function connectFrontendSocket() {
     // ===== ✅ تحديث فوري لحالة اشتراك المستخدم (تفعيل/إلغاء) =====
     frontendSocket.on("plan-updated", () => {
       console.log("💎 [PLAN] تم تحديث خطة الاشتراك — إعادة تحميل");
-      showMessage("💎 تم تحديث حالة اشتراكك");
+      showMessage("<i class='fas fa-gem'></i> تم تحديث حالة اشتراكك");
       setTimeout(() => window.location.reload(), 1200);
     });
 
@@ -6418,8 +7026,8 @@ async function connectFrontendSocket() {
           setCell("cell-gifts-today", String(user.giftsToday ?? 0));
           setCell("cell-gifts-month", String(user.giftsThisMonth ?? 0));
           const liveHtml = user.isLiveNow
-            ? '<span class="status-live">🟢 مباشر</span>'
-            : '<span class="status-offline">⚫ غير متصل</span>';
+            ? '<span class="status-live"><i class="fas fa-circle" style="color:#4caf50"></i> مباشر</span>'
+            : '<span class="status-offline"><i class="fas fa-circle" style="color:#444"></i> غير متصل</span>';
           setCell("cell-live", liveHtml);
           const planHtml = user.plan === "paid"
             ? '<span class="badge-paid">مدفوع</span>'
@@ -6449,7 +7057,7 @@ async function connectFrontendSocket() {
             deviceEl.onclick = () =>
               navigator.clipboard
                 .writeText(uid)
-                .then(() => showMessage("📋 تم نسخ البصمة"));
+                .then(() => showMessage("<i class='fas fa-clipboard'></i> تم نسخ البصمة"));
             deviceEl.textContent = deviceCell;
           }
           setCell("cell-commands", String(user.commandCount ?? 0));
@@ -6466,33 +7074,57 @@ async function connectFrontendSocket() {
       }
     };
 
+    // شبكة أمان: تحديث خفيف في المكان كل 5 ثوانٍ أثناء ظهور اللوحة فقط —
+    // يضمن ألا يبقى رقم قديماً لو حدث ما وصل بثه من نسخة الخادم الحالية
+    setInterval(() => {
+      const sec4 = document.getElementById("startSection4");
+      if (
+        sec4 &&
+        sec4.style.display === "block" &&
+        document.visibilityState === "visible" &&
+        typeof window.refreshAdminDataInPlace === "function"
+      ) {
+        window.refreshAdminDataInPlace().catch(() => {});
+      }
+    }, 5000);
+
     frontendSocket.on("admin-refresh", (data) => {
       console.log("📡 [ADMIN] تحديث فوري للوحة التحكم:", data?.reason);
       const adminContainer = document.getElementById(
         "adminDashboardContainer",
       );
       if (!adminContainer || !adminContainer.innerHTML.trim()) return;
+      if (data?.reason === "block-evasion") {
+        showMessage(
+          "<i class='fas fa-triangle-exclamation'></i> محاولة تهرب من حظر جهاز — تم توسيع الحظر تلقائياً",
+        );
+      }
       const structural = [
         "user-registered",
         "user-deleted",
         "device-blocked",
         "device-unblocked",
         "notification",
+        "block-evasion",
       ].includes(data?.reason);
+      // تجميع الأحداث المتلاحقة 250ms فقط — ثم تحديث مضمون:
+      // لو حدثنا قريباً نعيد الجدولة بعد الثانية بدل إسقاط التحديث
       clearTimeout(adminRefreshTimer);
-      adminRefreshTimer = setTimeout(
-        () => {
-          if (Date.now() - lastAdminRefresh < 2000) return;
-          lastAdminRefresh = Date.now();
-          if (structural || typeof refreshAdminDataInPlace !== "function") {
-            if (typeof loadAdminDashboard === "function")
-              loadAdminDashboard().catch(() => {});
-          } else {
-            refreshAdminDataInPlace();
-          }
-        },
-        800,
-      );
+      const runAdminRefresh = () => {
+        const since = Date.now() - lastAdminRefresh;
+        if (since < 1000) {
+          adminRefreshTimer = setTimeout(runAdminRefresh, 1000 - since);
+          return;
+        }
+        lastAdminRefresh = Date.now();
+        if (structural || typeof refreshAdminDataInPlace !== "function") {
+          if (typeof loadAdminDashboard === "function")
+            loadAdminDashboard().catch(() => {});
+        } else {
+          refreshAdminDataInPlace();
+        }
+      };
+      adminRefreshTimer = setTimeout(runAdminRefresh, 250);
     });
 
     // ===== ✅ مستمع التحديث الفوري لحالة البث =====
@@ -6543,6 +7175,21 @@ async function connectFrontendSocket() {
     });
 
     // ===== ✅ مستمع الإشعارات الفورية من الأدمن =====
+    // ✅ الحظر الفوري: الخادم يطرد الجلسة ويبلغ الواجهة بشاشة الحظر
+    frontendSocket.on("account-blocked", (data) => {
+      console.log("🚫 [BLOCKED] تم حظر الحساب");
+      showBlockScreen(data?.reason || "");
+    });
+
+    // ✅ تنبيهات أمنية — تصل للأدمن فقط (غرفة admins في الخادم)
+    frontendSocket.on("security-alert", (data) => {
+      if (currentUserRole !== "admin") return;
+      showMessage(
+        "<i class='fas fa-shield-halved' style='color:#ff9800'></i> " +
+          (data?.message || "تنبيه أمني"),
+      );
+    });
+
     frontendSocket.on("new-notification", (notification) => {
       const dismissed = getDismissedNotifications();
       if (!dismissed.includes(notification._id)) {
@@ -6598,8 +7245,19 @@ async function connectFrontendSocket() {
       console.warn("⚠️ خطأ في اتصال Socket.IO (فرونت):", err.message);
     });
 
+    // 🔒 تعارض جلسة: نفس الحساب/اليوزر مفتوح من جهاز آخر — الأقدم يبقى والأحدث يُطرد
+    frontendSocket.on("session-conflict", (data) => {
+      console.warn("🔒 [session-conflict]", data?.reason || "");
+      sessionConflictHit = true;
+      try {
+        frontendSocket.disconnect();
+      } catch (e) {}
+      forceSessionLogout(data?.reason);
+    });
+
     frontendSocket.on("disconnect", (reason) => {
       console.log(`❌ فرونت قطع اتصال Socket.IO: ${reason}`);
+      if (sessionConflictHit) return; // الجلسة مطرودة — لا إعادة اتصال
       if (isEditingUsername) return;
       if (reason === "io server disconnect") {
         frontendSocket.connect();
@@ -6607,6 +7265,7 @@ async function connectFrontendSocket() {
       }
       const delay = Math.min(30000, 1000 * Math.pow(2, reconnectAttempts));
       setTimeout(() => {
+        if (sessionConflictHit) return;
         reconnectAttempts++;
         frontendSocket.connect();
       }, delay);
@@ -6707,7 +7366,7 @@ function clearAudio() {
       body: JSON.stringify(body),
     })
       .then(() => {
-        showMessage("✅ تم إزالة الصوت من الأمر");
+        showMessage("<i class='fas fa-circle-check'></i> تم إزالة الصوت من الأمر");
         document.getElementById("audioSelect").value = "";
         document.querySelector("#audioDropdown .selected").textContent =
           "اختر صوت...";
@@ -6716,7 +7375,7 @@ function clearAudio() {
           currentAudio.currentTime = 0;
         }
       })
-      .catch(() => showMessage("❌ فشل تحديث الأمر"));
+      .catch(() => showMessage("<i class='fas fa-circle-xmark'></i> فشل تحديث الأمر"));
     return;
   }
 
@@ -6756,14 +7415,14 @@ function clearVideo() {
       body: JSON.stringify({ video: "" }),
     })
       .then(() => {
-        showMessage("✅ تم إزالة الفيديو من الأمر");
+        showMessage("<i class='fas fa-circle-check'></i> تم إزالة الفيديو من الأمر");
         document.getElementById("video").value = "";
         document.getElementById("videoInput").value = "";
         document.getElementById("videoPreview").innerHTML = "";
         document.getElementById("videoFileName").textContent = "";
         checkStorageNotifications();
       })
-      .catch(() => showMessage("❌ فشل تحديث الأمر"));
+      .catch(() => showMessage("<i class='fas fa-circle-xmark'></i> فشل تحديث الأمر"));
     return;
   }
 
@@ -6776,7 +7435,7 @@ function clearVideo() {
 function confirmDeleteAll() {
   const profileId = getSelectedProfileId();
   if (!profileId) {
-    showMessage("⚠️ لم يتم تحديد بروفايل");
+    showMessage("<i class='fas fa-triangle-exclamation'></i> لم يتم تحديد بروفايل");
     return;
   }
   const profileName = profileNames[profileId] || `Profile ${profileId}`;
@@ -6800,7 +7459,7 @@ async function deleteAll() {
   try {
     const profileId = getSelectedProfileId();
     if (!profileId) {
-      showMessage("⚠️ لازم تختار Profile قبل الحذف");
+      showMessage("<i class='fas fa-triangle-exclamation'></i> لازم تختار Profile قبل الحذف");
       closeModal();
       return;
     }
@@ -6839,15 +7498,15 @@ async function deleteAll() {
     }
     if (ok)
       showMessage(
-        `🗑 تم حذف أوامر Profile ${profileId} — ${messages.join(" | ")}`,
+        `<i class="fas fa-trash-can"></i> تم حذف أوامر Profile ${profileId} — ${messages.join(" | ")}`,
       );
-    else showMessage(`⚠️ حصلت مشاكل أثناء الحذف — راجع الكونسول`);
+    else showMessage(`<i class="fas fa-triangle-exclamation"></i> حصلت مشاكل أثناء الحذف — راجع الكونسول`);
     await loadCommands();
     await checkStorageNotifications();
     closeModal();
   } catch (err) {
     console.error("خطأ أثناء deleteAll:", err);
-    showMessage("❌ خطأ أثناء الحذف");
+    showMessage("<i class='fas fa-circle-xmark'></i> خطأ أثناء الحذف");
     closeModal();
   }
 }
@@ -7002,15 +7661,15 @@ function renderPayPalButton() {
         );
         const result = await res.json();
         if (result.success) {
-          alert("✅ تم تفعيل الاشتراك بنجاح! سيتم تحديث الصفحة.");
+          alert("<i class='fas fa-circle-check'></i> تم تفعيل الاشتراك بنجاح! سيتم تحديث الصفحة.");
           location.reload();
         } else {
           alert(
-            "❌ فشل تفعيل الاشتراك: " + (result.message || "خطأ غير معروف"),
+            "<i class='fas fa-circle-xmark'></i> فشل تفعيل الاشتراك: " + (result.message || "خطأ غير معروف"),
           );
         }
       } catch (err) {
-        alert("❌ خطأ في الاتصال بالخادم");
+        alert("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال بالخادم");
       }
     },
     onError: (err) => {
@@ -7056,7 +7715,7 @@ if (window.electronAPI) {
   try {
     require("electron").ipcRenderer.on("payment-closed", async () => {
       await updateAuthUI();
-      showMessage("🔄 تم تحديث حالة الاشتراك");
+      showMessage("<i class='fas fa-rotate'></i> تم تحديث حالة الاشتراك");
     });
   } catch {}
 }
@@ -7066,17 +7725,17 @@ function validatePasswordStrength(password) {
   if (typeof password !== "string" || password.length === 0)
     return { valid: false, message: "أدخل كلمة المرور" };
   if (password.length < 8)
-    return { valid: false, message: "❌ يجب أن تكون 8 أحرف على الأقل" };
+    return { valid: false, message: "<i class='fas fa-circle-xmark'></i> يجب أن تكون 8 أحرف على الأقل" };
   if (!/[a-z]/.test(password))
-    return { valid: false, message: "❌ أضف حرفاً صغيراً (a-z)" };
+    return { valid: false, message: "<i class='fas fa-circle-xmark'></i> أضف حرفاً صغيراً (a-z)" };
   // ❌ تم إزالة شرط الحرف الكبير
   // if (!/[A-Z]/.test(password))
   //   return { valid: false, message: "❌ أضف حرفاً كبيراً (A-Z)" };
   if (!/\d/.test(password))
-    return { valid: false, message: "❌ أضف رقماً (0-9)" };
+    return { valid: false, message: "<i class='fas fa-circle-xmark'></i> أضف رقماً (0-9)" };
   if (!/[^A-Za-z0-9]/.test(password))
-    return { valid: false, message: "❌ أضف رمزاً خاصاً (!@#$%...)" };
-  return { valid: true, message: "✅ كلمة المرور قوية" };
+    return { valid: false, message: "<i class='fas fa-circle-xmark'></i> أضف رمزاً خاصاً (!@#$%...)" };
+  return { valid: true, message: "<i class='fas fa-circle-check'></i> كلمة المرور قوية" };
 }
 
 const registerPasswordInput = document.getElementById("register-password");
@@ -7099,11 +7758,14 @@ function setupPasswordToggle(inputId, toggleId) {
   toggle.addEventListener("click", () => {
     const show = input.type === "password";
     input.type = show ? "text" : "password";
-    toggle.textContent = show ? "🙈" : "👁";
+    toggle.innerHTML = show
+      ? '<i class="fas fa-eye-slash"></i>'
+      : '<i class="fas fa-eye"></i>';
   });
 }
 setupPasswordToggle("login-password", "login-password-toggle");
 setupPasswordToggle("register-password", "register-password-toggle");
+setupPasswordToggle("register-confirm-password", "register-confirm-toggle");
 
 function setBtnBusy(btn, busy, busyText) {
   if (!btn) return;
@@ -7111,10 +7773,10 @@ function setBtnBusy(btn, busy, busyText) {
   btn.style.opacity = busy ? "0.6" : "1";
   btn.style.pointerEvents = busy ? "none" : "auto";
   if (busy) {
-    btn.dataset.originalText = btn.textContent;
-    btn.textContent = busyText || "⏳ جارٍ المعالجة...";
+    btn.dataset.originalText = btn.innerHTML;
+    btn.innerHTML = busyText || "<i class='fas fa-spinner fa-spin'></i> جارٍ المعالجة...";
   } else if (btn.dataset.originalText) {
-    btn.textContent = btn.dataset.originalText;
+    btn.innerHTML = btn.dataset.originalText;
   }
 }
 
@@ -7123,7 +7785,7 @@ document.getElementById("login-submit").onclick = async function () {
   const email = document.getElementById("login-email").value;
   const password = document.getElementById("login-password").value;
   const msg = document.getElementById("login-message");
-  setBtnBusy(btn, true, "⏳ جارٍ تسجيل الدخول...");
+  setBtnBusy(btn, true, "<i class='fas fa-spinner fa-spin'></i> جارٍ تسجيل الدخول...");
   // مسح أي توكن/كوكيز قديم من جلسة سابقة قبل تسجيل الدخول
   // حتى لا يُستخدم توكن مرفوض في أول طلب بعد الـ reload
   saveAuthToken(null);
@@ -7180,10 +7842,10 @@ document.getElementById("register-submit").onclick = async function () {
   ).value;
   if (password !== confirmPassword) {
     msg.style.color = "#ff6b6b";
-    msg.textContent = "❌ كلمتا المرور غير متطابقتين";
+    msg.innerHTML = "<i class='fas fa-circle-xmark'></i> كلمتا المرور غير متطابقتين";
     return;
   }
-  setBtnBusy(btn, true, "⏳ جارٍ إنشاء الحساب...");
+  setBtnBusy(btn, true, "<i class='fas fa-spinner fa-spin'></i> جارٍ إنشاء الحساب...");
   try {
     const res = await fetch(`${API_BASE}/api/auth/register`, {
       method: "POST",
@@ -7221,7 +7883,7 @@ document.getElementById("register-submit").onclick = async function () {
 document.getElementById("logout-btn").onclick = async function () {
   const btn = this;
   btn.disabled = true;
-  btn.textContent = "⏳ جاري الخروج...";
+  btn.innerHTML = "<i class='fas fa-spinner fa-spin'></i> جاري الخروج...";
   // نداء الخروج من الخادم - ولو فشل نكمل التنظيف محلياً في كل الأحوال
   // حتى لا يعود التطبيق لفتح الحساب السابق عند تعدد الحسابات
   try {
@@ -7231,7 +7893,7 @@ document.getElementById("logout-btn").onclick = async function () {
     });
   } catch (err) {
     console.warn(
-      "⚠️ تعذر الوصول للخادم أثناء الخروج - تنظيف محلي:",
+      "<i class='fas fa-triangle-exclamation'></i> تعذر الوصول للخادم أثناء الخروج - تنظيف محلي:",
       err.message,
     );
   }
@@ -7305,7 +7967,7 @@ function setupCaptchaWatcher() {
           timestamp: Date.now(),
         });
       }
-      showMessage("⚠️ تم اكتشاف CAPTCHA، يرجى حلها في النافذة المنبثقة");
+      showMessage("<i class='fas fa-triangle-exclamation'></i> تم اكتشاف CAPTCHA، يرجى حلها في النافذة المنبثقة");
     } else if (!detected && captchaActive) {
       captchaActive = false;
       console.log("✅ CAPTCHA cleared!");
@@ -7315,7 +7977,7 @@ function setupCaptchaWatcher() {
           timestamp: Date.now(),
         });
       }
-      showMessage("✅ تم حل CAPTCHA، استئناف العمل");
+      showMessage("<i class='fas fa-circle-check'></i> تم حل CAPTCHA، استئناف العمل");
     }
   };
 
@@ -7512,16 +8174,18 @@ function showNotification(notification) {
   bar.id = "adminNotificationBar";
   bar.style.cssText = `
     position: fixed;
-    bottom: 20px;
+    top: 0;
     left: 50%;
     transform: translateX(-50%);
-    background-color: #dc3545;
+    background: linear-gradient(135deg, #b71c1c 0%, #dc3545 60%, #e35d6a 100%);
     color: white;
-    padding: 12px 24px;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    padding: 16px 28px;
+    border-radius: 0 0 14px 14px;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-top: none;
+    box-shadow: 0 8px 30px rgba(220,53,69,0.45);
     z-index: 99999;
-    max-width: 90%;
+    width: min(760px, 94vw);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -7529,13 +8193,14 @@ function showNotification(notification) {
     font-size: 16px;
     font-weight: bold;
     direction: rtl;
+    animation: ovl-notif-shake 0.6s ease 1;
   `;
 
   const textSpan = document.createElement("span");
   textSpan.textContent = notification.text;
 
   const closeBtn = document.createElement("button");
-  closeBtn.innerHTML = "✕";
+  closeBtn.innerHTML = "<i class='fas fa-xmark'></i>";
   closeBtn.style.cssText = `
     background: transparent;
     border: none;
@@ -7567,6 +8232,44 @@ function showNotification(notification) {
       fetchAndShowNotification();
     }
   }, 5000);
+}
+
+// ===== شاشة الحظر — تعرض مرة واحدة وتمنع استخدام التطبيق =====
+let blockScreenShown = false;
+function showBlockScreen(reason, title) {
+  if (blockScreenShown) return;
+  blockScreenShown = true;
+  try { cleanupFrontend(); } catch (e) {}
+  const ov = document.createElement("div");
+  ov.id = "deviceBlockedOverlay";
+  ov.style.cssText =
+    "position:fixed; inset:0; z-index:999999; background:#0d0d10; display:flex; align-items:center; justify-content:center;";
+  ov.innerHTML =
+    '<div style="text-align:center; color:#fff; padding:30px; max-width:520px" dir="rtl">' +
+    '<i class="fas fa-ban" style="font-size:64px; color:#f44336; margin-bottom:20px"></i>' +
+    `<h2 style="margin:0 0 12px">${escapeHtml(title || "تم حظر هذا الجهاز")}</h2>` +
+    '<p style="color:#aaa; line-height:1.8">' +
+    (reason
+      ? escapeHtml(reason)
+      : "تم حظر هذا الجهاز من استخدام الخدمة. تواصل مع الدعم إذا كنت تعتقد أن هذا خطأ.") +
+    "</p></div>";
+  document.body.appendChild(ov);
+}
+
+// 🔒 خروج قسري عند تعارض الجلسة — الحساب مفتوح على جهاز آخر
+async function forceSessionLogout(reason) {
+  try { cleanupFrontend(); } catch (e) {}
+  try {
+    await fetch(`${API_BASE}/api/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    });
+  } catch (e) {}
+  try { saveAuthToken(null); } catch (e) {}
+  showBlockScreen(
+    reason || "تم فتح هذا الحساب من جهاز آخر — الجهاز الأول له الأولوية",
+    "الحساب قيد الاستخدام على جهاز آخر",
+  );
 }
 
 function hideNotification() {

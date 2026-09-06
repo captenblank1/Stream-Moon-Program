@@ -1,0 +1,400 @@
+/* ============================================================
+   skeleton/skeleton.css — صفحة السكيلتون عند فتح البرنامج
+   ============================================================
+   تُحاكي بنية الواجهة (شريط علوي + قائمة جانبية + بطاقات محتوى)
+   بكتل رمادية متلألئة بدل أي نصوص تحميل — تُخفى فور جهوز البيانات.
+   الوحدة مستقلة تماماً: لا تعتمد على style.css ولا على main.js */
+
+#appSkeleton {
+  position: fixed;
+  inset: 0;
+  z-index: 99998;
+  background: #0d0d10;
+  font-family: inherit;
+  transition: opacity 0.45s ease;
+  /* عمود التمرير الوحيد: داخل السكيلتون نفسه — الـ body ممنوع من
+     التمرير طالما السكيلتون ظاهر (يمنع الاسكرول المزدوج عند الفتح) */
+  overflow-x: hidden;
+  overflow-y: auto;
+  display: block;
+}
+
+/* منع تمرير الصفحة الحقيقية تحته ما دام السكيلتون موجودًا في الـ DOM */
+body:has(#appSkeleton) { overflow: hidden !important; }
+
+#appSkeleton.sk-hide { opacity: 0; pointer-events: none; }
+
+/* ===== الكتل الأساسية المتلألئة ===== */
+.sk-line, .sk-pill, .sk-circle, .sk-logo, .sk-avatar,
+.sk-nav-row, .sk-nav-row i, .sk-input, .sk-cta {
+  background: linear-gradient(100deg, #22222a 40%, #30303b 50%, #22222a 60%);
+  background-size: 200% 100%;
+  animation: sk-shimmer 1.4s linear infinite;
+  border-radius: 6px;
+}
+.sk-line { height: 14px; width: 100%; }
+.sk-pill { height: 32px; border-radius: 16px; }
+.sk-circle { border-radius: 50%; }
+
+.sk-teal, .sk-cta, .sk-nav-row.sk-active, .sk-logo {
+  background: linear-gradient(100deg, #227076 40%, #3db6bd 50%, #227076 60%);
+  background-size: 200% 100%;
+  animation: sk-shimmer 1.4s linear infinite;
+}
+
+@keyframes sk-shimmer { to { background-position: -200% 0; } }
+
+/* ===== الهيكل المقيس من التطبيق الحقيقي عند 1920 ===== */
+/* height تلقائي يكبر مع المحتوى — السايد بار يتمدد لكامل ارتفاع
+   الصفحة حتى لو المحتوى أطول من نافذة العرض (كان بيقف عند حدود الشاشة) */
+.sk-shell { display: flex; min-height: 100%; width: 100%; min-width: 0; direction: ltr; }
+
+.sk-sidebar {
+  width: 250px;
+  flex-shrink: 0;
+  background: #1a1a1a;
+  border-right: 1px solid #333;
+  display: flex;
+  flex-direction: column;
+}
+
+.sk-logo-box {
+  height: 112px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid #26262e;
+}
+.sk-logo { width: 130px; height: 22px; }
+
+.sk-user {
+  height: 91px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid #26262e;
+}
+.sk-avatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid #3db6bd;
+}
+.sk-user-lines { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+
+/* صفوف التنقل 53px بعرض كامل كالتطبيق */
+.sk-nav { display: flex; flex-direction: column; }
+.sk-nav-row {
+  height: 53px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  border-bottom: 1px solid #26262e;
+}
+.sk-nav-row i {
+  display: block;
+  width: 58%;
+  height: 14px;
+  border-radius: 5px;
+}
+.sk-nav-row.sk-active {
+  background: linear-gradient(100deg, #1a4a4e 40%, #2c8b91 50%, #1a4a4e 60%);
+  background-size: 200% 100%;
+  animation: sk-shimmer 1.4s linear infinite;
+  border-bottom-color: #2c8b91;
+}
+
+/* ===== الشريط العلوي 53px يبدأ بعد السايد بار ===== */
+.sk-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+.sk-topbar {
+  height: 53px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 20px;
+  background: #141418;
+  border-bottom: 1px solid #26262e;
+  flex-shrink: 0;
+}
+.sk-topbtns { display: flex; gap: 8px; }
+.sk-topbtns .sk-pill { width: 170px; }
+.sk-topbtns .sk-pill.sk-wide { width: 200px; }
+
+/* ===== المحتوى: بطاقات بعرض كامل مثل التطبيق (1619 عند 1920) ===== */
+.sk-content {
+  flex: 1;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.sk-card {
+  width: 100%;
+  background: #1d1d24;
+  border: 1px solid #26262e;
+  border-radius: 12px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* بطاقة الحساب ~343px */
+.sk-account { min-height: 343px; justify-content: space-between; }
+.sk-row { display: flex; align-items: center; gap: 14px; }
+.sk-account .sk-input { width: 60%; }
+
+/* بطاقة الإعدادات ~669px */
+.sk-settings { min-height: 669px; }
+.sk-pair { display: flex; flex-direction: column; gap: 10px; }
+.sk-input { width: 100%; height: 40px; border-radius: 8px; }
+.sk-cta { height: 42px; border-radius: 8px; align-self: flex-start; }
+
+.sk-w30 { width: 30%; } .sk-w40 { width: 40%; } .sk-w50 { width: 50%; }
+.sk-w60 { width: 60%; } .sk-w70 { width: 70%; } .sk-w80 { width: 80%; }
+.sk-w90 { width: 90%; }
+
+@media (max-width: 768px) {
+  .sk-sidebar { display: none; }
+  .sk-topbtns .sk-pill { width: 90px; }
+}
+
+/* ===== كتل سكيلتون عامة قابلة لإعادة الاستخدام داخل أي قسم ===== */
+.sk-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 6px 0;
+}
+.sk-inline .sk-line { height: 12px; }
+
+/* ===== طبقة سكيلتون فوق قسم أثناء تحميل بياناته ===== */
+.sk-overlay {
+  position: absolute;
+  inset: 0;
+  /* فوق السايد بار (z-index 100) وأي قوائم — وتحت النوافذ المنبثقة (10000+) */
+  z-index: 9000;
+  background: #14141a;
+  border-radius: inherit;
+  padding: 26px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: sk-fade-in 0.18s ease;
+}
+
+.sk-overlay .sk-header-line {
+  height: 22px;
+  width: 220px;
+  border-radius: 8px;
+}
+
+@keyframes sk-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* سكيلتون داخل حاويات الأقسام (الشاشات / لوحة الأدمن) — بهامش مريح */
+#screensContainer > .sk-grid,
+#adminDashboardContainer > .sk-grid {
+  padding: 20px;
+}
+
+/* ===== سكيلتون نموذج (تسمية + حقل) — مثل إعدادات الهوت كي ===== */
+.sk-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 560px;
+}
+.sk-frow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.sk-frow .sk-field {
+  flex: 1;
+  min-width: 0;
+}
+.sk-frow .sk-field .sk-line {
+  height: 34px;
+  border-radius: 8px;
+}
+.sk-fbtn {
+  width: 150px;
+  height: 38px;
+  margin-top: 6px;
+}
+
+/* ===== سكيلتون جدول — مثل جداول الأوامر والاختصارات ===== */
+.sk-table {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 26px;
+}
+.sk-thead,
+.sk-tr {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1fr 0.8fr 0.8fr;
+  gap: 12px;
+  align-items: center;
+}
+.sk-thead .sk-cell .sk-line {
+  height: 12px;
+  background: linear-gradient(100deg, #2a2a34 40%, #3a3a47 50%, #2a2a34 60%);
+  background-size: 200% 100%;
+  animation: sk-shimmer 1.4s linear infinite;
+}
+.sk-tr .sk-cell .sk-line {
+  height: 18px;
+}
+.sk-thead {
+  padding-bottom: 6px;
+  border-bottom: 1px solid #26262e;
+}
+
+/* ===== سكيلتون جدول الأكشنز — يطابق جدول الأوامر: 13 عموداً وصف 51px ===== */
+.sk-ctablewrap { display: flex; flex-direction: column; width: 100%; }
+
+.sk-ctable {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.sk-chead,
+.sk-crow {
+  display: grid;
+  grid-template-columns:
+    46px 40px 110px 1.1fr 1.5fr 62px 62px 70px 74px 44px 44px 132px 132px;
+  gap: 10px;
+  align-items: center;
+  padding: 5px 10px;
+}
+
+.sk-chead {
+  background: #23232b;
+  border: 1px solid #2e2e38;
+  border-radius: 8px;
+  min-height: 38px;
+}
+
+.sk-hline {
+  height: 10px;
+  width: 82%;
+  border-radius: 4px;
+  background: linear-gradient(100deg, #2c2c36 40%, #3c3c49 50%, #2c2c36 60%);
+  background-size: 200% 100%;
+  animation: sk-shimmer 1.4s linear infinite;
+}
+
+.sk-crow {
+  min-height: 51px;
+  background: #1d1d24;
+  border: 1px solid #26262e;
+  border-radius: 8px;
+}
+
+.sk-cdrag { display: flex; gap: 5px; justify-content: center; }
+
+.sk-sq {
+  width: 17px;
+  height: 17px;
+  border-radius: 4px;
+  background: linear-gradient(100deg, #22222a 40%, #30303b 50%, #22222a 60%);
+  background-size: 200% 100%;
+  animation: sk-shimmer 1.4s linear infinite;
+}
+
+.sk-cb { justify-self: center; }
+
+.sk-cbtns { display: flex; gap: 7px; justify-content: center; }
+
+.sk-in {
+  height: 30px;
+  width: 92%;
+  border-radius: 6px;
+  background: linear-gradient(100deg, #22222a 40%, #30303b 50%, #22222a 60%);
+  background-size: 200% 100%;
+  animation: sk-shimmer 1.4s linear infinite;
+}
+
+.sk-inwide { width: 96%; }
+.sk-innum { width: 84%; }
+
+.sk-rng {
+  width: 104px;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(100deg, #22222a 40%, #30303b 50%, #22222a 60%);
+  background-size: 200% 100%;
+  animation: sk-shimmer 1.4s linear infinite;
+}
+
+/* ===== سكيلتون صفحة الهوت كي (نموذج 374px + جدول 7 أعمدة صف 46) ===== */
+.sk-hkwrap { display: flex; flex-direction: column; width: 100%; }
+.sk-hkform {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  margin: 18px auto 26px; /* مثل النموذج الحقيقي: بالمنتصف */
+  padding: 22px;
+  background: #1d1d24;
+  border: 1px solid #26262e;
+  border-radius: 12px;
+  max-width: 600px;
+}
+.sk-hkrow { display: flex; align-items: center; gap: 14px; }
+.sk-hkfield { flex: 1; height: 34px; border-radius: 6px;
+  background: linear-gradient(100deg, #22222a 40%, #30303b 50%, #22222a 60%);
+  background-size: 200% 100%; animation: sk-shimmer 1.4s linear infinite; }
+.sk-hksave { width: 150px; height: 38px; margin-top: 4px; }
+.sk-hktable { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
+.sk-hkhead, .sk-hktr {
+  display: grid;
+  grid-template-columns: 5% 15% 30% 15% 10% 10% 15%;
+  gap: 8px; align-items: center; padding: 6px 10px;
+}
+.sk-hkhead { background: #23232b; border: 1px solid #2e2e38; border-radius: 8px; min-height: 36px; }
+.sk-hkhcell { height: 10px; width: 80%; border-radius: 4px;
+  background: linear-gradient(100deg, #2c2c36 40%, #3c3c49 50%, #2c2c36 60%);
+  background-size: 200% 100%; animation: sk-shimmer 1.4s linear infinite; }
+.sk-hktr { min-height: 46px; background: #1d1d24; border: 1px solid #26262e; border-radius: 8px; }
+.sk-hkcell { height: 16px; border-radius: 4px;
+  background: linear-gradient(100deg, #22222a 40%, #30303b 50%, #22222a 60%);
+  background-size: 200% 100%; animation: sk-shimmer 1.4s linear infinite; }
+
+/* ===== سكيلتون لوحة الأدمن ===== */
+.sk-adwrap { display: flex; flex-direction: column; gap: 18px; width: 100%; }
+.sk-adhead { display: flex; flex-direction: column; gap: 8px; }
+.sk-adgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.sk-adcard {
+  background: #1d1d24; border: 1px solid #26262e; border-radius: 12px;
+  padding: 18px; display: flex; flex-direction: column; gap: 10px; align-items: center;
+}
+.sk-adnum { width: 64px; height: 34px; border-radius: 8px;
+  background: linear-gradient(100deg, #227076 40%, #3db6bd 50%, #227076 60%);
+  background-size: 200% 100%; animation: sk-shimmer 1.4s linear infinite; }
+.sk-adbig, .sk-adsmall {
+  background: #1d1d24; border: 1px solid #26262e; border-radius: 12px; padding: 20px;
+}
+.sk-adchart { height: 240px; border-radius: 10px;
+  background: linear-gradient(100deg, #20202a 40%, #2c2c38 50%, #20202a 60%);
+  background-size: 200% 100%; animation: sk-shimmer 1.4s linear infinite; }
+.sk-adsearch { height: 42px; border-radius: 10px;
+  background: linear-gradient(100deg, #22222a 40%, #30303b 50%, #22222a 60%);
+  background-size: 200% 100%; animation: sk-shimmer 1.4s linear infinite; }
+
+/* أثناء التحميل يُخفى كل محتوى القسم (حتى الصفوف خارج نافذة العرض) —
+   التغطية وحدها كانت تُظهر الصفوف القديمة أسفل منطقة السكيلتون */
+.sk-loading > *:not(.sk-overlay) {
+  visibility: hidden;
+}
