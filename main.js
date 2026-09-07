@@ -324,11 +324,159 @@ document.getElementById('unpairPluginBtn').addEventListener('click', async funct
   }
 });
 
+// ============================================================
+// تحميل البلوجن المخصص — نسخة فيها توكن الحساب مدمج داخل الـ jar
+// ============================================================
+document.getElementById('downloadPluginBtn')?.addEventListener('click', async function() {
+  const btn = this;
+  const resultDiv = document.getElementById('pairingResult');
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جاري التحميل...';
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/plugin-download`);
+    if (!res.ok) {
+      let msg = 'فشل التحميل من الخادم';
+      try { const d = await res.json(); if (d.message) msg = d.message; } catch {}
+      throw new Error(msg);
+    }
+    const blob = await res.blob();
+    // اسم الملف من header Content-Disposition إن وُجد
+    let filename = 'StreamMoon.jar';
+    const cd = res.headers.get('content-disposition') || '';
+    const m = cd.match(/filename\s*=\s*"?([^";]+)"?/i);
+    if (m && m[1]) filename = m[1];
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    if (resultDiv) {
+      resultDiv.innerHTML = '<i class="fas fa-circle-check"></i> تم تحميل البلوجن — ضعه في مجلد plugins بالسيرفر';
+      resultDiv.style.color = '#4caf50';
+    }
+    showMessage('<i class="fas fa-circle-check"></i> تم تحميل البلوجن بنجاح');
+  } catch (err) {
+    console.error('خطأ في تحميل البلوجن:', err);
+    if (resultDiv) {
+      resultDiv.innerHTML = '<i class="fas fa-circle-xmark"></i> ' + (err.message || 'خطأ في الاتصال بالخادم');
+      resultDiv.style.color = '#f44336';
+    }
+    showMessage('<i class="fas fa-circle-xmark"></i> ' + (err.message || 'فشل تحميل البلوجن'));
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = original;
+  }
+});
+
 // استدعاء التحقق من حالة الاقتران عند تحميل الصفحة
 document.addEventListener('DOMContentLoaded', () => {
   checkPluginStatus();
   // يمكن استدعاؤها أيضاً بعد تسجيل الدخول
 });
+
+// ============================================================
+// الربط اليدوي بالكود — الحالة الثانية عندما يفشل الربط التلقائي
+// الكود يظهر في كونسول سيرفر ماينكرافت (/streammoon code)
+// ============================================================
+document.getElementById('pairWithCodeBtn')?.addEventListener('click', async function() {
+  const input = document.getElementById('pairCodeInput');
+  const code = (input?.value || '').trim();
+  const resultDiv = document.getElementById('pairingResult');
+  if (!code) {
+    if (resultDiv) {
+      resultDiv.innerHTML = '<i class="fas fa-circle-exclamation"></i> اكتب كود الربط الظاهر في كونسول السيرفر';
+      resultDiv.style.color = '#f44336';
+    }
+    return;
+  }
+  const btn = this;
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/api/plugin-pair`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code })
+    });
+    const data = await res.json();
+    if (data.success) {
+      if (input) input.value = '';
+      if (resultDiv) {
+        resultDiv.innerHTML = '<i class="fas fa-circle-check"></i> تم ربط البلوجن بحسابك بنجاح';
+        resultDiv.style.color = '#4caf50';
+      }
+      showMessage('<i class="fas fa-link"></i> تم ربط البلوجن بنجاح');
+      await checkPluginStatus();
+    } else {
+      if (resultDiv) {
+        resultDiv.innerHTML = '<i class="fas fa-circle-xmark"></i> ' + (data.message || 'كود غير صالح');
+        resultDiv.style.color = '#f44336';
+      }
+    }
+  } catch (err) {
+    if (resultDiv) {
+      resultDiv.innerHTML = '<i class="fas fa-circle-xmark"></i> خطأ في الاتصال بالخادم';
+      resultDiv.style.color = '#f44336';
+    }
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = original;
+  }
+});
+
+// Enter في حقل الكود = ضغط زر الربط
+document.getElementById('pairCodeInput')?.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    document.getElementById('pairWithCodeBtn')?.click();
+  }
+});
+
+// ============================================================
+// مراقبة لحظية لحالة الربط — لو سيرفر ماينكرافت اشتغل فيه البلوجن
+// واقترن بالباكند، الواجهة تعرف فوراً وتحدّث الحالة بدون تحديث الصفحة
+// ============================================================
+function setPluginStatusUI(isPaired, source) {
+  const inputGroup = document.getElementById('unpairedHint');
+  const pairedActions = document.getElementById('pairedActions');
+  const statusSpan = document.getElementById('pluginConnectionStatus');
+  if (isPaired) {
+    if (inputGroup) inputGroup.style.display = 'none';
+    if (pairedActions) pairedActions.style.display = 'flex';
+    if (statusSpan) {
+      statusSpan.innerHTML = '<i class="fas fa-circle-check"></i> مقترن' + (source ? ` (${source})` : '');
+      statusSpan.style.color = '#4caf50';
+    }
+  } else {
+    if (inputGroup) inputGroup.style.display = 'block';
+    if (pairedActions) pairedActions.style.display = 'none';
+    if (statusSpan) {
+      statusSpan.innerHTML = '<i class="fas fa-circle-xmark"></i> غير مقترن';
+      statusSpan.style.color = '#f44336';
+    }
+  }
+}
+
+// استماع لأحداث السوكيت من الباكند: اقتران/فك اقتران لحظي
+// تُستدعى عند كل اتصال ناجح للفرونت (مرة واحدة لكل سوكيت)
+let _pluginStatusListenersBound = false;
+function bindPluginStatusSocketListeners() {
+  if (!frontendSocket || _pluginStatusListenersBound) return;
+  _pluginStatusListenersBound = true;
+  frontendSocket.on('plugin-paired', (data) => {
+    console.log('🔗 حدث اقتران بلوجن لحظياً:', data);
+    setPluginStatusUI(true, data?.source);
+  });
+  frontendSocket.on('plugin-unpaired', () => {
+    console.log('🔓 تم فك اقتران بلوجن لحظياً');
+    setPluginStatusUI(false);
+  });
+}
 
 function getAuthToken() {
   try {
@@ -2359,15 +2507,15 @@ async function _loadCommandsImpl(profileIdParam, noCache) {
       tr.innerHTML = `
         <td class="drag-handle" style="text-align: center; width: 50px; vertical-align: middle; padding: 2px 10px;">
           <div style="display: flex; flex-direction: row; align-items: center; gap: 6px; justify-content: center; direction: ltr;">
-            <button class="move-btn" onclick="moveRowUp(this.closest('tr'))" title="نقل لأعلى" 
+            <button class="move-btn" onclick="moveRowUp(this.closest('tr'))" title="نقل لأعلى"
               style="background: linear-gradient(145deg, #2a2a2a, #1a1a1a); border: none; border-radius: 8px; color: #1dd9e6e1; cursor: pointer; font-size: 14px; width: 31px; height: 31px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05); transition: all 0.2s ease;">
               <i class="fas fa-chevron-up"></i>
             </button>
-            <span class="drag-icon" 
+            <span class="drag-icon"
               style="cursor: grab; font-size: 14px; line-height: 1; user-select: none; background: linear-gradient(145deg, #2a2a2a, #1a1a1a); border: none; border-radius: 8px; padding: 8px 6px; color: #888; box-shadow: 0 2px 6px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05);">
               <i class="fas fa-grip-vertical"></i>
             </span>
-            <button class="move-btn" onclick="moveRowDown(this.closest('tr'))" title="نقل لأسفل" 
+            <button class="move-btn" onclick="moveRowDown(this.closest('tr'))" title="نقل لأسفل"
               style="background: linear-gradient(145deg, #2a2a2a, #1a1a1a); border: none; border-radius: 8px; color: #ff9800; cursor: pointer; font-size: 14px; width: 31px; height: 31px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05); transition: all 0.2s ease;">
               <i class="fas fa-chevron-down"></i>
             </button>
@@ -3974,7 +4122,7 @@ async function loadAdminDashboard() {
     const notificationsHtml = `
     <div class="lux-section">
       <h3><i class="fas fa-bell"></i> إدارة الإشعارات العاجلة</h3>
-      
+
       <!-- نموذج الإضافة -->
       <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 20px; background: #2a2a2a; padding: 15px; border-radius: 8px;">
         <textarea id="adminNotificationText" placeholder="نص الإشعار..." style="flex: 2; height: 200px; resize: vertical; padding: 10px; background: #333; border: 1px solid #555; color: white; border-radius: 6px; font-family: inherit; line-height: 1.6;"></textarea>
@@ -3986,7 +4134,7 @@ async function loadAdminDashboard() {
         </select>
         <button id="adminSendNotificationBtn" class="btn btn-danger" style="background: #dc3545;">إرسال الإشعار</button>
       </div>
-      
+
       <!-- قائمة الإشعارات -->
       <div id="adminNotificationList" style="max-height: 300px; overflow-y: auto; margin-top: 10px;">
         <table style="width:100%; border-collapse: collapse; font-size: 14px;">
@@ -6965,6 +7113,9 @@ async function connectFrontendSocket() {
       console.log("✅ فرونت متصل بـ Socket.IO");
       reconnectAttempts = 0;
       checkLiveStatus(); // ✅ طلب أولي فقط
+      // 🔗 استماع لحظي لتغيّر حالة اقتران البلوجن
+      try { bindPluginStatusSocketListeners(); } catch (e) {}
+      checkPluginStatus().catch(() => {});
       fetchWithAuth(`${API_BASE}/api/auth/me`)
         .then((res) => res.json())
         .then((data) => {
