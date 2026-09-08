@@ -1,6 +1,6 @@
 {
   "name": "StreamMoon",
-  "version": "2.5.1",
+  "version": "2.6.0",
   "description": "Stream Moon - TikTok LIVE Controller",
   "main": "boot.js",
   "scripts": {

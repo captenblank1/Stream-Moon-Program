@@ -7425,6 +7425,31 @@ async function connectFrontendSocket() {
     frontendSocket.on("error", (err) => {
       console.error("❌ خطأ في Socket.IO:", err.message);
     });
+
+    // ✅ مستمع تنفيذ Webhook عبر الوكيل المحلي (الروابط المحلية)
+frontendSocket.on("webhook-request", async (data) => {
+  try {
+    const response = await fetch(data.url, {
+      method: data.method || "POST",
+      headers: data.headers || {},
+      body: data.body,
+    });
+    console.log("Webhook response:", response.status);
+    // إرسال تأكيد للخادم (اختياري لكنه مفيد للمراقبة)
+    frontendSocket.emit("webhook-response", {
+      url: data.url,
+      status: response.status,
+      ok: response.ok,
+    });
+  } catch (err) {
+    console.error("Webhook request failed:", err.message);
+    frontendSocket.emit("webhook-response", {
+      url: data.url,
+      ok: false,
+      error: err.message,
+    });
+  }
+});
   } catch (err) {
     console.error("❌ فشل إنشاء اتصال Socket.IO (فرونت):", err.message);
   }
