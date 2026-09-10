@@ -4656,13 +4656,13 @@ function attachAdminButtonEvents() {
       try {
         const res = await fetchWithAuth(
           `${API_BASE}/api/admin/user/${id}/block-device`,
-          { method: "POST" },
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) },
         );
         const data = await res.json();
         showMessage(
           data.success
             ? "<i class='fas fa-circle-check'></i> " + (data.message || "تم حظر الجهاز")
-            : "<i class='fas fa-circle-xmark'></i> " + (data.message || "فشل حظر الجهاز"),
+            : "<i class='fas fa-circle-xmark'></i> " + (data.message || "فشل حظر الجهاز") + (data.error ? ` <small style='opacity:0.7;'>(${data.error})</small>` : ""),
         );
         if (data.success) setTimeout(() => loadAdminDashboard(), 500);
       } catch (err) {
