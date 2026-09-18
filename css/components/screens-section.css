@@ -1,0 +1,115 @@
+/* ==================== قسم الشاشات ==================== */
+.start-section-3 {
+  padding: 20px;
+  margin-left: 250px;
+  background: var(--bg-color, #0a0a0a);
+  color: #fff;
+}
+.screens-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+.screens-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+.screens-guest-note {
+  grid-column: 1 / -1;
+  background: rgba(29, 217, 230, 0.08);
+  border: 1px solid rgba(29, 217, 230, 0.35);
+  color: #9fe8ee;
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.screen-card {
+  background: #1e1e1e;
+  border-radius: 12px;
+  padding: 15px;
+  border: 1px solid #333;
+  transition: 0.2s;
+}
+.screen-card:hover {
+  border-color: #1dd9e6e1;
+}
+.screen-number {
+  background: #1dd9e6e1;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 20px;
+  margin-bottom: 12px;
+}
+.screen-url {
+  font-family: monospace;
+  font-size: 13px;
+  word-break: break-all;
+  background: #0a0a0a;
+  padding: 8px;
+  border-radius: 6px;
+  margin: 10px 0;
+}
+.copy-url-btn {
+  background: #333;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  color: white;
+  cursor: pointer;
+  width: 100%;
+}
+.copy-url-btn:hover {
+  background: #1dd9e6e1;
+}
+.obs-instructions {
+  margin-top: 30px;
+  background: #1dd9e661;
+  padding: 20px;
+  border-radius: 12px;
+  border-right: 4px solid #1dd9e6e1;
+}
+.obs-instructions ul {
+  margin-top: 10px;
+  padding-right: 20px;
+}
+.loading-screens,
+.error-message {
+  text-align: center;
+  padding: 40px;
+  font-size: 18px;
+}
+
+.button-select-slide {
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.button-select-slide p {
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.button-select-slide:hover {
+  background: var(--primary-color);
+}
+.button-select-slide:hover p {
+  color: white;
+}
+.button-select-slide.active {
+  background: var(--primary-color);
+}
+.button-select-slide.active p {
+  color: white;
+}

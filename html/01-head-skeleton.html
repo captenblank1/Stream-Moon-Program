@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' https:; connect-src 'self' https: wss: http://127.0.0.1:3000 http://localhost:3000 ws://127.0.0.1:3000 ws://localhost:3000; object-src 'none'; frame-src 'self' http: https:; base-uri 'none'"
+    />
+    <meta
+      name="description"
+      content="Stream Moon - منصة تفاعل مع TikTok LIVE وماينكرافت، إدارة أوامر الهدايا والتفاعلات بسهولة."
+    />
+    <title>Stream Moon</title>
+    <link rel="stylesheet" href="css/normalize.css" />
+
+    <link rel="stylesheet" href="vendor/fontawesome/all.min.css" />
+    <!-- الأساس: المتغيرات العامة والخطوط -->
+    <link rel="stylesheet" href="css/style.css" />
+    <link rel="stylesheet" href="css/components/colors-variables.css" />
+    <link rel="stylesheet" href="css/components/reset.css" />
+    <link rel="stylesheet" href="css/components/sidebar.css" />
+    <link rel="stylesheet" href="css/components/auth-topbar.css" />
+    <link rel="stylesheet" href="css/components/buttons-base.css" />
+    <link rel="stylesheet" href="css/components/auth-buttons.css" />
+    <link rel="stylesheet" href="css/components/main-content.css" />
+    <link rel="stylesheet" href="css/components/cards-account-minecraft.css" />
+    <link rel="stylesheet" href="css/components/commands-section.css" />
+    <link rel="stylesheet" href="css/components/profile-select.css" />
+    <link rel="stylesheet" href="css/components/action-buttons.css" />
+    <link rel="stylesheet" href="css/components/command-card.css" />
+    <link rel="stylesheet" href="css/components/dropdowns-gifts-audio.css" />
+    <link rel="stylesheet" href="css/components/table.css" />
+    <link rel="stylesheet" href="css/components/checkbox.css" />
+    <link rel="stylesheet" href="css/components/scrollbar.css" />
+    <link rel="stylesheet" href="css/components/message-toast.css" />
+    <link rel="stylesheet" href="css/components/modals.css" />
+    <link rel="stylesheet" href="css/components/small-screens.css" />
+    <link rel="stylesheet" href="css/components/misc.css" />
+    <link rel="stylesheet" href="css/components/keyboard-selector.css" />
+    <link rel="stylesheet" href="css/components/audio-modal.css" />
+    <link rel="stylesheet" href="css/components/screens-section.css" />
+    <link rel="stylesheet" href="css/components/admin-section.css" />
+    <link rel="stylesheet" href="css/components/hotkey-section.css" />
+    <link rel="stylesheet" href="css/components/urgent-notification.css" />
+    <link rel="stylesheet" href="css/components/fontawesome-protection.css" />
+    <link rel="stylesheet" href="css/components/once-per-live.css" />
+    <link rel="stylesheet" href="css/pro.css" />
+    <link rel="stylesheet" href="css/responsive.css" />
+    <!-- سكيلتون التحميل الافتتاحي — وحدة مستقلة في مجلد skeleton -->
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&family=Fredoka+One&family=Press+Start+2P&family=Orbitron:wght@900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap"
+      rel="stylesheet"
+      media="print"
+      onload="this.media = 'all'"
+    />
+
+    <script src="vendor/Sortable.min.js"></script>
+    <!-- وحدة السكيلتون — تُحمَّل قبل main حتى تتوفر واجهة Skeleton لإخفاء صفحة التحميل -->
+    <script src="js/skeleton.js"></script>
+    <style>
+      @font-face {
+        font-family: "Open Sans";
+        font-display: swap;
+        src: local("Open Sans");
+      }
+      /* ===== تنسيق جدول Hotkey ===== */
+      #hotkeysListTable {
+        width: 100%;
+        border-collapse: collapse;
+        background: #1a1a1a;
+        border-radius: 8px;
+        overflow: hidden;
+        font-size: 14px;
+      }
+      #hotkeysListTable th {
+        background: #2a2a2a;
+        color: #1dd9e6e1;
+        padding: 12px 8px;
+        text-align: center;
+        border-bottom: 2px solid #333;
+      }
+      #hotkeysListTable td {
+        padding: 10px 8px;
+        border-bottom: 1px solid #333;
+        vertical-align: middle;
+        text-align: center;
+      }
+      #hotkeysListTable tr:hover {
+        background: #252525;
+      }
+      #hotkeysListTable .current-hotkey {
+        background: #1a2a2a;
+        border-left: 3px solid #1dd9e6e1;
+      }
+      #hotkeysListTable kbd {
+        background: #1e2a36;
+        padding: 4px 12px;
+        border-radius: 4px;
+        border: 1px solid #444;
+        font-family: monospace;
+        font-weight: bold;
+        color: #1dd9e6e1;
+      }
+      .hotkey-edit-btn {
+        padding: 4px 10px;
+        font-size: 12px;
+        background: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-right: 4px;
+        transition: all 0.3s ease;
+      }
+      .hotkey-edit-btn:hover {
+        background: #388e3c;
+        transform: scale(1.05);
+      }
+      .hotkey-delete-btn {
+        padding: 4px 10px;
+        font-size: 12px;
+        background: #f44336;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+      .hotkey-delete-btn:hover {
+        background: #d32f2f;
+        transform: scale(1.05);
+      }
+      .hotkey-toggle {
+        width: 20px;
+        height: 20px;
+        accent-color: #1dd9e6e1;
+        cursor: pointer;
+      }
+      /* ===== نهاية تنسيق Hotkey ===== */
+    </style>
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="favicon_io/apple-touch-icon.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="favicon_io/favicon-32x32.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="favicon_io/favicon-16x16.png"
+    />
+    <link rel="manifest" href="favicon_io/site.webmanifest" />
+  </head>
+  <body>
+    <div id="sidebarBackdrop"></div>
+    <button id="sidebarToggle" aria-label="Menu"><i class="fas fa-bars"></i></button>
+    <!-- ===== صفحة السكيلتون — تظهر فوراً حتى جهوز البيانات (تُخفاها main.js) ===== -->
+    <div id="appSkeleton" aria-hidden="true">
+      <div class="sk-shell">
+        <!-- سايد بار مطابق للتطبيق: شعار 112px ثم بروفايل 91px ثم صفوف 53px -->
+        <div class="sk-sidebar">
+          <div class="sk-logo-box"><div class="sk-logo"></div></div>
+          <div class="sk-user">
+            <div class="sk-avatar"></div>
+            <div class="sk-user-lines">
+              <div class="sk-line" style="width: 78%"></div>
+              <div class="sk-line" style="width: 46%"></div>
+            </div>
+          </div>
+          <nav class="sk-nav">
+            <div class="sk-nav-row sk-active"></div>
+            <div class="sk-nav-row"><i></i></div>
+            <div class="sk-nav-row"><i></i></div>
+            <div class="sk-nav-row"><i></i></div>
+            <div class="sk-nav-row"><i></i></div>
+            <div class="sk-nav-row"><i></i></div>
+            <div class="sk-nav-row"><i></i></div>
+          </nav>
+          </div>
+        <!-- الجسم يبدأ بعد السايد بار: شريط 53px ثم بطاقات بعرض كامل -->
+        <div class="sk-main">
+          <header class="sk-topbar">
+            <div class="sk-line sk-teal" style="width: 250px; height: 15px"></div>
+            <div class="sk-topbtns">
+              <div class="sk-pill"></div>
+              <div class="sk-pill"></div>
+              <div class="sk-pill"></div>
+              <div class="sk-pill sk-wide"></div>
+            </div>
+          </header>
+          <div class="sk-content">
+            <!-- بطاقة الحساب: صف دائرة+اسم ثم حقول — عرض كامل وارتفاع ~343 -->
+            <div class="sk-card sk-account">
+              <div class="sk-row">
+                <div class="sk-avatar"></div>
+                <div class="sk-user-lines">
+                  <div class="sk-line" style="width: 200px"></div>
+                  <div class="sk-line" style="width: 110px"></div>
+                </div>
+              </div>
+              <div class="sk-input"></div>
+              <div class="sk-input"></div>
+              <div class="sk-cta" style="width: 220px"></div>
+            </div>
+            <!-- بطاقة الإعدادات: أزواج تسمية+حقل ×4 — عرض كامل وارتفاع ~669 -->
+            <div class="sk-card sk-settings">
+              <div class="sk-pair"><div class="sk-line" style="width: 120px"></div><div class="sk-input"></div></div>
+              <div class="sk-pair"><div class="sk-line" style="width: 150px"></div><div class="sk-input"></div></div>
+              <div class="sk-pair"><div class="sk-line" style="width: 100px"></div><div class="sk-input"></div></div>
+              <div class="sk-pair"><div class="sk-line" style="width: 140px"></div><div class="sk-input"></div></div>
+              <div class="sk-cta" style="width: 200px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- ===== نهاية صفحة السكيلتون ===== -->
+

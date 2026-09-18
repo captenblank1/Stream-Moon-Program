@@ -245,6 +245,17 @@ label i,
   90% { transform: translateX(calc(-50% + 3px)); }
 }
 
+/* ===== اهتزاز شريط الإشعار داخل حاوية التراكم — 3 مرات فقط ثم يتوقف ===== */
+@keyframes sm-notif-shake {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-10px); }
+  30% { transform: translateX(10px); }
+  45% { transform: translateX(-7px); }
+  60% { transform: translateX(7px); }
+  75% { transform: translateX(-3px); }
+  90% { transform: translateX(3px); }
+}
+
 /* ===== وضع العربي (RTL): انعكاس كامل للتخطيط ===== */
 html[dir="rtl"] aside {
   left: auto;

@@ -1,0 +1,193 @@
+/* ==================== مودال اختيار الصوت ==================== */
+#audioModal {
+  display: none;
+  position: fixed;
+  z-index: 10050;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.85);
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+#audioModal .modal-content {
+  background: #1e1e1e;
+  border-radius: 20px;
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border: 1px solid #1dd9e6e1;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+}
+#audioModal .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  border-bottom: 1px solid #333;
+  background: #2a2a2a;
+  border-radius: 20px 20px 0 0;
+}
+#audioModal .modal-header h3 {
+  margin: 0;
+  color: #1dd9e6e1;
+  font-size: 1.2rem;
+}
+#audioModal .modal-header .close-audio-modal {
+  font-size: 28px;
+  font-weight: bold;
+  cursor: pointer;
+  color: #aaa;
+  transition: 0.2s;
+}
+#audioModal .modal-header .close-audio-modal:hover {
+  color: #f44336;
+}
+#audioModal .modal-body {
+  flex: 1;
+  overflow-y: hidden;
+  padding: 15px;
+}
+#audioModal .modal-footer {
+  padding: 10px 15px;
+  border-top: 1px solid #333;
+  text-align: center;
+  background: #1a1a1a;
+  border-radius: 0 0 20px 20px;
+}
+#audioModal .audio-search-input {
+  width: 100%;
+  padding: 10px 15px;
+  margin-bottom: 15px;
+  background: #0a0a0a;
+  border: 1px solid #555;
+  color: white;
+  border-radius: 30px;
+  font-size: 14px;
+}
+#audioModal .audio-options-container {
+  max-height: 600px;
+  overflow-y: scroll;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-x: hidden;
+}
+#audioModal .audio-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 15px;
+  background: #2a2a2a;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: 0.2s;
+  border: 1px solid #444;
+}
+#audioModal .audio-option:hover {
+  background: #3a3a3a;
+  border-color: #1dd9e6e1;
+}
+#audioModal .audio-option.selected {
+  background: #1dd9e6e1;
+  color: white;
+  border-color: #1dd9e6e1;
+}
+#audioModal .audio-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+#audioModal .audio-icon {
+  font-size: 1.6rem;
+  color: #1dd9e6e1;
+}
+#audioModal .audio-name {
+  font-weight: bold;
+  font-size: 1rem;
+}
+#audioModal .audio-owner {
+  font-size: 0.7rem;
+  color: #ccc;
+  margin-top: 3px;
+}
+#audioModal .audio-right {
+  display: flex;
+  gap: 8px;
+}
+#audioModal .play-audio-btn,
+#audioModal .delete-audio-btn {
+  background: #444;
+  border: none;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: 0.2s;
+}
+#audioModal .play-audio-btn:hover {
+  background: #1dd9e6e1;
+}
+#audioModal .delete-audio-btn:hover {
+  background: #f44336;
+}
+
+/* تأكيد */
+#confirmModal {
+  z-index: 11000 !important;
+  background-color: rgba(0, 0, 0, 0.8) !important;
+}
+#confirmModal .modal-content {
+  z-index: 11001 !important;
+  position: relative;
+}
+
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.75);
+  z-index: 9998;
+  backdrop-filter: blur(3px);
+  transition: all 0.3s ease;
+}
+
+#addCard {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90%;
+  max-width: 700px;
+  max-height: 85vh;
+  overflow-y: auto;
+  z-index: 9999;
+  background: #1e1e1e;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  padding: 20px;
+  display: none;
+}
+
+@media (max-width: 768px) {
+  #addCard {
+    width: 95%;
+    max-height: 90vh;
+    padding: 15px;
+  }
+}
+
+.modal-content {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}

@@ -1,0 +1,20 @@
+/* ==================== أزرار شريط المصادقة ==================== */
+.auth-buttons .btn {
+  background: #333;
+  color: #fff;
+}
+.auth-buttons .btn:hover {
+  background: var(--primary-color);
+}
+.auth-buttons .btn-danger {
+  background: var(--danger-color);
+}
+.auth-buttons .btn-danger:hover {
+  background: var(--danger-hover);
+}
+.auth-buttons .btn-warning {
+  background: #ff9800;
+}
+.auth-buttons .btn-warning:hover {
+  background: #e68900;
+}

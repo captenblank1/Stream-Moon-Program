@@ -1,0 +1,181 @@
+/* ==================== قسم Hotkey الجديد ==================== */
+.start-section-hotkey {
+  margin-left: 250px;
+  padding: 20px;
+  background: var(--bg-section);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  margin-top: 70px;
+  box-shadow: var(--shadow);
+}
+
+.hotkey-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+.hotkey-header h2 {
+  color: var(--primary-color);
+  font-size: 24px;
+}
+.hotkey-header p {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.hotkey-settings {
+  max-width: 600px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.hotkey-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hotkey-field label {
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+.hotkey-field button {
+  background: #333;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: var(--transition);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+}
+.hotkey-field button:hover {
+  background: var(--primary-color);
+}
+
+#hotkeyDisplay {
+  background: #1e2a36;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-family: monospace;
+  color: var(--primary-color);
+  min-width: 120px;
+  text-align: center;
+  display: inline-block;
+  font-size: 18px;
+  font-weight: bold;
+  border: 1px solid var(--border-color);
+}
+
+#hotkeyStatus {
+  margin-top: 10px;
+  color: var(--text-muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+#saveHotkeyBtn {
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  padding: 12px 30px;
+  border-radius: 6px;
+  font-weight: bold;
+  font-size: 16px;
+  cursor: pointer;
+  transition: var(--transition);
+  align-self: center;
+  width: fit-content;
+}
+#saveHotkeyBtn:hover {
+  background: var(--primary-hover);
+  transform: scale(1.02);
+}
+
+#hotkeyCommandSelect {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-dark);
+  color: var(--text-light);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  cursor: pointer;
+}
+#hotkeyCommandSelect:focus {
+  border-color: var(--primary-color);
+}
+
+.hotkey-field .toggle-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.hotkey-field .toggle-group input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary-color);
+  cursor: pointer;
+}
+.hotkey-field .toggle-group label {
+  cursor: pointer;
+  font-weight: 400;
+}
+
+@media (max-width: 768px) {
+  .start-section-hotkey {
+    margin-left: 0;
+    margin-top: 0;
+    border-radius: 0;
+    padding: 15px;
+  }
+  .hotkey-settings {
+    max-width: 100%;
+  }
+  #hotkeyDisplay {
+    font-size: 16px;
+    min-width: 80px;
+  }
+  #saveHotkeyBtn {
+    width: 100%;
+    text-align: center;
+  }
+}
+
+/* ===== سكيلتون هذا القسم — الهوت كي ===== */
+.sk-hkform {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  margin: 18px auto 26px; /* مثل النموذج الحقيقي: بالمنتصف */
+  padding: 22px;
+  background: #1d1d24;
+  border: 1px solid #26262e;
+  border-radius: 12px;
+  max-width: 600px;
+}
+.sk-hkrow { display: flex; align-items: center; gap: 14px; }
+.sk-hkfield { flex: 1; height: 34px; border-radius: 6px;
+  background: linear-gradient(100deg, #22222a 40%, #30303b 50%, #22222a 60%);
+  background-size: 200% 100%; animation: sk-shimmer 1.4s linear infinite; }
+.sk-hksave { width: 150px; height: 38px; margin-top: 4px; }
+.sk-hktable { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
+.sk-hkhead, .sk-hktr {
+  display: grid;
+  grid-template-columns: 5% 15% 30% 15% 10% 10% 15%;
+  gap: 8px; align-items: center; padding: 6px 10px;
+}
+.sk-hkhead { background: #23232b; border: 1px solid #2e2e38; border-radius: 8px; min-height: 36px; }
+.sk-hkhcell { height: 10px; width: 80%; border-radius: 4px;
+  background: linear-gradient(100deg, #2c2c36 40%, #3c3c49 50%, #2c2c36 60%);
+  background-size: 200% 100%; animation: sk-shimmer 1.4s linear infinite; }
+.sk-hktr { min-height: 46px; background: #1d1d24; border: 1px solid #26262e; border-radius: 8px; }
+.sk-hkcell { height: 16px; border-radius: 4px;
+  background: linear-gradient(100deg, #22222a 40%, #30303b 50%, #22222a 60%);
+  background-size: 200% 100%; animation: sk-shimmer 1.4s linear infinite; }

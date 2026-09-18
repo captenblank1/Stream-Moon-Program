@@ -1,0 +1,143 @@
+/* ============================================================
+   pro.css - نافذة تفعيل الاشتراك + شارة البرو
+   ============================================================ */
+
+/* ====== الشارة الذهبية (برو) ====== */
+.pro-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 9px;
+  margin-inline-start: 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #1a1400;
+  background: linear-gradient(135deg, #ffe08a, #ffb300);
+  box-shadow: 0 1px 6px rgba(255, 179, 0, 0.45);
+  vertical-align: middle;
+}
+
+/* ====== نافذة تفعيل الاشتراك ====== */
+.pro-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 6, 12, 0.72);
+  backdrop-filter: blur(4px);
+  animation: proFadeIn 0.25s ease;
+}
+
+.pro-modal {
+  position: relative;
+  width: min(430px, calc(100vw - 40px));
+  max-height: calc(100vh - 60px);
+  overflow-y: auto;
+  border-radius: 18px;
+  padding: 28px 26px 24px;
+  text-align: center;
+  color: #eee;
+  direction: rtl;
+  background: linear-gradient(160deg, #17181f 0%, #101017 60%, #141109 100%);
+  border: 1px solid rgba(255, 217, 102, 0.35);
+  box-shadow:
+    0 0 0 1px rgba(255, 217, 102, 0.12),
+    0 18px 60px rgba(0, 0, 0, 0.65),
+    0 0 40px rgba(255, 179, 0, 0.12);
+  animation: proPop 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.pro-modal-close {
+  position: absolute;
+  top: 12px;
+  inset-inline-end: 12px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: #aaa;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 15px;
+  transition: background 0.15s, color 0.15s;
+}
+.pro-modal-close:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.pro-modal-crown {
+  font-size: 40px;
+  color: #ffd966;
+  filter: drop-shadow(0 0 12px rgba(255, 217, 102, 0.55));
+  margin-bottom: 6px;
+}
+
+.pro-modal-title {
+  margin: 0 0 2px;
+  font-size: 22px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #ffe08a, #ffb300);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.pro-modal-sub {
+  margin: 0 0 14px;
+  font-size: 13.5px;
+  color: #9aa;
+}
+
+.pro-modal-duration {
+  display: inline-block;
+  padding: 5px 16px;
+  margin-bottom: 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffd966;
+  border: 1px dashed rgba(255, 217, 102, 0.55);
+  background: rgba(255, 217, 102, 0.07);
+}
+
+.pro-modal-features {
+  list-style: none;
+  margin: 0 0 18px;
+  padding: 0;
+  text-align: start;
+}
+.pro-modal-features li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border-radius: 10px;
+  font-size: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.pro-modal-features li i {
+  color: #ffd966;
+  width: 18px;
+  text-align: center;
+}
+
+.pro-modal-footer {
+  font-size: 12px;
+  color: #778;
+}
+
+@keyframes proFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes proPop {
+  from { opacity: 0; transform: translateY(14px) scale(0.94); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}

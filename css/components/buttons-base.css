@@ -1,0 +1,75 @@
+/* ==================== الأزرار الموحدة (BASE) ==================== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 18px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  white-space: nowrap;
+  background: #333;
+  color: #fff;
+}
+.btn:hover {
+  transform: translateY(-1px);
+  opacity: 0.9;
+}
+
+.btn-primary {
+  background: var(--primary-color);
+  color: #fff;
+}
+.btn-primary:hover {
+  background: var(--primary-hover);
+}
+
+.btn-danger {
+  background: var(--danger-color);
+  color: #fff;
+}
+.btn-danger:hover {
+  background: var(--danger-hover);
+}
+
+.btn-secondary {
+  background: #444;
+  color: #fff;
+}
+.btn-secondary:hover {
+  background: #666;
+}
+
+.btn-success {
+  background: #4caf50;
+  color: #fff;
+}
+.btn-success:hover {
+  background: #388e3c;
+}
+
+.btn-warning {
+  background: #ff9800;
+  color: #fff;
+}
+.btn-warning:hover {
+  background: #e68900;
+}
+
+.btn-sm {
+  padding: 4px 12px;
+  font-size: 12px;
+}
+.btn-lg {
+  padding: 12px 28px;
+  font-size: 16px;
+}
+.btn-block {
+  width: 100%;
+  justify-content: center;
+}

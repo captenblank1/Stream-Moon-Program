@@ -1,0 +1,156 @@
+        <div class="modal-content">
+          <p>هل تريد حذف كل الأوامر؟</p>
+          <button class="btn btn-danger" onclick="deleteAll()">نعم</button>
+          <button class="btn btn-secondary" onclick="closeModal()">
+            إلغاء
+          </button>
+        </div>
+      </div>
+      <!-- موديل كونفيرم قطع الاتصال المنفصل أُزيل — يُستخدم الموديل العام (confirmModal) -->
+      <div class="modal" id="commandSelectionModal">
+        <div
+          class="modal-content command-table-modal"
+          style="display: flex; flex-direction: column; overflow: hidden"
+        >
+          <span class="close-modal" id="close-command-modal">&times;</span>
+          <h2 id="commandModalTitle">اختر الأوامر</h2>
+          <div
+            style="
+              display: flex;
+              gap: 10px;
+              align-items: center;
+              margin: 10px 0;
+              flex-wrap: wrap;
+            "
+          >
+            <label style="display: flex; align-items: center; gap: 5px">
+              <input type="checkbox" id="select-all-commands" />
+              <span style="cursor: pointer" id="select-all-label"
+                >تحديد الكل</span
+              >
+            </label>
+            <label
+              id="copyTargetWrap"
+              style="display: none; align-items: center; gap: 5px"
+            >
+              <span>الوجهة:</span>
+              <select
+                id="copyTargetProfile"
+                style="
+                  padding: 4px 8px;
+                  background: #1a1a1a;
+                  color: #fff;
+                  border: 1px solid #444;
+                  border-radius: 6px;
+                "
+              ></select>
+            </label>
+            <div style="flex: 1"></div>
+            <button id="confirmCommandAction" class="btn btn-primary">
+              تأكيد
+            </button>
+            <button id="cancelCommandAction" class="btn btn-secondary">
+              إلغاء
+            </button>
+          </div>
+          <div
+            style="
+              flex: 1;
+              overflow-y: auto;
+              border: 1px solid #444;
+              background: #1a1a1a;
+            "
+          >
+            <table class="command-table" id="commandSelectionTable">
+              <thead>
+                <tr>
+                  <th style="width: 30px">اختيار</th>
+                  <th style="width: 15%">الاسم</th>
+                  <th>الامر</th>
+                  <th style="width: 7%">الشاشة</th>
+                  <th style="width: 7%">التكرار</th>
+                  <th style="width: 7%">الفاصل</th>
+                  <th style="width: 9%">تأخير</th>
+                  <th style="width: 5%">صوت</th>
+                  <th style="width: 5%">فيديو</th>
+                  <th class="interaction-th" style="width: 38px">
+                    <i class="fas fa-wand-magic-sparkles"></i> تفاعل
+                  </th>
+                </tr>
+              </thead>
+              <tbody id="commandSelectionTableBody"></tbody>
+            </table>
+          </div>
+          <div
+            id="duplicateCommandsArea"
+            style="margin-top: 10px; overflow-y: auto; display: none"
+          >
+            <h3 style="color: #ff9800">
+              أوامر هدايا مكررة - اختر الاستبدال
+              <label
+                style="display: inline-flex; align-items: center; gap: 5px; margin-inline-start: 12px; font-size: 13px; cursor: pointer"
+              >
+                <input type="checkbox" id="duplicate-select-all" checked />
+                استبدال الكل
+              </label>
+            </h3>
+            <table class="command-table" id="duplicateTable">
+              <thead>
+                <tr>
+                  <th style="width: 30px">استبدال</th>
+                  <th style="width: 15%">الاسم</th>
+                  <th>الأمر / Webhook</th>
+                  <th style="width: 7%">الشاشة</th>
+                  <th style="width: 7%">التكرار</th>
+                  <th style="width: 7%">الفاصل</th>
+                  <th style="width: 9%">تأخير</th>
+                  <th style="width: 5%">صوت</th>
+                  <th style="width: 5%">فيديو</th>
+                  <th class="interaction-th" style="width: 38px">
+                    <i class="fas fa-wand-magic-sparkles"></i> تفاعل
+                  </th>
+                </tr>
+              </thead>
+              <tbody id="duplicateTableBody"></tbody>
+            </table>
+            <div style="margin-top: 5px"></div>
+          </div>
+          <div
+            id="hotkeysSelectionArea"
+            style="margin-top: 10px; overflow-y: auto; display: none"
+          >
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-bottom: 5px;
+              "
+            >
+              <h3 style="color: #1dd9e6" id="hotkeysAreaTitle">
+                اختصارات البروفايل
+              </h3>
+              <label style="display: flex; align-items: center; gap: 5px">
+                <input type="checkbox" id="select-all-hotkeys" />
+                <span style="cursor: pointer" id="select-all-hotkeys-label"
+                  >تحديد الكل</span
+                >
+              </label>
+            </div>
+            <table class="command-table" id="hotkeysSelectionTable">
+              <thead>
+                <tr>
+                  <th style="width: 40px" id="hotkeySelectTh">اختيار</th>
+                  <th style="width: 20%">المفتاح</th>
+                  <th>الأمر</th>
+                  <th style="width: 12%">النوع</th>
+                  <th style="width: 10%">الحالة</th>
+                </tr>
+              </thead>
+              <tbody id="hotkeysSelectionTbody"></tbody>
+            </table>
+            <div style="margin-top: 5px"></div>
+          </div>
+        </div>
+      </div>
+

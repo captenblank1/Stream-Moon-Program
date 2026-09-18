@@ -1,0 +1,60 @@
+/* ==================== قسم إدارة الأوامر ==================== */
+.start-section-2 main {
+  background: var(--bg-section);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 25px;
+  box-shadow: var(--shadow);
+}
+
+.start-section-2 main > div:first-child {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 25px;
+}
+
+/* ===== سكيلتون هذا القسم — جدول الأوامر ===== */
+.sk-circle { border-radius: 50%; }
+.sk-card {
+  width: 100%;
+  background: #1d1d24;
+  border: 1px solid #26262e;
+  border-radius: 12px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.sk-cta { height: 42px; border-radius: 8px; align-self: flex-start; }
+.sk-ctable {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.sk-chead,
+.sk-crow {
+  display: grid;
+  grid-template-columns:
+    46px 40px 110px 1.1fr 1.5fr 62px 62px 70px 74px 44px 44px 132px 132px;
+  gap: 10px;
+  align-items: center;
+  padding: 5px 10px;
+}
+.sk-chead {
+  background: #23232b;
+  border: 1px solid #2e2e38;
+  border-radius: 8px;
+  min-height: 38px;
+}
+.sk-crow {
+  min-height: 51px;
+  background: #1d1d24;
+  border: 1px solid #26262e;
+  border-radius: 8px;
+}
+.sk-cdrag { display: flex; gap: 5px; justify-content: center; }
+.sk-cb { justify-self: center; }
+.sk-cbtns { display: flex; gap: 7px; justify-content: center; }

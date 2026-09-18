@@ -1,0 +1,21 @@
+/* ==================== حماية أيقونات Font Awesome من تجاوز الخطوط ==================== */
+/* قواعد الخط الشامل (مثل #listsPanelNative * { font-family: Cairo }) كانت
+   تغير خط الأيقونات فتظهر مربعات — هذه القاعدة تضمن خط FA بأولوية أعلى */
+i.fas,
+i.fa-solid {
+  font-family: "Font Awesome 6 Free" !important;
+  font-weight: 900 !important;
+  margin-inline-end: 6px;
+}
+i.far,
+i.fa-regular {
+  font-family: "Font Awesome 6 Free" !important;
+  font-weight: 400 !important;
+  margin-inline-end: 6px;
+}
+i.fab,
+i.fa-brands {
+  font-family: "Font Awesome 6 Brands" !important;
+  font-weight: 400 !important;
+  margin-inline-end: 6px;
+}

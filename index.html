@@ -6,7 +6,7 @@
 
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' https:; connect-src 'self' https: wss:; object-src 'none'; frame-src 'self' http: https:; base-uri 'none'"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' https:; connect-src 'self' https: wss: http://127.0.0.1:3000 http://localhost:3000 ws://127.0.0.1:3000 ws://localhost:3000; object-src 'none'; frame-src 'self' http: https:; base-uri 'none'"
     />
     <meta
       name="description"
@@ -16,10 +16,40 @@
     <link rel="stylesheet" href="css/normalize.css" />
 
     <link rel="stylesheet" href="vendor/fontawesome/all.min.css" />
+    <!-- الأساس: المتغيرات العامة والخطوط -->
     <link rel="stylesheet" href="css/style.css" />
+    <link rel="stylesheet" href="css/components/colors-variables.css" />
+    <link rel="stylesheet" href="css/components/reset.css" />
+    <link rel="stylesheet" href="css/components/sidebar.css" />
+    <link rel="stylesheet" href="css/components/auth-topbar.css" />
+    <link rel="stylesheet" href="css/components/buttons-base.css" />
+    <link rel="stylesheet" href="css/components/auth-buttons.css" />
+    <link rel="stylesheet" href="css/components/main-content.css" />
+    <link rel="stylesheet" href="css/components/cards-account-minecraft.css" />
+    <link rel="stylesheet" href="css/components/commands-section.css" />
+    <link rel="stylesheet" href="css/components/profile-select.css" />
+    <link rel="stylesheet" href="css/components/action-buttons.css" />
+    <link rel="stylesheet" href="css/components/command-card.css" />
+    <link rel="stylesheet" href="css/components/dropdowns-gifts-audio.css" />
+    <link rel="stylesheet" href="css/components/table.css" />
+    <link rel="stylesheet" href="css/components/checkbox.css" />
+    <link rel="stylesheet" href="css/components/scrollbar.css" />
+    <link rel="stylesheet" href="css/components/message-toast.css" />
+    <link rel="stylesheet" href="css/components/modals.css" />
+    <link rel="stylesheet" href="css/components/small-screens.css" />
+    <link rel="stylesheet" href="css/components/misc.css" />
+    <link rel="stylesheet" href="css/components/keyboard-selector.css" />
+    <link rel="stylesheet" href="css/components/audio-modal.css" />
+    <link rel="stylesheet" href="css/components/screens-section.css" />
+    <link rel="stylesheet" href="css/components/admin-section.css" />
+    <link rel="stylesheet" href="css/components/hotkey-section.css" />
+    <link rel="stylesheet" href="css/components/urgent-notification.css" />
+    <link rel="stylesheet" href="css/components/fontawesome-protection.css" />
+    <link rel="stylesheet" href="css/components/once-per-live.css" />
+    <link rel="stylesheet" href="css/pro.css" />
     <link rel="stylesheet" href="css/responsive.css" />
     <!-- سكيلتون التحميل الافتتاحي — وحدة مستقلة في مجلد skeleton -->
-    <link rel="stylesheet" href="skeleton/skeleton.css" />
+    
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link
       href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&family=Fredoka+One&family=Press+Start+2P&family=Orbitron:wght@900&display=swap"
@@ -35,7 +65,7 @@
 
     <script src="vendor/Sortable.min.js"></script>
     <!-- وحدة السكيلتون — تُحمَّل قبل main حتى تتوفر واجهة Skeleton لإخفاء صفحة التحميل -->
-    <script src="skeleton/skeleton.js"></script>
+    <script src="js/skeleton.js"></script>
     <style>
       @font-face {
         font-family: "Open Sans";
@@ -214,13 +244,7 @@
         <button id="logout-btn" class="btn btn-secondary" style="display: none">
           <i class="fas fa-sign-out-alt"></i> تسجيل الخروج
         </button>
-        <button
-          id="delete-account-btn"
-          class="btn btn-danger"
-          style="display: none"
-        >
-          <i class="fas fa-trash-alt"></i> حذف الحساب
-        </button>
+        <!-- زر حذف الحساب أُزيل من الواجهة بطلب المستخدم -->
         <button
           id="delete-all-profile-btn"
           class="btn btn-danger"
@@ -596,16 +620,20 @@
             required
           />
           <div class="custom-select action-select">
-            <div class="selected"><span><i class="fas fa-gift"></i> Gift</span></div>
+            <div class="selected"><span><i class="fas fa-ban"></i> None</span></div>
             <ul class="options">
+              <li data-value="nothing"><i class="fas fa-ban"></i> None</li>
               <li data-value="gift"><i class="fas fa-gift"></i> Gift</li>
               <li data-value="follow">Follow</li>
               <li data-value="like">Like</li>
               <li data-value="comment">Comment</li>
               <li data-value="share">Share</li>
+              <li data-value="join"><i class="fas fa-right-to-bracket"></i> Join</li>
+              <li data-value="first_activity"><i class="fas fa-star"></i> First Activity</li>
+              <li data-value="gift_range"><i class="fas fa-coins"></i> Coins Range</li>
             </ul>
           </div>
-          <input type="hidden" id="actionType" value="gift" />
+          <input type="hidden" id="actionType" value="nothing" />
           <div class="stylenone">
             <div id="giftChooserSection">
               <div id="giftDropdown" class="gift-dropdown">
@@ -636,6 +664,34 @@
               "
             ></textarea>
           </div>
+          <!-- ✅ حقول نطاق العملات Min / Max تحت خيار الـ Webhook — مثل باقي التفاعلات -->
+          <div
+            id="giftRangeSection"
+            style="display: none; margin-top: 8px"
+          >
+            <label
+              style="font-size: 12px; color: #9fb4cc; display: block"
+              >Coins Range — الأمر هيتنفذ مع أي هدية قيمتها ضمن النطاق
+              (Min أو Max على الأقل، الفاضي = بلا حد)</label
+            >
+            <div style="display: flex; gap: 8px; align-items: center">
+              <input
+                type="number"
+                id="minDiamonds"
+                placeholder="Min"
+                min="0"
+                style="flex: 1"
+              />
+              <span style="color: #9fb4cc">—</span>
+              <input
+                type="number"
+                id="maxDiamonds"
+                placeholder="Max"
+                min="0"
+                style="flex: 1"
+              />
+            </div>
+          </div>
           <label style="text-align: center" for="keyword"
             >Write a comment to execute the command or leave the field blank for
             all comments.</label
@@ -651,7 +707,7 @@
           <input
             type="text"
             id="targetUser"
-            placeholder="مثال: all أو username"
+            placeholder="مثال: all أو username أو @username"
             value="all"
           />
           <label for="command"
@@ -2432,17 +2488,7 @@
           </button>
         </div>
       </div>
-      <div class="modal" id="disconnectModal">
-        <div class="modal-content">
-          <p id="disconnectMessage">هل تريد قطع الاتصال بالبث المباشر؟</p>
-          <button class="btn btn-danger" onclick="confirmDisconnect()">
-            نعم
-          </button>
-          <button class="btn btn-secondary" onclick="closeDisconnectModal()">
-            إلغاء
-          </button>
-        </div>
-      </div>
+      <!-- موديل كونفيرم قطع الاتصال المنفصل أُزيل — يُستخدم الموديل العام (confirmModal) -->
       <div class="modal" id="commandSelectionModal">
         <div
           class="modal-content command-table-modal"
@@ -2509,7 +2555,9 @@
                   <th style="width: 9%">تأخير</th>
                   <th style="width: 5%">صوت</th>
                   <th style="width: 5%">فيديو</th>
-                  <th style="width: 5%">صوت الفيديو</th>
+                  <th class="interaction-th" style="width: 38px">
+                    <i class="fas fa-wand-magic-sparkles"></i> تفاعل
+                  </th>
                 </tr>
               </thead>
               <tbody id="commandSelectionTableBody"></tbody>
@@ -2519,7 +2567,15 @@
             id="duplicateCommandsArea"
             style="margin-top: 10px; overflow-y: auto; display: none"
           >
-            <h3 style="color: #ff9800">أوامر هدايا مكررة - اختر الاستبدال</h3>
+            <h3 style="color: #ff9800">
+              أوامر هدايا مكررة - اختر الاستبدال
+              <label
+                style="display: inline-flex; align-items: center; gap: 5px; margin-inline-start: 12px; font-size: 13px; cursor: pointer"
+              >
+                <input type="checkbox" id="duplicate-select-all" checked />
+                استبدال الكل
+              </label>
+            </h3>
             <table class="command-table" id="duplicateTable">
               <thead>
                 <tr>
@@ -2532,7 +2588,9 @@
                   <th style="width: 9%">تأخير</th>
                   <th style="width: 5%">صوت</th>
                   <th style="width: 5%">فيديو</th>
-                  <th style="width: 5%">صوت الفيديو</th>
+                  <th class="interaction-th" style="width: 38px">
+                    <i class="fas fa-wand-magic-sparkles"></i> تفاعل
+                  </th>
                 </tr>
               </thead>
               <tbody id="duplicateTableBody"></tbody>
@@ -2580,19 +2638,8 @@
 
     <div id="cardOverlay" class="overlay" style="display: none"></div>
 
-    <script>
-      // التحميل بمسار مطلق من الـ preload - المسار النسبي يفشل في النسخة المغلفة لاعتماده على cwd
-      try {
-        require("bytenode");
-        require(window.__APP_DIR + "/main.jsc");
-      } catch (e) {
-        try {
-          require(window.__APP_DIR + "/main.js");
-        } catch (e2) {
-          console.error(e2.message);
-        }
-      }
-    </script>
-    <script src="i18n.js"></script>
+    <!-- ===== نقطة الدخول ES6 Module — موديولات js/ مرتبة بترتيب الأقسام الأصلي ===== -->
+    <script type="module" src="js/main.js"></script>
+    <script src="js/i18n.js"></script>
   </body>
 </html>

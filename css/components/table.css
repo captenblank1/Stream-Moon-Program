@@ -1,0 +1,81 @@
+/* ==================== الجدول ==================== */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--bg-dark);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+thead {
+  background: var(--bg-card);
+}
+
+th {
+  padding: 12px 8px;
+  text-align: left;
+  color: var(--primary-color);
+  font-weight: 600;
+  border-bottom: 2px solid var(--border-color);
+  text-align: center;
+}
+
+td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+td input[type="text"],
+td input[type="number"],
+td textarea {
+  width: 100%;
+  padding: 5px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-light);
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+td textarea {
+  min-height: 30px;
+  resize: none;
+}
+
+td .options {
+  display: flex;
+  gap: 5px;
+}
+
+td .options button {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: var(--transition);
+  padding: 5px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+td .options button:hover {
+  background: var(--primary-color);
+  color: white;
+}
+
+td .fathertd {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+td .numvolume {
+  min-width: 30px;
+  color: var(--primary-color);
+}

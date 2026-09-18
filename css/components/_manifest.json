@@ -1,0 +1,114 @@
+[
+  {
+    "file": "css/components/colors-variables.css",
+    "title": "متغيرات الألوان"
+  },
+  {
+    "file": "css/components/reset.css",
+    "title": "إعادة تعيين"
+  },
+  {
+    "file": "css/components/sidebar.css",
+    "title": "السيدبار (القائمة الجانبية)"
+  },
+  {
+    "file": "css/components/auth-topbar.css",
+    "title": "شريط المصادقة العلوي"
+  },
+  {
+    "file": "css/components/buttons-base.css",
+    "title": "الأزرار الموحدة (BASE)"
+  },
+  {
+    "file": "css/components/auth-buttons.css",
+    "title": "أزرار شريط المصادقة"
+  },
+  {
+    "file": "css/components/main-content.css",
+    "title": "المحتوى الرئيسي"
+  },
+  {
+    "file": "css/components/cards-account-minecraft.css",
+    "title": "بطاقات الحساب وإعدادات ماينكرافت"
+  },
+  {
+    "file": "css/components/commands-section.css",
+    "title": "قسم إدارة الأوامر"
+  },
+  {
+    "file": "css/components/profile-select.css",
+    "title": "اختيار البروفايل"
+  },
+  {
+    "file": "css/components/action-buttons.css",
+    "title": "أزرار الإجراءات (معاد تعريفها باستخدام class btn)"
+  },
+  {
+    "file": "css/components/command-card.css",
+    "title": "بطاقة إضافة/تعديل الأمر"
+  },
+  {
+    "file": "css/components/dropdowns-gifts-audio.css",
+    "title": "القوائم المنسدلة للهدايا والصوت"
+  },
+  {
+    "file": "css/components/table.css",
+    "title": "الجدول"
+  },
+  {
+    "file": "css/components/checkbox.css",
+    "title": "مربع الاختيار (checkbox)"
+  },
+  {
+    "file": "css/components/scrollbar.css",
+    "title": "شريط التمرير"
+  },
+  {
+    "file": "css/components/message-toast.css",
+    "title": "رسالة التنبيه"
+  },
+  {
+    "file": "css/components/modals.css",
+    "title": "المودالات"
+  },
+  {
+    "file": "css/components/small-screens.css",
+    "title": "تحسينات للشاشات الصغيرة"
+  },
+  {
+    "file": "css/components/misc.css",
+    "title": "إضافات أخرى"
+  },
+  {
+    "file": "css/components/keyboard-selector.css",
+    "title": "Keyboard Selector"
+  },
+  {
+    "file": "css/components/audio-modal.css",
+    "title": "مودال اختيار الصوت"
+  },
+  {
+    "file": "css/components/screens-section.css",
+    "title": "قسم الشاشات"
+  },
+  {
+    "file": "css/components/admin-section.css",
+    "title": "قسم لوحة التحكم"
+  },
+  {
+    "file": "css/components/hotkey-section.css",
+    "title": "قسم Hotkey الجديد"
+  },
+  {
+    "file": "css/components/urgent-notification.css",
+    "title": "الإشعار العاجل — كارت علوي عائم فاخر يهتز لجذب الانتباه"
+  },
+  {
+    "file": "css/components/fontawesome-protection.css",
+    "title": "حماية أيقونات Font Awesome من تجاوز الخطوط"
+  },
+  {
+    "file": "css/components/once-per-live.css",
+    "title": "خانة التنفيذ مرة واحدة في اللايف"
+  }
+]

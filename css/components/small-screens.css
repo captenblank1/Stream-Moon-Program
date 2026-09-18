@@ -1,0 +1,40 @@
+/* ==================== تحسينات للشاشات الصغيرة ==================== */
+@media (max-width: 768px) {
+  aside {
+    width: 100%;
+    height: auto;
+    position: relative;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .auth-header,
+  .start-section,
+  .start-section-2 {
+    margin-left: 0;
+  }
+
+  .start-section {
+    margin-top: 0;
+    padding: 20px;
+  }
+
+  .auth-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .auth-header #auth-status {
+    margin-right: 0;
+    text-align: center;
+  }
+
+  .auth-buttons {
+    justify-content: center;
+  }
+
+  table {
+    display: block;
+    overflow-x: auto;
+  }
+}

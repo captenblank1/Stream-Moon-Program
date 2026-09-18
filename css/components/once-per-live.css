@@ -1,0 +1,31 @@
+/* ==================== خانة التنفيذ مرة واحدة في اللايف ==================== */
+.once-live-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 14px auto 4px;
+  padding: 10px 18px;
+  width: fit-content;
+  background: rgba(29, 217, 230, 0.08);
+  border: 1px solid rgba(29, 217, 230, 0.35);
+  border-radius: 10px;
+  clear: both;
+}
+.once-live-box input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #1dd9e6;
+  cursor: pointer;
+}
+.once-live-box label {
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 14px;
+  margin: 0;
+}
+.once-live-box label i {
+  color: #1dd9e6;
+  margin-inline-end: 4px;
+}

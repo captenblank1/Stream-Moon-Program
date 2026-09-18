@@ -1,0 +1,16 @@
+/* ==================== متغيرات الألوان ==================== */
+:root {
+  --primary-color: #1dd9e6e1;
+  --primary-hover: #1dd9e6a9;
+  --bg-dark: #0a0a0a;
+  --bg-section: #1a1a1a;
+  --bg-card: #222;
+  --border-color: #333;
+  --text-light: #fff;
+  --text-muted: #888;
+  --danger-color: #f44336;
+  --danger-hover: #d32f2f;
+  --success-color: #1dd9e6e1;
+  --shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  --transition: all 0.3s ease;
+}

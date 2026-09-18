@@ -1,0 +1,13 @@
+/* ==================== أزرار الإجراءات (معاد تعريفها باستخدام class btn) ==================== */
+.delete-all-btn,
+.add-btn {
+  /* سيتم استخدام class btn مباشرة، نحتفظ بهذه الفئات للتوافق مع الـ JS */
+  /* لكن سنضيف لها قواعد إضافية إن لزم */
+}
+.add-btn {
+  background: var(--primary-color);
+  color: white;
+}
+.add-btn:hover {
+  background: var(--primary-hover);
+}

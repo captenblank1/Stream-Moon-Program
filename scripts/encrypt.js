@@ -6,24 +6,44 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
-const KEY = Buffer.from(require("../res-key.js"), "hex");
+const KEY = Buffer.from(require("../electron/res-key.js"), "hex");
 const ROOT = path.join(__dirname, "..");
 const OUT = path.join(ROOT, "enc");
 
+// ✅ بناء index.html من أجزائه في html/ (بترتيب الأسماء) — الناتج المدمج
+// يُكتب كجذر index.html (fallback التطوير + سيرفر الاختبار) ثم يُشفَّر
+const HTML_DIR = path.join(ROOT, "html");
+if (fs.existsSync(HTML_DIR)) {
+  const parts = fs
+    .readdirSync(HTML_DIR)
+    .filter((f) => f.endsWith(".html"))
+    .sort()
+    .map((f) => fs.readFileSync(path.join(HTML_DIR, f), "utf8"));
+  fs.writeFileSync(path.join(ROOT, "index.html"), parts.join(""));
+  console.log(`📄 index.html مُركب من ${parts.length} أجزاء (html/)`);
+}
+
 // كل ملف نصي قابل للقراءة
-const TARGETS = [
+const TARGETS = [];
+// أصول نصية عادية + كل موديولات js وكل مكونات CSS (اجتياح آلي)
+for (const dir of ["js", "css/components"]) {
+  const d = path.join(ROOT, dir);
+  if (fs.existsSync(d)) {
+    for (const f of fs.readdirSync(d)) {
+      if (f.endsWith(".js") || f.endsWith(".css")) TARGETS.push(dir + "/" + f);
+    }
+  }
+}
+TARGETS.push(
   "index.html",
   "css/normalize.css",
   "css/style.css",
   "css/responsive.css",
+  "css/pro.css",
   "css/all.min.css",
   "vendor/fontawesome/all.min.css",
   "vendor/Sortable.min.js",
-  "i18n.js",
-  // وحدة السكيلتون — بدونها تختفي من حزمة البناء
-  "skeleton/skeleton.css",
-  "skeleton/skeleton.js",
-];
+);
 
 fs.rmSync(OUT, { recursive: true, force: true });
 

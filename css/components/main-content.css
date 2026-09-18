@@ -1,0 +1,12 @@
+/* ==================== المحتوى الرئيسي ==================== */
+.section-css {
+  margin-left: 250px;
+  padding: 20px;
+}
+
+.start-section {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-top: 70px;
+}

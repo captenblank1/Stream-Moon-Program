@@ -9,18 +9,18 @@ const fs = require("fs");
 const bytenode = require("bytenode");
 
 const ROOT = path.join(__dirname, "..");
-const TARGETS = ["main.js", "electron-main.js", "preload-src.js", "res-key.js"];
+const TARGETS = ["electron/electron-main.js", "electron/preload-src.js", "electron/res-key.js"]; // main.js أصبح موديولات ES6 في js/ — تُشفَّر في enc/ بدلاً من الـ bytecode
 
 async function main() {
   for (const file of TARGETS) {
     const srcPath = path.join(ROOT, file);
     const outName =
-      file === "preload-src.js"
+      file.endsWith("preload-src.js")
         ? "preload.jsc"
-        : file === "res-key.js"
+        : file.endsWith("res-key.js")
           ? "res-key.jsc"
-          : file.replace(/\.js$/, ".jsc");
-    const outPath = path.join(ROOT, outName);
+          : path.basename(file).replace(/\.js$/, ".jsc");
+    const outPath = path.join(ROOT, "electron", outName);
     try {
       const result = await bytenode.compileFile(srcPath, outPath);
       const finalPath =
@@ -29,7 +29,7 @@ async function main() {
         throw new Error("لم يُنشأ ملف الـ bytecode");
       }
       const size = fs.statSync(finalPath).size;
-      console.log(`✅ ${file} → ${path.basename(finalPath)} (${size} bytes)`);
+      console.log(`✅ ${file} → electron/${path.basename(finalPath)} (${size} bytes)`);
     } catch (err) {
       console.error(`❌ فشل تحويل ${file}:`, err.message);
       process.exit(1);

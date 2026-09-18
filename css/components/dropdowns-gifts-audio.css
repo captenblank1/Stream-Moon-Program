@@ -1,0 +1,55 @@
+/* ==================== القوائم المنسدلة للهدايا والصوت ==================== */
+.gift-dropdown {
+  position: relative;
+  width: 100%;
+  margin: 10px 0;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.gift-dropdown .selected {
+  padding: 10px;
+}
+
+.gift-dropdown .options {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 20;
+}
+
+.gift-dropdown.open .options {
+  display: block;
+}
+
+.gift-dropdown .option {
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: var(--transition);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.gift-dropdown .option:hover {
+  background: var(--primary-color);
+  color: white;
+}
+
+.gift-dropdown .option img {
+  width: 35px;
+  height: 35px;
+  object-fit: cover;
+  border-radius: 4px;
+}
