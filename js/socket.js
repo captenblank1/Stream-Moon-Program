@@ -27,6 +27,7 @@ import { hideNotification } from "./notifications.js";
 import { applyContactLinksVisibility } from "./notifications.js";
 import { safeMediaUrl } from "./utils-core.js";
 import { forceSessionLogout } from "./notifications.js";
+import { refreshFromSocket } from "./viewerstats.js";
 
 // ============================================================
 // دوال الاتصال بـ Socket.IO
@@ -93,6 +94,15 @@ async function connectFrontendSocket() {
           }
         })
         .catch((err) => console.warn("فشل جلب userId", err));
+    });
+
+    // ===== ✅ نقاط المشاهدين: تحديث لحظي للجدول عند تغيّر النقاط =====
+    // (السيرفر يبث viewer-stats-updated بعد كل دفعة حفظ — المستمع هنا
+    // يتجدد مع كل إنشاء للسوكيت بدل مستمع ميت من لحظة تحميل الموديول)
+    __S.frontendSocket.on("viewer-stats-updated", () => {
+      try {
+        refreshFromSocket();
+      } catch (e) {}
     });
 
     // ===== ✅ تحديث فوري لحالة اشتراك المستخدم (تفعيل/إلغاء) =====

@@ -1031,96 +1031,10 @@ function attachAdminButtonEvents() {
 
 
 window.updateOverlayPreviews = function () {
-  if (typeof AppI18n === "undefined" && !window.AppI18n) {
-    /* ملاحظة: لا شيء */
-  }
-  const esc = (s) =>
-    String(s || "").replace(
-      /[&<>"']/g,
-      (c) =>
-        ({
-          "&": "&amp;",
-          "<": "&lt;",
-          ">": "&gt;",
-          '"': "&quot;",
-          "'": "&#39;",
-        })[c],
-    );
-  // معاينة قوائم الأساطير — مطابقة لصفحة overlay.html
-  [1, 2].forEach((id) => {
-    const wrap = document.getElementById("ovlLive" + id);
-    const titleEl = document.getElementById("smlTitle" + id);
-    if (!wrap || !titleEl) return;
-    // ✅ القسم مخفي — نتجاهل التحديث كلياً: قياس clientWidth وأثناء الإخفاء
-    // كان يعطي مقياساً خاطئاً فيتقلص القسم ثوانٍ ثم يرجع لحجمه الطبيعي عند فتحه
-    if (wrap.offsetParent === null) return;
-    const title = titleEl.value || "";
-    const theme =
-      document.getElementById("smlTheme" + id)?.value || "theme-neon";
-    const glow = document.getElementById("smlGlow" + id)?.value || "#00ffe1";
-    const badge = document.getElementById("smlBadge" + id)?.value || "#ff0055";
-    const names = (document.getElementById("smlNames" + id)?.value || "")
-      .split(String.fromCharCode(10))
-      .map((s) => s.trim())
-      .filter(Boolean);
-    const ctrl = window._smlCtrls ? window._smlCtrls[id - 1] : null;
-    const crowned = ctrl ? ctrl.crowned : new Set();
-    // العرض والارتفاع الحقيقيان — تصغير خفيف فقط عند تجاوز مساحة البطاقة
-    const wpx =
-      parseInt(document.getElementById("smlWidth" + id)?.value) || 285;
-    const hpx =
-      parseInt(document.getElementById("smlHeight" + id)?.value) || 500;
-    const availW = Math.max(200, wrap.clientWidth - 20);
-    const scale = Math.min(1, availW / wpx, 520 / hpx);
-    // ✅ لا لمس للـDOM إن لم يتغير أي شيء — يمنع أي وميض/إعادة تدفق كل ثانية
-    const sig = [
-      title,
-      theme,
-      glow,
-      badge,
-      names.join("\n"),
-      [...crowned].join(","),
-      wpx,
-      hpx,
-      scale.toFixed(3),
-    ].join("§");
-    if (wrap._previewSig === sig) return;
-    wrap._previewSig = sig;
-    const newH = Math.round(hpx * scale) + "px";
-    if (wrap.style.height !== newH) wrap.style.height = newH;
-    const rows = names.length
-      ? names
-          .map((name, idx) => {
-            const crown = crowned.has(idx)
-              ? '<i class="fas fa-crown"></i>'
-              : "";
-            return `<div class="ovl-box-row"><span class="ovl-box-num" style="background:${badge}">${idx + 1}</span><span class="ovl-box-name">${esc(name)}</span>${crown}</div>`;
-          })
-          .join("")
-      : '<div class="ovl-box-empty">No names yet</div>';
-    wrap.innerHTML = `<div class="ovl-box ${theme}" style="border-color:${esc(glow)}; box-shadow:0 0 16px ${esc(glow)}66; width:${wpx}px; height:${hpx}px; transform:scale(${scale.toFixed(3)})"><div class="ovl-box-head"><h2><i class="fas fa-trophy"></i> ${esc(title)}</h2></div><div class="ovl-box-list">${rows}</div></div>`;
-  });
-  // معاينة عداد الفوز/الخسارة — تعيد استخدام ستايلات .smw-box الموجودة
-  const winsWrap = document.getElementById("ovlLiveWins");
-  const winLabel = document.getElementById("smwWinLabel");
-  if (winsWrap && winLabel) {
-    if (winsWrap.offsetParent === null) return;
-    const theme = document.getElementById("smwTheme")?.value || "pscontroller";
-    const w = document.getElementById("smwWinVal")?.textContent || "0";
-    const l = document.getElementById("smwLossVal")?.textContent || "0";
-    const wl = winLabel.value || "WIN";
-    const ll = document.getElementById("smwLossLabel")?.value || "LOSE";
-    const sig = [theme, w, l, wl, ll].join("§");
-    if (winsWrap._previewSig === sig) return;
-    winsWrap._previewSig = sig;
-    winsWrap.style.height = "auto";
-    winsWrap.innerHTML = `<div class="smw-box ${theme}"><div class="smw-item smw-w"><span class="lbl">${esc(wl)}</span><span>${esc(w)}</span></div><div class="smw-line"></div><div class="smw-item smw-l"><span class="lbl">${esc(ll)}</span><span>${esc(l)}</span></div></div>`;
-  }
+  // القسم الموحد — المعاينات كلها iframes لصفحات الأوفرلايز الحقيقية،
+  // فلا حاجة لاستنساخ المعاينات داخل الـDOM (دوال القوائم القديمة أُزيلت).
 };
-// تحديث المعاينة كل ثانية — يجعلها حية مع أي تعديل في اللوحات
-setInterval(() => {
-  if (window.updateOverlayPreviews) window.updateOverlayPreviews();
-}, 1000);
+// (لا حلقة تحديث كل ثانية — المعاينات iframes حية من السيرفر)
 
 function openOverlayPanel(panelId, kind, title) {
   const panel = document.getElementById(panelId);
@@ -1149,11 +1063,6 @@ function closeOverlayPanel() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  document.querySelectorAll(".ovl-open-panel").forEach((btn) => {
-    btn.addEventListener("click", () =>
-      openOverlayPanel(btn.dataset.panel, btn.dataset.kind, btn.dataset.title),
-    );
-  });
   const modal = document.getElementById("overlayFloatModal");
   if (!modal) return;
   // الضغط خارج الكارت = إغلاق (إرجاع بدون تغيير — الحفظ تلقائي داخلياً)
@@ -1163,20 +1072,6 @@ document.addEventListener("DOMContentLoaded", () => {
   document
     .getElementById("overlayFloatX")
     ?.addEventListener("click", () => closeOverlayPanel());
-  // نسخ رابط OBS لعداد الفوز/الخسارة من بطاقة المعاينة
-  document.getElementById("smwCardCopy")?.addEventListener("click", () => {
-    const link = document.getElementById("smwLinkUrl")?.value || "";
-    if (!link.startsWith("http")) {
-      showMessage(
-        "<i class='fas fa-triangle-exclamation'></i> الرابط لم يجهز بعد — جاري الاتصال، جرّب بعد لحظات",
-      );
-      return;
-    }
-    navigator.clipboard.writeText(link);
-    showMessage(
-      "<i class='fas fa-circle-check'></i> تم نسخ رابط العداد لـ OBS",
-    );
-  });
 });
 
 

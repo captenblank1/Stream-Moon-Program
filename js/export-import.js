@@ -9,6 +9,9 @@ import { safeImageUrl } from "./utils-core.js";
 // خلية الصورة: صور كل الهدايا المختارة بشكل مصغر لأوامر الهدايا (من قائمة
 // الهدايا المتراكمة محلياً) وأيقونة التفاعل المناسبة لباقي الأنواع
 function buildCommandImageCell(cmd) {
+  // ⚠️ يجب أن يُعرَّف قبل أي return — كان تحت الفرع المبكر فينهار الجدول كله
+  const imgStyle =
+    "width:30px;height:30px;object-fit:cover;border-radius:4px;display:block;margin:0 auto;";
   const coins = `<i class="fas fa-coins" style="color:#ffd54f; font-size:15px;" title="أمر نطاق العملات"></i>`;
   const isGift =
     cmd.__type === "gift" || (cmd.giftId != null && cmd.giftId !== "");
@@ -33,8 +36,6 @@ function buildCommandImageCell(cmd) {
     return coins; // أمر نطاق عملات بدون هدية محددة
   }
   if (cmd.type === "gift_range") return coins;
-  const imgStyle =
-    "width:30px;height:30px;object-fit:cover;border-radius:4px;display:block;margin:0 auto;";
   const iconMap = {
     like: "like.png",
     follow: "follow.png",

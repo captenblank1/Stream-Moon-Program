@@ -1,0 +1,491 @@
+/* ==================== أساسات الأقسام المضافة (لايف فيد / TTS / أغاني) ==================== */
+/* نفس نمط قسم الهوت كي: بطاقة محتوى كاملة مع رأس مركزي */
+
+.livefeed-section,
+.tts-section,
+.songs-section {
+  background: var(--bg-section);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  margin-top: 70px;
+  box-shadow: var(--shadow);
+  padding: 25px;
+}
+
+.addon-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+.addon-header h2 {
+  color: var(--primary-color);
+  font-size: 24px;
+}
+.addon-header p {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-top: 6px;
+}
+.addon-header p b {
+  color: var(--text-light);
+}
+
+/* صفوف الحقول المشتركة */
+.addon-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.addon-row label {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.addon-row input[type="number"],
+.addon-row input[type="text"],
+.addon-row select,
+.addon-row textarea {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-dark);
+  color: var(--text-light);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  transition: var(--transition);
+  font-family: inherit;
+}
+.addon-row input:focus,
+.addon-row select:focus,
+.addon-row textarea:focus {
+  border-color: var(--primary-color);
+}
+.addon-row small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.addon-row.two-cols {
+  flex-direction: row;
+  gap: 14px;
+}
+.addon-row.two-cols > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.addon-row.three-cols {
+  flex-direction: row;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.addon-row.three-cols > div {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* شرائح التمرير (سرعة/نبرة/صوت) */
+.addon-row input[type="range"] {
+  width: 100%;
+  accent-color: var(--primary-color);
+  cursor: pointer;
+}
+.addon-row output {
+  color: var(--primary-color);
+  font-weight: 700;
+}
+
+/* خيارات الاختيار البسيطة */
+.addon-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.addon-check input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary-color);
+  cursor: pointer;
+  flex: none;
+}
+.addon-check label {
+  color: var(--text-light);
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+/* مفتاح التبديل الكبير (تفعيل/إيقاف) */
+.toggle-row {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 12px !important;
+}
+.toggle-row .toggle-label {
+  color: var(--text-light);
+  font-size: 14px;
+  font-weight: 600;
+}
+.addon-switch {
+  position: relative;
+  display: inline-block;
+  width: 46px;
+  height: 24px;
+  flex: none;
+}
+.addon-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.addon-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: #444;
+  border-radius: 24px;
+  transition: var(--transition);
+}
+.addon-slider::before {
+  content: "";
+  position: absolute;
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: var(--transition);
+}
+.addon-switch input:checked + .addon-slider {
+  background: var(--primary-color);
+}
+.addon-switch input:checked + .addon-slider::before {
+  transform: translateX(22px);
+}
+/* في وضع العربي: المقبض يبدأ من اليمين ويتحرك لليسار عند التفعيل
+   (اتجاه body في البرنامج LTR دائماً — الـ RTL يُدار من html[dir]) */
+html[dir="rtl"] .addon-slider::before {
+  left: auto;
+  right: 3px;
+}
+html[dir="rtl"] .addon-switch input:checked + .addon-slider::before {
+  transform: translateX(-22px);
+}
+
+/* صف الحفظ السفلي */
+.addon-actions {
+  margin-top: 25px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+.addon-actions .btn {
+  padding: 12px 30px;
+  font-size: 15px;
+  font-weight: bold;
+}
+.addon-status {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+@media (max-width: 768px) {
+  .livefeed-section,
+  .tts-section,
+  .songs-section {
+    margin-left: 0;
+    margin-top: 0;
+    border-radius: 0;
+    padding: 15px;
+  }
+  .addon-row.two-cols {
+    flex-direction: column;
+    gap: 0;
+  }
+}
+
+/* ============================================================
+   PREMIUM LAYER — طبقة تصميم فاخرة موحّدة للأقسام المضافة
+   قشرة زجاجية + توهج سماوي + حركات ناعمة
+   ============================================================ */
+
+/* ---- غلاف القسم: خلفية متدرجة مع هالة علوية وحواف مضيئة ---- */
+.livefeed-section,
+.tts-section,
+.songs-section {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(1100px 460px at 50% -180px, rgba(29, 217, 230, 0.12), transparent 62%),
+    linear-gradient(180deg, #1b1b20 0%, #131316 100%);
+  border: 1px solid rgba(29, 217, 230, 0.14);
+  border-radius: 20px;
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+/* خط ضوئي علوي رفيع */
+.livefeed-section::before,
+.tts-section::before,
+.songs-section::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  inset-inline: 8%;
+  height: 1.5px;
+  background: linear-gradient(90deg, transparent, rgba(29, 217, 230, 0.75), transparent);
+  pointer-events: none;
+}
+
+/* ---- رأس القسم: أيقونة داخل شريحة متوهجة + عنوان متدرج ---- */
+.addon-header h2 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  font-size: 26px;
+  letter-spacing: 0.3px;
+  background: linear-gradient(100deg, #d9fbfd 0%, #1dd9e6 55%, #0fa3af 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.addon-header h2 i {
+  -webkit-text-fill-color: #fff;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  background: linear-gradient(135deg, rgba(29, 217, 230, 0.9), rgba(11, 128, 138, 0.9));
+  box-shadow:
+    0 6px 18px rgba(29, 217, 230, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  flex: none;
+}
+.addon-header p {
+  max-width: 660px;
+  margin: 10px auto 0;
+  font-size: 13.5px;
+  line-height: 1.8;
+}
+
+/* ---- الكروت: زجاجية + خط علوي + إضاءة عند المرور ---- */
+.tts-card,
+.sr-card {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(168deg, rgba(40, 40, 46, 0.72), rgba(23, 23, 26, 0.94));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 22px;
+  backdrop-filter: blur(10px);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+.tts-card::before,
+.sr-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  inset-inline: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(29, 217, 230, 0.8), transparent);
+  opacity: 0.55;
+  transition: opacity 0.25s ease;
+}
+.tts-card:hover,
+.sr-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(29, 217, 230, 0.32);
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.5),
+    0 0 26px rgba(29, 217, 230, 0.1);
+}
+.tts-card:hover::before,
+.sr-card:hover::before {
+  opacity: 1;
+}
+
+/* ---- عنوان الكارت: أيقونة داخل مربع متدرج + خط منقّط ---- */
+.tts-card h3,
+.sr-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  font-size: 15.5px;
+  color: #c9f8fb;
+  padding-bottom: 13px;
+  margin-bottom: 16px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.09);
+}
+.tts-card h3 i,
+.sr-card h3 i {
+  width: 33px;
+  height: 33px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13.5px;
+  color: var(--primary-color);
+  background: linear-gradient(135deg, rgba(29, 217, 230, 0.22), rgba(29, 217, 230, 0.05));
+  border: 1px solid rgba(29, 217, 230, 0.35);
+  flex: none;
+}
+
+/* ---- خيارات الاختيار: صفوف تضيء عند التفعيل ---- */
+.addon-check {
+  padding: 10px 13px;
+  margin-bottom: 9px;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  background: rgba(255, 255, 255, 0.022);
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+.addon-check:hover {
+  border-color: rgba(29, 217, 230, 0.28);
+  background: rgba(29, 217, 230, 0.05);
+}
+.addon-check:has(input:checked) {
+  border-color: rgba(29, 217, 230, 0.42);
+  background: linear-gradient(90deg, rgba(29, 217, 230, 0.1), rgba(29, 217, 230, 0.025));
+  box-shadow: inset 0 0 0 1px rgba(29, 217, 230, 0.12);
+}
+.addon-check label {
+  font-weight: 600;
+}
+/* صندوق اختيار مخصص بعلامة صح */
+.addon-check input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 19px;
+  height: 19px;
+  border-radius: 6px;
+  border: 1.5px solid #46464e;
+  background: #17171a;
+  display: inline-grid;
+  place-items: center;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  flex: none;
+}
+.addon-check input[type="checkbox"]::after {
+  content: "\f00c";
+  font-family: "Font Awesome 7 Free", "Font Awesome 6 Free";
+  font-weight: 900;
+  font-size: 10px;
+  color: #04262a;
+  opacity: 0;
+  transform: scale(0.4);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.addon-check input[type="checkbox"]:checked {
+  background: linear-gradient(135deg, #52e6f0, #13b6c3);
+  border-color: transparent;
+  box-shadow: 0 0 10px rgba(29, 217, 230, 0.4);
+}
+.addon-check input[type="checkbox"]:checked::after {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* ---- مفتاح التبديل: توهج عند التفعيل ---- */
+.addon-switch input:checked + .addon-slider {
+  background: linear-gradient(135deg, #52e6f0, #13a5b1);
+  box-shadow: 0 0 14px rgba(29, 217, 230, 0.45);
+}
+
+/* ---- مدخلات: حلقة توهج عند التركيز ---- */
+.tts-section input[type="text"]:focus,
+.tts-section input[type="number"]:focus,
+.tts-section select:focus,
+.tts-section textarea:focus,
+.songs-section input[type="text"]:focus,
+.songs-section select:focus,
+.songs-section textarea:focus,
+.addon-row input:focus,
+.addon-row select:focus,
+.addon-row textarea:focus {
+  border-color: rgba(29, 217, 230, 0.65);
+  box-shadow: 0 0 0 3px rgba(29, 217, 230, 0.12);
+}
+
+/* ---- شرائح التمرير: مسار متدرج + مقبض مضيء ---- */
+.addon-row input[type="range"] {
+  -webkit-appearance: none;
+  height: 6px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(29, 217, 230, 0.7), rgba(29, 217, 230, 0.12));
+  cursor: pointer;
+}
+.addon-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid var(--primary-color);
+  box-shadow: 0 0 12px rgba(29, 217, 230, 0.55);
+  cursor: grab;
+}
+.addon-row input[type="range"]::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  box-shadow: 0 0 18px rgba(29, 217, 230, 0.8);
+}
+
+/* ---- أزرار الأقسام: رفع خفيف + توهج ---- */
+.tts-section .btn,
+.songs-section .btn,
+.viewerpoints-section .btn {
+  border-radius: 10px;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+}
+.tts-section .btn:hover,
+.songs-section .btn:hover,
+.viewerpoints-section .btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(29, 217, 230, 0.18);
+}
+
+/* ---- سكرول بار أنيق داخل الأقسام ---- */
+.tts-card ::-webkit-scrollbar,
+.sr-card ::-webkit-scrollbar,
+.vps-table-wrap::-webkit-scrollbar,
+.sr-queue-list::-webkit-scrollbar,
+.sr-search-results::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.tts-card ::-webkit-scrollbar-thumb,
+.sr-card ::-webkit-scrollbar-thumb,
+.vps-table-wrap::-webkit-scrollbar-thumb,
+.sr-queue-list::-webkit-scrollbar-thumb,
+.sr-search-results::-webkit-scrollbar-thumb {
+  background: rgba(29, 217, 230, 0.28);
+  border-radius: 8px;
+}
+.tts-card ::-webkit-scrollbar-thumb:hover,
+.sr-card ::-webkit-scrollbar-thumb:hover,
+.vps-table-wrap::-webkit-scrollbar-thumb:hover,
+.sr-queue-list::-webkit-scrollbar-thumb:hover,
+.sr-search-results::-webkit-scrollbar-thumb:hover {
+  background: rgba(29, 217, 230, 0.5);
+}
+.tts-card ::-webkit-scrollbar-track,
+.sr-card ::-webkit-scrollbar-track,
+.vps-table-wrap::-webkit-scrollbar-track,
+.sr-queue-list::-webkit-scrollbar-track,
+.sr-search-results::-webkit-scrollbar-track {
+  background: transparent;
+}

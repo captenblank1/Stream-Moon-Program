@@ -30,6 +30,13 @@ import "./init.js";
 import "./misc.js";
 import "./sidebar.js";
 import "./socket.js";
+// ✅ أقسام الإضافات: اللايف فيد + قراءة التعليقات + طلبات الأغاني
+// (بعد sidebar.js كي تلفّ معالجات التنقل القديمة وتخفي الأقسام الجديدة)
+import "./addons-nav.js";
+import "./livefeed.js";
+import "./tts.js";
+import "./songs.js";
+import "./viewerstats.js";
 import "./streamer.js";
 import "./misc2.js";
 import "./boot-flow.js";
@@ -56,8 +63,8 @@ import { loadCurrentProfileHotkeys, describeHotkeyCommand, buildHotkeySelectionT
 import { performDisconnect, performConnect, showDisconnectConfirm, closeDisconnectModal, confirmDisconnect } from "./tiktok.js";
 import { loadScreens } from "./screens.js";
 import { buildAdminUserActionsHtml, buildAdminUserRowHtml, adminUserMatchesCurrentFilter, loadAdminDashboard, loadAdminNotifications, attachNotificationAdminEvents, showNotificationEditModal, handleEditNotification, handleDeleteNotification, attachAdminButtonEvents, openOverlayPanel, closeOverlayPanel } from "./admin.js";
-import { initWinsPanel, loadOverlayTab } from "./wins.js";
-import { initListsPanel } from "./overlay.js";
+import { initWinsPanel } from "./wins.js";
+import { initOverlaysSection, initListsPanel } from "./overlay.js";
 import { isValidHotkeyKey, hotkeyProfileQuery, loadHotkeySettings, saveHotkeySettingsToServer, updateHotkeyRegistration, applyHotkeySettings, clearHotkeyFormFields, showHotkeyStatus, saveHotkeySettings, loadHotkeyCommands, _loadHotkeyCommandsImpl, renderHotkeysList, _renderHotkeysListImpl, _renderHotkeysListNow, attachHotkeyToggleEvents, handleToggleChange, attachHotkeyDeleteEvents, attachHotkeyEditEvents, handleEditClick, handleDeleteClick, handleSaveShortcut, handleHotkeyFormKeydown, setupHotkeyEvents, initHotkey } from "./hotkeys.js";
 import { cleanupFrontend, hideUploadProgress, init } from "./init.js";
 import { setSelectedKeyboardKey, handleKeyClick, openKeyboardShortcutModal, closeKeyboardShortcutModal } from "./misc.js";
@@ -167,7 +174,7 @@ Object.assign(globalThis, {
   openOverlayPanel,
   closeOverlayPanel,
   initWinsPanel,
-  loadOverlayTab,
+  initOverlaysSection,
   initListsPanel,
   isValidHotkeyKey,
   hotkeyProfileQuery,

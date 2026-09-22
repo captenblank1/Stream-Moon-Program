@@ -588,9 +588,10 @@ document
           const gifts = allSelected.filter(
             (c) => c.giftId || c.__type === "gift",
           );
-          const interactions = allSelected.filter(
-            (c) => !c.giftId && c.__type !== "gift",
-          );
+          // ⚠️ الأوامر المحددة نفسها هي ما يُرسل — كان يُرسل __S.gifts
+          // (كتالوج الهدايا العام بلا giftId) فتفشل كل أوامر الهدايا في
+          // الخادم بـ "giftId is required" ولا يُستورد إلا التفاعلات
+          const interactions = allSelected.filter((c) => !gifts.includes(c));
 
           try {
             const res = await fetchWithAuth(
@@ -599,7 +600,7 @@ document
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  data: { gifts: __S.gifts, interactions, hotkeys: selectedHotkeys },
+                  data: { gifts, interactions, hotkeys: selectedHotkeys },
                   targetProfile: profileId,
                 }),
               },

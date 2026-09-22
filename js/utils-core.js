@@ -17,7 +17,7 @@ import { closeDisconnectModal } from "./tiktok.js";
 import { closeKeyboardShortcutModal } from "./misc.js";
 import { moveRowUp } from "./commands.js";
 import { moveRowDown } from "./commands.js";
-import { loadOverlayTab } from "./wins.js";
+import { initOverlaysSection } from "./overlay.js";
 
 // ============================================================
 // دوال مساعدة
@@ -175,6 +175,9 @@ function getDeviceId() {
 
 function fetchWithAuth(url, options = {}) {
   const token = getAuthToken();
+  // ✅ هل كان هناك توكن عند بدء الطلب؟ بدونه 401 طبيعي لغير المسجل
+  // (نداءات خلفية عند الدخول) — لا يحق أي إعادة تحميل
+  const hadToken = !!token;
   const headers = { ...(options.headers || {}) };
   if (token) headers["Authorization"] = `Bearer ${token}`;
   headers["x-device-id"] = getDeviceId();
@@ -196,6 +199,7 @@ function fetchWithAuth(url, options = {}) {
       } catch (e) {}
     }
     if (res.status === 401) {
+      let refreshed = false;
       try {
         const refreshRes = await fetch(`${__S.API_BASE}/api/auth/refresh`, {
           method: "POST",
@@ -207,7 +211,8 @@ function fetchWithAuth(url, options = {}) {
           if (newToken) {
             saveAuthToken(newToken);
             headers["Authorization"] = `Bearer ${newToken}`;
-            // إعادة المحاولة
+            refreshed = true;
+            // إعادة المحاولة بالتوكن الجديد
             res = await fetch(url, {
               ...options,
               headers,
@@ -217,6 +222,29 @@ function fetchWithAuth(url, options = {}) {
         }
       } catch (err) {
         console.warn("⚠️ فشل تجديد التوكن:", err.message);
+      }
+      // ✅ الجلسة باطلة فعلاً (توكن من خادم آخر بعد التبديل المحلي/السحابي،
+      // أو انتهاء صلاحية) — مرة واحدة لكل دفعة: مسح التوكن وإعادة تحميل
+      // عادية. الواجهة تعرض شاشة تسجيل الدخول العادية لغير المسجل تلقائياً.
+      // ⚠️ لا showBlockScreen (حجب كامل بلا زر دخول) ولا forceSessionLogout
+      // (تنادي logout فتبطل جلسة سليمة) — الاثنان خطرا هنا.
+      if (
+        !refreshed &&
+        hadToken && // ← الحارس الحاسم: جلسة فعلت ثم بطلت فقط
+        res.status === 401 &&
+        !window.__authRedirecting &&
+        !String(url).includes("/api/auth/")
+      ) {
+        window.__authRedirecting = true;
+        console.warn(
+          "🔄 الجلسة غير صالحة لهذا الخادم — مسح الجلسة وإظهار تسجيل الدخول...",
+        );
+        try {
+          saveAuthToken("");
+        } catch (e) {}
+        setTimeout(() => {
+          location.reload();
+        }, 400);
       }
     }
     return res;
@@ -320,7 +348,7 @@ function safeMediaUrl(url, type = "audio") {
   moveRowUp,
   moveRowDown,
   showMessage,
-  typeof loadOverlayTab !== "undefined" ? loadOverlayTab : null,
+  typeof initOverlaysSection !== "undefined" ? initOverlaysSection : null,
 ].forEach((fn) => {
   if (typeof fn === "function") window[fn.name] = fn;
 });

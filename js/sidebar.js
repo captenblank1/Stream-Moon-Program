@@ -5,7 +5,7 @@ import { loadHotkeyCommands } from "./hotkeys.js";
 import { applyHotkeySettings } from "./hotkeys.js";
 import { loadAdminDashboard } from "./admin.js";
 import { loadScreens } from "./screens.js";
-import { loadOverlayTab } from "./wins.js";
+import { initOverlaysSection } from "./overlay.js";
 
 // ============================================================
 // التجاوب: زر القائمة الجانبية على الشاشات الصغيرة
@@ -228,22 +228,10 @@ if (__S.overlaysNav) {
     requestAnimationFrame(() => {
       if (window.updateOverlayPreviews) window.updateOverlayPreviews();
     });
-    if (document.getElementById("listsPanelNative")) {
-      loadOverlayTab("main");
-    }
+    // ✅ القسم الموحد — كل الأوفرلايز كروت في مكان واحد بدون تابات
+    initOverlaysSection();
   };
 }
-
-// استماع للأحداث القادمة من المحتوى المحمّل (تبويبات الـ Overlay)
-document.addEventListener("click", function (e) {
-  const tabBtn = e.target.closest(".overlay-tab-btn");
-  if (tabBtn) {
-    const tab = tabBtn.dataset.tab;
-    if (tab) {
-      loadOverlayTab(tab);
-    }
-  }
-});
 
 
 export { clearOverlayDashboard };

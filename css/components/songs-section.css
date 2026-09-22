@@ -1,0 +1,442 @@
+/* ==================== قسم طلبات الأغاني (Song Requests) ==================== */
+
+.sr-topbar {
+  display: flex;
+  align-items: center;
+  /* ✅ السطران متجاورين في الوسط بدل تباعد الأطراف (space-between) */
+  justify-content: center;
+  gap: 14px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.sr-search-state {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.sr-search-state.ok {
+  color: #4caf50;
+}
+.sr-search-state.down {
+  color: var(--danger-color);
+}
+
+.sr-grid {
+  /* ✅ كل كارت في صف كامل تحت بعض — ريسبونس على أي شاشة */
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.sr-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 20px;
+  align-self: start;
+}
+.sr-card h3 {
+  color: var(--primary-color);
+  font-size: 16px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ===== قيد التشغيل الآن ===== */
+.sr-now-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 18px 0;
+}
+.sr-now-body {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.sr-now-body img {
+  width: 84px;
+  height: 84px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1.5px solid var(--primary-color);
+  background: var(--bg-dark);
+  flex: none;
+}
+.sr-now-info {
+  flex: 1;
+  min-width: 0;
+}
+.sr-now-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-light);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sr-now-artist {
+  font-size: 12.5px;
+  color: var(--primary-color);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sr-now-req {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+
+/* شارة الإيقاف المؤقت */
+.sr-paused-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  margin-top: 8px;
+  background: rgba(255, 165, 0, 0.12);
+  border: 1px solid rgba(255, 165, 0, 0.4);
+  color: #ffa500;
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.sr-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sr-controls .btn {
+  padding: 8px 14px;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ===== الطابور ===== */
+.sr-queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.sr-queue-head h3 {
+  margin-bottom: 0;
+}
+.sr-queue-head .btn {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.sr-queue-list {
+  max-height: 280px;
+  overflow-y: auto;
+}
+.sr-queue-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 18px 0;
+}
+.sr-queue-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-dark);
+  margin-bottom: 8px;
+}
+.sr-queue-item img {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex: none;
+}
+.sr-queue-item .t {
+  flex: 1;
+  min-width: 0;
+}
+.sr-queue-item .n {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-light);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sr-queue-item .s {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.sr-queue-item .remove-sr {
+  background: none;
+  border: 1px solid var(--border-color);
+  color: var(--danger-color);
+  border-radius: 6px;
+  width: 30px;
+  height: 30px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: var(--transition);
+  flex: none;
+}
+.sr-queue-item .remove-sr:hover {
+  background: var(--danger-color);
+  color: #fff;
+}
+
+/* ===== إعدادات الطلبات ===== */
+.sr-allowed-for {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 14px;
+}
+.sr-af-label {
+  display: block;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+/* ===== البحث والإضافة ===== */
+.sr-search-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.sr-search-row input {
+  flex: 1;
+  padding: 10px 12px;
+  background: var(--bg-dark);
+  color: var(--text-light);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 13.5px;
+  outline: none;
+}
+.sr-search-row input:focus {
+  border-color: var(--primary-color);
+}
+.sr-search-row .btn {
+  flex: none;
+}
+.sr-search-results {
+  max-height: 240px;
+  overflow-y: auto;
+}
+.sr-result-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: var(--transition);
+  border: 1px solid transparent;
+}
+.sr-result-item:hover {
+  background: var(--bg-dark);
+  border-color: var(--border-color);
+}
+.sr-result-item img {
+  width: 38px;
+  height: 38px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex: none;
+}
+.sr-result-item .t {
+  flex: 1;
+  min-width: 0;
+}
+.sr-result-item .n {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-light);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sr-result-item .a {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.sr-search-msg {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  text-align: center;
+  padding: 10px 0;
+}
+
+/* ===== سجل التشغيلات ===== */
+.sr-history-card {
+  grid-column: 1 / -1;
+}
+.sr-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--bg-dark);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 13px;
+}
+.sr-history-table th {
+  background: var(--bg-card);
+  color: var(--primary-color);
+  padding: 10px 8px;
+  text-align: start;
+  border-bottom: 2px solid var(--border-color);
+}
+.sr-history-table td {
+  padding: 9px 8px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-light);
+  vertical-align: middle;
+}
+.sr-history-table tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+.sr-history-empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 18px !important;
+}
+.sr-hist-status-played {
+  color: #4caf50;
+}
+.sr-hist-status-skipped {
+  color: #ffa500;
+}
+.sr-hist-status-revoked {
+  color: var(--danger-color);
+}
+
+/* ============================================================
+   PREMIUM — هوية بنفسجية موسيقية لقسم الأغاني
+   ============================================================ */
+
+/* غلاف القسم بهالة بنفسجية */
+.songs-section {
+  background:
+    radial-gradient(1100px 460px at 50% -180px, rgba(168, 85, 247, 0.13), transparent 62%),
+    linear-gradient(180deg, #1b1b22 0%, #131316 100%);
+  border-color: rgba(168, 85, 247, 0.16);
+}
+.songs-section::before {
+  background: linear-gradient(90deg, transparent, rgba(168, 85, 247, 0.8), transparent);
+}
+
+/* العنوان الرئيسي بنفسجي متدرج */
+.songs-section .addon-header h2 {
+  background: linear-gradient(100deg, #f3e8ff 0%, #c084fc 50%, #8b3ff0 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.songs-section .addon-header h2 i {
+  -webkit-text-fill-color: #fff;
+  background: linear-gradient(135deg, #c084fc, #7c3aed);
+  box-shadow:
+    0 6px 18px rgba(168, 85, 247, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* كروت القسم بلمسة بنفسجية */
+.sr-card::before {
+  background: linear-gradient(90deg, transparent, rgba(168, 85, 247, 0.8), transparent);
+}
+.sr-card:hover {
+  border-color: rgba(168, 85, 247, 0.35);
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.5),
+    0 0 26px rgba(168, 85, 247, 0.12);
+}
+.sr-card h3 {
+  color: #ecd9ff;
+}
+.sr-card h3 i {
+  color: #c084fc;
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.25), rgba(168, 85, 247, 0.06));
+  border-color: rgba(168, 85, 247, 0.4);
+}
+
+/* كارت "قيد التشغيل الآن" — صورة بتوهج بنفسجي متحرك */
+.sr-now-body img {
+  border: 2px solid rgba(168, 85, 247, 0.65);
+  box-shadow:
+    0 0 20px rgba(168, 85, 247, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  animation: sr-pulse 3.2s ease-in-out infinite;
+}
+@keyframes sr-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 16px rgba(168, 85, 247, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(168, 85, 247, 0.45);
+  }
+}
+.sr-now-artist {
+  color: #c084fc;
+}
+
+/* عناصر الطابور */
+.sr-queue-item {
+  border-color: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.025);
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+.sr-queue-item:hover {
+  transform: translateX(-3px);
+  border-color: rgba(168, 85, 247, 0.4);
+  background: rgba(168, 85, 247, 0.06);
+}
+html[dir="ltr"] .sr-queue-item:hover {
+  transform: translateX(3px);
+}
+
+/* نتائج البحث */
+.sr-result-item:hover {
+  background: rgba(168, 85, 247, 0.08);
+  border-color: rgba(168, 85, 247, 0.35);
+}
+
+/* صندوق "من يستطيع الطلب" بنفسجي خفيف */
+.sr-allowed-for {
+  border-color: rgba(168, 85, 247, 0.25);
+  background: rgba(168, 85, 247, 0.04);
+  border-radius: 12px;
+}
+
+/* جدول سجل التشغيلات */
+.sr-history-table {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 12px;
+}
+.sr-history-table th {
+  background: linear-gradient(180deg, rgba(168, 85, 247, 0.14), rgba(168, 85, 247, 0.04));
+  color: #c084fc;
+  border-bottom: 1px solid rgba(168, 85, 247, 0.25);
+}
+.sr-history-table tr:hover td {
+  background: rgba(168, 85, 247, 0.05);
+}
+
+/* حالة البحث */
+.sr-search-state.ok {
+  color: #66e08a;
+}

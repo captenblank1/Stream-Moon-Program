@@ -1,0 +1,428 @@
+/* ==================== قسم نقاط المشاهدين (Users Points) — تصميم ذهبي فاخر ==================== */
+
+.viewerpoints-section {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(1100px 460px at 50% -180px, rgba(255, 209, 102, 0.10), transparent 62%),
+    linear-gradient(180deg, #1b1b20 0%, #131316 100%);
+  border: 1px solid rgba(255, 209, 102, 0.16);
+  border-radius: 20px;
+  margin-top: 70px;
+  padding: 25px;
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.viewerpoints-section::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  inset-inline: 8%;
+  height: 1.5px;
+  background: linear-gradient(90deg, transparent, rgba(255, 209, 102, 0.8), transparent);
+  pointer-events: none;
+}
+
+/* ترويسة القسم تتماشى مع نمط الأقسام المضافة */
+.viewerpoints-section .addon-header h2 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  font-size: 26px;
+  letter-spacing: 0.3px;
+  background: linear-gradient(100deg, #fff3d6 0%, #ffd166 55%, #d29a1f 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.viewerpoints-section .addon-header h2 i {
+  -webkit-text-fill-color: #1c1503;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  background: linear-gradient(135deg, #ffd970, #d29a1f);
+  box-shadow:
+    0 6px 18px rgba(255, 209, 102, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  flex: none;
+}
+
+/* لوحة التحكم العلوية — بطاقة زجاجية موحدة */
+.vps-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 24px;
+  padding: 18px 18px 14px;
+  background: linear-gradient(168deg, rgba(40, 40, 46, 0.6), rgba(23, 23, 26, 0.85));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+}
+.vps-search-row {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+.vps-search-row input {
+  width: min(380px, 100%);
+  padding: 12px 18px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text-light);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  font-size: 14px;
+  outline: none;
+  text-align: center;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.vps-search-row input:focus {
+  border-color: rgba(255, 209, 102, 0.65);
+  box-shadow: 0 0 0 3px rgba(255, 209, 102, 0.12);
+}
+.vps-minmax-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.vps-minmax-row input[type="number"] {
+  width: 130px;
+  padding: 9px 12px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text-light);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  font-size: 13px;
+  outline: none;
+  text-align: center;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.vps-minmax-row input[type="number"]:focus {
+  border-color: rgba(255, 209, 102, 0.65);
+  box-shadow: 0 0 0 3px rgba(255, 209, 102, 0.12);
+}
+.vps-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 20px;
+  padding: 6px 14px;
+}
+.vps-count b {
+  color: #ffd166;
+  font-size: 14px;
+}
+.vps-date-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.vps-date-row label {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.vps-date-row label i {
+  color: #ffd166;
+}
+.vps-date-row input[type="datetime-local"] {
+  padding: 8px 11px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text-light);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  font-size: 13px;
+  outline: none;
+  color-scheme: dark;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.vps-date-row input[type="datetime-local"]:focus {
+  border-color: rgba(255, 209, 102, 0.65);
+  box-shadow: 0 0 0 3px rgba(255, 209, 102, 0.12);
+}
+.vps-date-row .btn {
+  padding: 8px 15px;
+  font-size: 12.5px;
+}
+
+/* زر حذف الكل — أحمر مميز */
+#vpsDeleteAll {
+  background: linear-gradient(135deg, rgba(244, 67, 54, 0.16), rgba(244, 67, 54, 0.06)) !important;
+  border: 1px solid rgba(244, 67, 54, 0.45);
+  color: #ff8a80 !important;
+  font-weight: 700;
+}
+#vpsDeleteAll:hover {
+  background: linear-gradient(135deg, rgba(244, 67, 54, 0.3), rgba(244, 67, 54, 0.12)) !important;
+  border-color: rgba(244, 67, 54, 0.75);
+  box-shadow: 0 6px 18px rgba(244, 67, 54, 0.25) !important;
+}
+
+/* الجدول — إطار متدرج وترتيب ذهبي */
+.vps-table-wrap {
+  overflow-x: auto;
+  border: 1px solid rgba(255, 209, 102, 0.16);
+  border-radius: 16px;
+  background: linear-gradient(168deg, rgba(40, 40, 46, 0.55), rgba(23, 23, 26, 0.9));
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+.vps-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: transparent;
+  font-size: 13px;
+  min-width: 860px;
+}
+.vps-table th {
+  background: linear-gradient(180deg, rgba(255, 209, 102, 0.12), rgba(255, 209, 102, 0.04));
+  color: #ffd166;
+  padding: 13px 10px;
+  text-align: center;
+  border-bottom: 1px solid rgba(255, 209, 102, 0.22);
+  font-size: 12.5px;
+  letter-spacing: 0.5px;
+}
+.vps-table td {
+  padding: 11px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+  color: var(--text-light);
+  text-align: center;
+  vertical-align: middle;
+}
+.vps-table tbody tr {
+  transition: background 0.18s ease;
+}
+.vps-table tbody tr:hover td {
+  background: rgba(255, 209, 102, 0.045);
+}
+.vps-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.vps-empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 30px !important;
+  font-size: 13.5px;
+}
+
+/* الخيارات */
+.vps-options {
+  white-space: nowrap;
+}
+.vps-act {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  border-radius: 9px;
+  width: 30px;
+  height: 30px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: var(--transition);
+  margin: 0 2px;
+}
+.vps-act:hover {
+  border-color: #ffd166;
+  color: #ffd166;
+  box-shadow: 0 0 10px rgba(255, 209, 102, 0.2);
+}
+.vps-act.del:hover {
+  border-color: var(--danger-color);
+  color: #ff8a80;
+  box-shadow: 0 0 10px rgba(244, 67, 54, 0.25);
+}
+.vps-act.save {
+  color: #66e08a;
+  border-color: rgba(76, 175, 80, 0.5);
+}
+
+/* الترتيب — تيجان ذهبية وفضية وبرونزية */
+.vps-rank {
+  /* ✅ عرض أيقونة FA = 1em بدل 1.25em الثابت — كان العرض الزائد يُخرج
+  التاج/الوسام عن منتصف الدائرة الذهبية عرضياً */
+  --fa-width: 1em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  /* Solid في Font Awesome = 900 — الوزن الأخف كان يزيح رسم الحرف */
+  font-weight: 900;
+  font-size: 13px;
+}
+.vps-rank.r1 {
+  background: radial-gradient(circle at 30% 25%, rgba(255, 215, 0, 0.35), rgba(255, 215, 0, 0.1));
+  border: 2px solid #ffd700;
+  color: #ffd700;
+  font-size: 15px;
+  box-shadow: 0 0 16px rgba(255, 215, 0, 0.35);
+}
+/* ✅ السبب الجذري لعدم التمركز: fontawesome-protection.css يضيف
+  margin-inline-end: 6px لكل i.fas — داخل دائرة الترتيب الهامش كان
+  يُزح التاج/الوسام عن المنتصف. نصفره هنا بأولوية أعلى */
+.vps-table .vps-rank i {
+  width: auto;
+  min-width: 0;
+  margin: 0 !important;
+  padding: 0;
+}
+.vps-rank.r2 {
+  background: radial-gradient(circle at 30% 25%, rgba(192, 192, 192, 0.3), rgba(192, 192, 192, 0.08));
+  border: 2px solid #c0c0c0;
+  color: #c0c0c0;
+  box-shadow: 0 0 12px rgba(192, 192, 192, 0.25);
+}
+.vps-rank.r3 {
+  background: radial-gradient(circle at 30% 25%, rgba(205, 127, 50, 0.3), rgba(205, 127, 50, 0.08));
+  border: 2px solid #cd7f32;
+  color: #cd7f32;
+  box-shadow: 0 0 12px rgba(205, 127, 50, 0.25);
+}
+
+/* المشاهد: صورة بعمود مستقل + اسم + يوزر */
+.vps-avatar-cell {
+  white-space: nowrap;
+}
+.vps-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: start;
+}
+.vps-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid #ffd166;
+  box-shadow: 0 0 10px rgba(255, 209, 102, 0.25);
+  flex: none;
+}
+.vps-names {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.vps-names b {
+  color: var(--text-light);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+.vps-names i {
+  font-style: normal;
+  color: var(--text-muted);
+  font-size: 11px;
+  direction: ltr;
+  text-align: start;
+}
+
+/* شارة العملات */
+.vps-coins {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.14), rgba(255, 215, 0, 0.05));
+  border: 1px solid rgba(255, 215, 0, 0.4);
+  color: #ffd700;
+  border-radius: 20px;
+  padding: 4px 13px;
+  font-weight: 800;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.12);
+}
+.vps-coins i {
+  font-size: 11px;
+}
+.vps-coins-edit {
+  width: 90px !important;
+  padding: 6px 8px;
+  background: var(--bg-card);
+  color: var(--text-light);
+  border: 1px solid #ffd166;
+  border-radius: 8px;
+  outline: none;
+  text-align: center;
+}
+
+/* عدد متابعيه */
+.vps-followers {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-light);
+  font-weight: 600;
+}
+.vps-date {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.vps-open {
+  color: #ffd166;
+  font-size: 15px;
+  text-decoration: none;
+  transition: var(--transition);
+}
+.vps-open:hover {
+  transform: scale(1.2);
+  text-shadow: 0 0 10px rgba(255, 209, 102, 0.5);
+}
+
+@media (max-width: 768px) {
+  .viewerpoints-section {
+    margin-left: 0;
+    margin-top: 0;
+    border-radius: 0;
+    padding: 15px;
+  }
+  .vps-controls {
+    padding: 14px 12px 12px;
+  }
+}
+
+/* ✅ حقول بحث جداول النقاط/الأشخاص المميزين داخل البطاقات */
+.pb-search {
+  flex: 1;
+  max-width: 180px;
+  margin-inline-start: auto;
+  padding: 7px 12px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text-light);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.pb-search:focus {
+  border-color: rgba(255, 209, 102, 0.65);
+  box-shadow: 0 0 0 3px rgba(255, 209, 102, 0.12);
+}
+.pb-search::placeholder {
+  color: var(--text-muted, #8a8f98);
+}

@@ -6,7 +6,7 @@
 
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' https:; connect-src 'self' https: wss: http://127.0.0.1:3000 http://localhost:3000 ws://127.0.0.1:3000 ws://localhost:3000; object-src 'none'; frame-src 'self' http: https:; base-uri 'none'"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' https: data:; connect-src 'self' https: wss: http://127.0.0.1:3000 http://localhost:3000 ws://127.0.0.1:3000 ws://localhost:3000; object-src 'none'; frame-src 'self' http: https:; base-uri 'none'"
     />
     <meta
       name="description"
@@ -43,6 +43,11 @@
     <link rel="stylesheet" href="css/components/screens-section.css" />
     <link rel="stylesheet" href="css/components/admin-section.css" />
     <link rel="stylesheet" href="css/components/hotkey-section.css" />
+    <link rel="stylesheet" href="css/components/addon-sections.css" />
+    <link rel="stylesheet" href="css/components/livefeed-section.css" />
+    <link rel="stylesheet" href="css/components/tts-section.css" />
+    <link rel="stylesheet" href="css/components/songs-section.css" />
+    <link rel="stylesheet" href="css/components/viewerpoints-section.css" />
     <link rel="stylesheet" href="css/components/urgent-notification.css" />
     <link rel="stylesheet" href="css/components/fontawesome-protection.css" />
     <link rel="stylesheet" href="css/components/once-per-live.css" />
@@ -452,6 +457,10 @@
       <div class="screens button-select-slide"><p><i class="fas fa-display"></i> Screens</p></div>
       <div class="hotkey button-select-slide"><p><i class="fas fa-keyboard"></i> Hotkey</p></div>
       <div class="overlays button-select-slide"><p><i class="fas fa-layer-group"></i> Overlays</p></div>
+      <div class="livefeed button-select-slide"><p><i class="fas fa-satellite-dish"></i> Live Feed</p></div>
+      <div class="tts button-select-slide"><p><i class="fas fa-comment-dots"></i> TTS</p></div>
+      <div class="songs button-select-slide"><p><i class="fas fa-music"></i> Songs</p></div>
+      <div class="viewerpoints button-select-slide"><p><i class="fas fa-ranking-star"></i> Points</p></div>
       <div class="admin button-select-slide" style="display: none">
         <p><i class="fas fa-user-shield"></i> Admin</p>
       </div>
@@ -990,1177 +999,1033 @@
       style="display: none"
     >
       <div class="overlays-header">
-        <div
-          style="
-            display: flex;
-            gap: 20px;
-            align-items: center;
-            margin-bottom: 15px;
-            flex-wrap: wrap;
-          "
-        >
-          <h2 style="margin: 0">
-            <i class="fas fa-layer-group"></i> لوحات الـ Overlay
-          </h2>
-          <div
-            style="
-              display: flex;
-              gap: 8px;
-              background: #1e1e1e;
-              padding: 4px;
-              border-radius: 8px;
-            "
-          >
-            <button
-              class="overlay-tab-btn active"
-              data-tab="main"
-              style="
-                padding: 8px 18px;
-                border: none;
-                border-radius: 6px;
-                background: #1dd9e6e1;
-                color: #000;
-                cursor: pointer;
-                font-weight: bold;
-              "
-            >
-              <i class="fas fa-trophy"></i> قائمة الأساطير
-            </button>
-            <button
-              class="overlay-tab-btn"
-              data-tab="wins"
-              style="
-                padding: 8px 18px;
-                border: none;
-                border-radius: 6px;
-                background: transparent;
-                color: #aaa;
-                cursor: pointer;
-                font-weight: bold;
-              "
-            >
-              <i class="fas fa-trophy"></i> عداد الفوز/الخسارة
-            </button>
-          </div>
-        </div>
+        <h2 style="margin: 0 0 6px">
+          <i class="fas fa-layer-group"></i> لوحات الـ Overlay
+        </h2>
+        <p style="margin: 0 0 18px; color: #9ca3af; font-size: 0.85rem">
+          <i class="fas fa-circle-info"></i>
+          كل الأوفرلايز في مكان واحد — انسخ الرابط وضعه في OBS كمصدر Browser.
+          الأوفرلايز الحية تتحدث لحظياً من البث الحقيقي، واضغط على أيقونة
+          الإعدادات <i class="fas fa-sliders"></i> في أي كارت للتحكم في تفاصيله.
+        </p>
       </div>
-      <!-- لوحة قوائم الأوفرلاى الأصلية (بدون حقن خارجي) -->
-      <div
-        id="listsPanelNative"
-        dir="rtl"
-        style="display: none; width: 100%; background: #12131c; border-radius: 16px; padding: 20px; font-family: 'Cairo', 'Open Sans', sans-serif"
-      >
-        <div class="ovl-previews">
-          <div class="ovl-preview-card">
-            <h4 class="ovl-preview-title"><i class="fas fa-gamepad"></i> القائمة الأولى</h4>
-            <div class="ovl-frame-wrap"><div class="ovl-live" id="ovlLive1"></div></div>
-            <div class="ovl-preview-actions">
-              <button class="btn btn-primary ovl-open-panel" data-panel="smlPanel1" data-kind="list" data-title="لوحة تحكم القائمة الأولى"><i class="fas fa-sliders"></i> لوحة التحكم</button>
-              <button class="sml-copy btn btn-secondary" data-overlay="1"><i class="fas fa-clipboard"></i> نسخ الرابط</button>
+
+      <div class="ovl-previews" id="ovlUnifiedGrid">
+        <!-- المشاهدون -->
+        <div class="opc" id="opc-viewers">
+          <div class="opc-header">
+            <div class="opc-head-left">
+              <div class="opc-icon" style="background: #ff1a1a22; border-color: #ff1a1a66; color: #ff1a1a"><i class="fas fa-eye"></i></div>
+              <div class="opc-head-names">
+                <h3>المشاهدون الحاليون</h3>
+                <p>Viewers</p>
+              </div>
+            </div>
+            <div class="opc-head-actions">
+              <button class="opc-gear" type="button" data-target="ovl-pref-viewers" title="إعدادات الشكل"><i class="fas fa-sliders"></i></button>
+              <button class="opc-power on" type="button"><i class="fas fa-power-off"></i><span>مُفعّل</span></button>
             </div>
           </div>
-          <div class="ovl-preview-card">
-            <h4 class="ovl-preview-title"><i class="fas fa-star"></i> القائمة الثانية</h4>
-            <div class="ovl-frame-wrap"><div class="ovl-live" id="ovlLive2"></div></div>
-            <div class="ovl-preview-actions">
-              <button class="btn btn-primary ovl-open-panel" data-panel="smlPanel2" data-kind="list" data-title="لوحة تحكم القائمة الثانية"><i class="fas fa-sliders"></i> لوحة التحكم</button>
-              <button class="sml-copy btn btn-secondary" data-overlay="2"><i class="fas fa-clipboard"></i> نسخ الرابط</button>
-            </div>
+          <div class="opc-preview">
+            <iframe class="opc-frame" data-kind="viewers" loading="lazy" title="معاينة المشاهدين"></iframe>
+            <div class="opc-off" hidden><i class="fas fa-power-off"></i><span>المعاينة مُعطّلة</span></div>
+          </div>
+          <div class="opc-footer">
+            <button class="opc-copy" type="button"><i class="fas fa-copy"></i><span>نسخ الرابط</span></button>
+            <a class="opc-iconbtn opc-open" data-kind="viewers" target="_blank" rel="noopener noreferrer" href="#" title="فتح في تبويب جديد"><i class="fas fa-up-right-from-square"></i></a>
+            <button class="opc-iconbtn opc-reload" type="button" title="إعادة تحميل المعاينة"><i class="fas fa-rotate-right"></i></button>
           </div>
         </div>
-        <div class="sml-grid" id="smlGrid" style="display: none">
-          <div class="sml-panel" id="smlPanel1">
-            <h3><i class="fas fa-gamepad"></i> القائمة الأولى</h3>
-            <div class="sml-linkbox">
-              <label><i class="fas fa-link"></i> رابط OBS:</label>
-              <span class="sml-url" id="smlLink1">تحميل...</span>
-              <button class="sml-copy" data-overlay="1"><i class="fas fa-clipboard"></i> نسخ</button>
-            </div>
-            <label class="sml-label">العنوان</label>
-            <input type="text" id="smlTitle1" value="قائمة الأساطير" class="sml-input" />
-            <label class="sml-label">الأسماء (كل اسم في سطر)</label>
-            <textarea id="smlNames1" rows="4" placeholder="اكتب الأسماء..." class="sml-input"></textarea>
-            <label class="sml-label">تحديد التاج <i class="fas fa-crown"></i></label>
-            <div class="sml-crowns" id="smlCrowns1"></div>
-            <label class="sml-label">الثيم</label>
-            <select id="smlTheme1" class="sml-input">
-              <option value="theme-neon"><i class="fas fa-bolt"></i> نيون سايبر</option>
-              <option value="theme-gold"><i class="fas fa-crown"></i> VIP ذهبي</option>
-              <option value="theme-purple"><i class="fas fa-heart"></i> بنفسجي</option>
-            </select>
-            <div style="display: flex; gap: 14px; margin-top: 10px; align-items: center">
-              <div style="display: flex; flex-direction: column; align-items: center">
-                <input type="color" id="smlGlow1" value="#00ffe1" />
-                <span class="sml-mini">التوهج</span>
-              </div>
-              <div style="display: flex; flex-direction: column; align-items: center">
-                <input type="color" id="smlBadge1" value="#ff0055" />
-                <span class="sml-mini">الأرقام</span>
-              </div>
-              <div style="flex: 1">
-                <span class="sml-mini">العرض (px)</span>
-                <input type="number" id="smlWidth1" value="285" min="100" max="600" class="sml-input" />
-              </div>
-              <div style="flex: 1">
-                <span class="sml-mini">الارتفاع (px)</span>
-                <input type="number" id="smlHeight1" value="500" min="200" max="1000" class="sml-input" />
+
+        <!-- آخر هدية -->
+        <div class="opc" id="opc-last-gift">
+          <div class="opc-header">
+            <div class="opc-head-left">
+              <div class="opc-icon" style="background: #eab30822; border-color: #eab30866; color: #eab308"><i class="fas fa-heart"></i></div>
+              <div class="opc-head-names">
+                <h3>آخر هدية</h3>
+                <p>The Last Gift</p>
               </div>
             </div>
-            <div style="display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap">
-              <button class="sml-reset" data-overlay="1"><i class="fas fa-trash"></i> مسح الأسماء</button>
-              <button class="sml-restore" data-overlay="1"><i class="fas fa-rotate-left"></i> استعادة الافتراضي</button>
+            <div class="opc-head-actions">
+              <button class="opc-power on" type="button"><i class="fas fa-power-off"></i><span>مُفعّل</span></button>
+            </div>
+          </div>
+          <div class="opc-preview">
+            <iframe class="opc-frame" data-kind="last-gift" loading="lazy" title="معاينة آخر هدية"></iframe>
+            <div class="opc-off" hidden><i class="fas fa-power-off"></i><span>المعاينة مُعطّلة</span></div>
+          </div>
+          <div class="opc-footer">
+            <button class="opc-copy" type="button"><i class="fas fa-copy"></i><span>نسخ الرابط</span></button>
+            <a class="opc-iconbtn opc-open" data-kind="last-gift" target="_blank" rel="noopener noreferrer" href="#" title="فتح في تبويب جديد"><i class="fas fa-up-right-from-square"></i></a>
+            <button class="opc-iconbtn opc-reload" type="button" title="إعادة تحميل المعاينة"><i class="fas fa-rotate-right"></i></button>
+          </div>
+        </div>
+
+        <!-- التوب جيفت -->
+        <div class="opc" id="opc-highest-gift">
+          <div class="opc-header">
+            <div class="opc-head-left">
+              <div class="opc-icon" style="background: #ff6b0022; border-color: #ff6b0066; color: #ff6b00"><i class="fas fa-gift"></i></div>
+              <div class="opc-head-names">
+                <h3>التوب جيفت</h3>
+                <p>Top Gift</p>
+              </div>
+            </div>
+            <div class="opc-head-actions">
+              <button class="opc-power on" type="button"><i class="fas fa-power-off"></i><span>مُفعّل</span></button>
+            </div>
+          </div>
+          <div class="opc-preview">
+            <iframe class="opc-frame" data-kind="highest-gift" loading="lazy" title="معاينة التوب جيفت"></iframe>
+            <div class="opc-off" hidden><i class="fas fa-power-off"></i><span>المعاينة مُعطّلة</span></div>
+          </div>
+          <div class="opc-footer">
+            <button class="opc-copy" type="button"><i class="fas fa-copy"></i><span>نسخ الرابط</span></button>
+            <a class="opc-iconbtn opc-open" data-kind="highest-gift" target="_blank" rel="noopener noreferrer" href="#" title="فتح في تبويب جديد"><i class="fas fa-up-right-from-square"></i></a>
+            <button class="opc-iconbtn opc-reload" type="button" title="إعادة تحميل المعاينة"><i class="fas fa-rotate-right"></i></button>
+          </div>
+        </div>
+
+        <!-- أول 3 مشاهدين في اللايف (Top Viewers) -->
+        <div class="opc" id="opc-leaderboard">
+          <div class="opc-header">
+            <div class="opc-head-left">
+              <div class="opc-icon" style="background: #ffb50022; border-color: #ffb50066; color: #ffb500"><i class="fas fa-trophy"></i></div>
+              <div class="opc-head-names">
+                <h3>أول 3 مشاهدين (Top Viewers)</h3>
+                <p>Leaderboard</p>
+              </div>
+            </div>
+            <div class="opc-head-actions">
+              <button class="opc-gear" type="button" data-target="ovl-pref-leaderboard" title="إعدادات الشكل"><i class="fas fa-sliders"></i></button>
+              <button class="opc-power on" type="button"><i class="fas fa-power-off"></i><span>مُفعّل</span></button>
+            </div>
+          </div>
+          <div class="opc-preview">
+            <iframe class="opc-frame" data-kind="leaderboard" loading="lazy" title="معاينة توب 3"></iframe>
+            <div class="opc-off" hidden><i class="fas fa-power-off"></i><span>المعاينة مُعطّلة</span></div>
+          </div>
+          <div class="opc-footer">
+            <button class="opc-copy" type="button"><i class="fas fa-copy"></i><span>نسخ الرابط</span></button>
+            <a class="opc-iconbtn opc-open" data-kind="leaderboard" target="_blank" rel="noopener noreferrer" href="#" title="فتح في تبويب جديد"><i class="fas fa-up-right-from-square"></i></a>
+            <button class="opc-iconbtn opc-reload" type="button" title="إعادة تحميل المعاينة"><i class="fas fa-rotate-right"></i></button>
+          </div>
+        </div>
+
+        <!-- جرة العملات -->
+        <div class="opc" id="opc-coin-jar">
+          <div class="opc-header">
+            <div class="opc-head-left">
+              <div class="opc-icon" style="background: #ffd70022; border-color: #ffd70066; color: #ffd700"><i class="fas fa-coins"></i></div>
+              <div class="opc-head-names">
+                <h3>جرة العملات</h3>
+                <p>Coin Jar</p>
+              </div>
+            </div>
+            <div class="opc-head-actions">
+              <button class="opc-gear" type="button" data-target="ovl-pref-coinjar" title="إعدادات الجرة"><i class="fas fa-sliders"></i></button>
+              <button class="opc-power on" type="button"><i class="fas fa-power-off"></i><span>مُفعّل</span></button>
+            </div>
+          </div>
+          <div class="opc-preview">
+            <iframe class="opc-frame" data-kind="coin-jar" loading="lazy" title="معاينة جرة العملات"></iframe>
+            <div class="opc-off" hidden><i class="fas fa-power-off"></i><span>المعاينة مُعطّلة</span></div>
+          </div>
+          <div class="opc-footer">
+            <button class="opc-copy" type="button"><i class="fas fa-copy"></i><span>نسخ الرابط</span></button>
+            <a class="opc-iconbtn opc-open" data-kind="coin-jar" target="_blank" rel="noopener noreferrer" href="#" title="فتح في تبويب جديد"><i class="fas fa-up-right-from-square"></i></a>
+            <button class="opc-iconbtn opc-reload" type="button" title="إعادة تحميل المعاينة"><i class="fas fa-rotate-right"></i></button>
+          </div>
+        </div>
+
+        <!-- الألعاب النارية -->
+        <div class="opc" id="opc-fireworks">
+          <div class="opc-header">
+            <div class="opc-head-left">
+              <div class="opc-icon" style="background: #a855f722; border-color: #a855f766; color: #a855f7"><i class="fas fa-wand-magic-sparkles"></i></div>
+              <div class="opc-head-names">
+                <h3>الألعاب النارية</h3>
+                <p>Fireworks</p>
+              </div>
+            </div>
+            <div class="opc-head-actions">
+              <button class="opc-gear" type="button" data-target="ovl-pref-fireworks" title="إعدادات الألعاب النارية"><i class="fas fa-sliders"></i></button>
+              <button class="opc-power on" type="button"><i class="fas fa-power-off"></i><span>مُفعّل</span></button>
+            </div>
+          </div>
+          <div class="opc-preview">
+            <iframe class="opc-frame" data-kind="fireworks" loading="lazy" title="معاينة الألعاب النارية"></iframe>
+            <div class="opc-off" hidden><i class="fas fa-power-off"></i><span>المعاينة مُعطّلة</span></div>
+          </div>
+          <div class="opc-footer">
+            <button class="opc-copy" type="button"><i class="fas fa-copy"></i><span>نسخ الرابط</span></button>
+            <a class="opc-iconbtn opc-open" data-kind="fireworks" target="_blank" rel="noopener noreferrer" href="#" title="فتح في تبويب جديد"><i class="fas fa-up-right-from-square"></i></a>
+            <button class="opc-iconbtn opc-reload" type="button" title="إعادة تحميل المعاينة"><i class="fas fa-rotate-right"></i></button>
+          </div>
+        </div>
+
+        <!-- المتابعون -->
+        <div class="opc" id="opc-followers">
+          <div class="opc-header">
+            <div class="opc-head-left">
+              <div class="opc-icon" style="background: #ff000022; border-color: #ff000066; color: #ff0000"><i class="fas fa-users"></i></div>
+              <div class="opc-head-names">
+                <h3>المتابعون</h3>
+                <p>Total Followers</p>
+              </div>
+            </div>
+            <div class="opc-head-actions">
+              <button class="opc-gear" type="button" data-target="ovl-pref-followers" title="إعدادات الشكل"><i class="fas fa-sliders"></i></button>
+              <button class="opc-power on" type="button"><i class="fas fa-power-off"></i><span>مُفعّل</span></button>
+            </div>
+          </div>
+          <div class="opc-preview">
+            <iframe class="opc-frame" data-kind="followers" loading="lazy" title="معاينة المتابعين"></iframe>
+            <div class="opc-off" hidden><i class="fas fa-power-off"></i><span>المعاينة مُعطّلة</span></div>
+          </div>
+          <div class="opc-footer">
+            <button class="opc-copy" type="button"><i class="fas fa-copy"></i><span>نسخ الرابط</span></button>
+            <a class="opc-iconbtn opc-open" data-kind="followers" target="_blank" rel="noopener noreferrer" href="#" title="فتح في تبويب جديد"><i class="fas fa-up-right-from-square"></i></a>
+            <button class="opc-iconbtn opc-reload" type="button" title="إعادة تحميل المعاينة"><i class="fas fa-rotate-right"></i></button>
+          </div>
+        </div>
+
+        <!-- طلبات الأغاني -->
+        <div class="opc" id="opc-music">
+          <div class="opc-header">
+            <div class="opc-head-left">
+              <div class="opc-icon" style="background: #d4af3722; border-color: #d4af3766; color: #d4af37"><i class="fas fa-music"></i></div>
+              <div class="opc-head-names">
+                <h3>طلبات الأغاني</h3>
+                <p>Song Requests</p>
+              </div>
+            </div>
+            <div class="opc-head-actions">
+              <button class="opc-power on" type="button"><i class="fas fa-power-off"></i><span>مُفعّل</span></button>
+            </div>
+          </div>
+          <div class="opc-preview">
+            <iframe class="opc-frame" data-kind="music" loading="lazy" title="معاينة طلبات الأغاني"></iframe>
+            <div class="opc-off" hidden><i class="fas fa-power-off"></i><span>المعاينة مُعطّلة</span></div>
+          </div>
+          <div class="opc-footer">
+            <button class="opc-copy" type="button"><i class="fas fa-copy"></i><span>نسخ الرابط</span></button>
+            <a class="opc-iconbtn opc-open" data-kind="music" target="_blank" rel="noopener noreferrer" href="#" title="فتح في تبويب جديد"><i class="fas fa-up-right-from-square"></i></a>
+            <button class="opc-iconbtn opc-reload" type="button" title="إعادة تحميل المعاينة"><i class="fas fa-rotate-right"></i></button>
+          </div>
+        </div>
+
+        <!-- عداد الفوز/الخسارة -->
+        <div class="opc" id="opc-wins">
+          <div class="opc-header">
+            <div class="opc-head-left">
+              <div class="opc-icon" style="background: #3b82f622; border-color: #3b82f666; color: #3b82f6"><i class="fas fa-gamepad"></i></div>
+              <div class="opc-head-names">
+                <h3>عداد الفوز/الخسارة</h3>
+                <p>Win Counter</p>
+              </div>
+            </div>
+            <div class="opc-head-actions">
+              <button class="opc-gear" type="button" data-target="opc-settings-wins" title="لوحة تحكم العداد"><i class="fas fa-sliders"></i></button>
+              <button class="opc-power on" type="button"><i class="fas fa-power-off"></i><span>مُفعّل</span></button>
+            </div>
+          </div>
+          <div class="opc-preview">
+            <iframe class="opc-frame" data-kind="wins" loading="lazy" title="معاينة عداد الفوز"></iframe>
+            <div class="opc-off" hidden><i class="fas fa-power-off"></i><span>المعاينة مُعطّلة</span></div>
+          </div>
+          <div class="opc-footer">
+            <button class="opc-copy" type="button"><i class="fas fa-copy"></i><span>نسخ الرابط</span></button>
+            <a class="opc-iconbtn opc-open" data-kind="wins" target="_blank" rel="noopener noreferrer" href="#" title="فتح في تبويب جديد"><i class="fas fa-up-right-from-square"></i></a>
+            <button class="opc-iconbtn opc-reload" type="button" title="إعادة تحميل المعاينة"><i class="fas fa-rotate-right"></i></button>
+          </div>
+          <div class="opc-settings" id="opc-settings-wins">
+            <div class="ovl-field">
+              <label><i class="fas fa-link"></i> رابط OBS (الصقه في المتصفح داخل OBS):</label>
+              <div class="ovl-linkrow">
+                <input type="text" id="smwLinkUrl" readonly value="جاري تحميل الرابط..." onclick="this.select()" />
+                <button id="smwCopyLink" type="button"><i class="fas fa-clipboard"></i> نسخ</button>
+              </div>
+            </div>
+            <div class="ovl-counter-grid">
+              <div class="ovl-counter-box win">
+                <input type="text" id="smwWinLabel" placeholder="اسم خانة الفوز" />
+                <div class="ovl-counter-val" id="smwWinVal">0</div>
+                <div class="ovl-counter-btns">
+                  <button id="smwWinPlus" type="button">+</button>
+                  <button id="smwWinMinus" type="button">-</button>
+                </div>
+              </div>
+              <div class="ovl-counter-box loss">
+                <input type="text" id="smwLossLabel" placeholder="اسم خانة الخسارة" />
+                <div class="ovl-counter-val" id="smwLossVal">0</div>
+                <div class="ovl-counter-btns">
+                  <button id="smwLossPlus" type="button">+</button>
+                  <button id="smwLossMinus" type="button">-</button>
+                </div>
+              </div>
+            </div>
+            <div class="ovl-field">
+              <label><i class="fas fa-palette"></i> اختر الشكل:</label>
+              <select id="smwTheme">
+                <option value="pscontroller">إطار دراع بلايستيشن</option>
+                <option value="headset">إطار سماعة جيمنج</option>
+                <option value="shield">إطار درع الحرب</option>
+                <option value="cyber">جيمنج نيون</option>
+                <option value="dragon">التنين الأحمر</option>
+                <option value="toxic">سام نيون</option>
+                <option value="mouse">إطار ماوس جيمنج</option>
+                <option value="royale">فخامة VIP</option>
+                <option value="fireice">نار وثلج</option>
+                <option value="arcade">ريترو أركيد</option>
+                <option value="kitty">إطار القطة كيتي</option>
+                <option value="bunny">إطار الأرنب</option>
+                <option value="magicstar">النجمة السحرية</option>
+                <option value="purpleneon">بنفسجي تويتش</option>
+                <option value="minimal">مينيمال بسيط</option>
+              </select>
+            </div>
+            <div class="ovl-field">
+              <label><i class="fas fa-square-plus"></i> العرض (px):</label>
+              <input type="number" id="smwWidth" value="285" min="100" max="600" />
+            </div>
+            <button id="smwReset" type="button" class="ovl-danger-btn"><i class="fas fa-trash"></i> تصفير العداد</button>
+          </div>
+        </div>
+
+                <!-- القائمة الأولى -->
+        <div class="opc" id="opc-list-1">
+          <div class="opc-header">
+            <div class="opc-head-left">
+              <div class="opc-icon" style="background: #00ffe122; border-color: #00ffe166; color: #00ffe1"><i class="fas fa-crown"></i></div>
+              <div class="opc-head-names">
+                <h3>القائمة الأولى</h3>
+                <p>Legends List</p>
+              </div>
+            </div>
+            <div class="opc-head-actions">
+              <button class="opc-gear" type="button" data-target="opc-settings-list-1" title="لوحة تحكم القائمة الأولى"><i class="fas fa-sliders"></i></button>
+              <button class="opc-power on" type="button"><i class="fas fa-power-off"></i><span>مُفعّل</span></button>
+            </div>
+          </div>
+          <div class="opc-preview">
+            <iframe class="opc-frame" data-kind="list-1" loading="lazy" title="معاينة القائمة الأولى"></iframe>
+            <div class="opc-off" hidden><i class="fas fa-power-off"></i><span>المعاينة مُعطّلة</span></div>
+          </div>
+          <div class="opc-footer">
+            <button class="opc-copy" type="button"><i class="fas fa-copy"></i><span>نسخ الرابط</span></button>
+            <a class="opc-iconbtn opc-open" data-kind="list-1" target="_blank" rel="noopener noreferrer" href="#" title="فتح في تبويب جديد"><i class="fas fa-up-right-from-square"></i></a>
+            <button class="opc-iconbtn opc-reload" type="button" title="إعادة تحميل المعاينة"><i class="fas fa-rotate-right"></i></button>
+          </div>
+          <div class="opc-settings" id="opc-settings-list-1">
+            <div class="ovl-field">
+              <label>العنوان</label>
+              <input type="text" id="smlTitle1" value="قائمة الأساطير" />
+            </div>
+            <div class="ovl-field">
+              <label>الأسماء (كل اسم في سطر)</label>
+              <textarea id="smlNames1" rows="4" placeholder="اكتب الأسماء..."></textarea>
+            </div>
+            <div class="ovl-field">
+              <label>تحديد التاج <i class="fas fa-crown"></i></label>
+              <div class="sml-crowns" id="smlCrowns1"></div>
+            </div>
+            <div class="ovl-field">
+              <label>الثيم</label>
+              <select id="smlTheme1">
+                <option value="theme-neon">نيون سايبر</option>
+                <option value="theme-gold">VIP ذهبي</option>
+                <option value="theme-purple">بنفسجي</option>
+              </select>
+            </div>
+            <div class="ovl-row3">
+              <div class="ovl-color"><input type="color" id="smlGlow1" value="#00ffe1" /><span>التوهج</span></div>
+              <div class="ovl-color"><input type="color" id="smlBadge1" value="#ff0055" /><span>الأرقام</span></div>
+              <div class="ovl-field grow"><label>العرض (px)</label><input type="number" id="smlWidth1" value="285" min="100" max="600" /></div>
+              <div class="ovl-field grow"><label>الارتفاع (px)</label><input type="number" id="smlHeight1" value="500" min="200" max="1000" /></div>
+            </div>
+            <div class="ovl-actions-row">
+              <button class="sml-reset" type="button" data-overlay="1"><i class="fas fa-trash"></i> مسح الأسماء</button>
+              <button class="sml-restore" type="button" data-overlay="1"><i class="fas fa-rotate-left"></i> استعادة الافتراضي</button>
               <span class="sml-status" id="smlStatus1"></span>
             </div>
           </div>
-          <div class="sml-panel" id="smlPanel2">
-            <h3><i class="fas fa-star"></i> القائمة الثانية</h3>
-            <div class="sml-linkbox">
-              <label><i class="fas fa-link"></i> رابط OBS:</label>
-              <span class="sml-url" id="smlLink2">تحميل...</span>
-              <button class="sml-copy" data-overlay="2"><i class="fas fa-clipboard"></i> نسخ</button>
-            </div>
-            <label class="sml-label">العنوان</label>
-            <input type="text" id="smlTitle2" value="كبار الداعمين" class="sml-input" />
-            <label class="sml-label">الأسماء (كل اسم في سطر)</label>
-            <textarea id="smlNames2" rows="4" placeholder="اكتب الأسماء..." class="sml-input"></textarea>
-            <label class="sml-label">تحديد التاج <i class="fas fa-crown"></i></label>
-            <div class="sml-crowns" id="smlCrowns2"></div>
-            <label class="sml-label">الثيم</label>
-            <select id="smlTheme2" class="sml-input">
-              <option value="theme-gold"><i class="fas fa-crown"></i> VIP ذهبي</option>
-              <option value="theme-neon"><i class="fas fa-bolt"></i> نيون سايبر</option>
-              <option value="theme-purple"><i class="fas fa-heart"></i> بنفسجي</option>
-            </select>
-            <div style="display: flex; gap: 14px; margin-top: 10px; align-items: center">
-              <div style="display: flex; flex-direction: column; align-items: center">
-                <input type="color" id="smlGlow2" value="#ffcc00" />
-                <span class="sml-mini">التوهج</span>
-              </div>
-              <div style="display: flex; flex-direction: column; align-items: center">
-                <input type="color" id="smlBadge2" value="#a855f7" />
-                <span class="sml-mini">الأرقام</span>
-              </div>
-              <div style="flex: 1">
-                <span class="sml-mini">العرض (px)</span>
-                <input type="number" id="smlWidth2" value="285" min="100" max="600" class="sml-input" />
-              </div>
-              <div style="flex: 1">
-                <span class="sml-mini">الارتفاع (px)</span>
-                <input type="number" id="smlHeight2" value="500" min="200" max="1000" class="sml-input" />
+        </div>
+
+        <!-- القائمة الثانية -->
+        <div class="opc" id="opc-list-2">
+          <div class="opc-header">
+            <div class="opc-head-left">
+              <div class="opc-icon" style="background: #a855f722; border-color: #a855f766; color: #a855f7"><i class="fas fa-star"></i></div>
+              <div class="opc-head-names">
+                <h3>القائمة الثانية</h3>
+                <p>Top Supporters</p>
               </div>
             </div>
-            <div style="display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap">
-              <button class="sml-reset" data-overlay="2"><i class="fas fa-trash"></i> مسح الأسماء</button>
-              <button class="sml-restore" data-overlay="2"><i class="fas fa-rotate-left"></i> استعادة الافتراضي</button>
+            <div class="opc-head-actions">
+              <button class="opc-gear" type="button" data-target="opc-settings-list-2" title="لوحة تحكم القائمة الثانية"><i class="fas fa-sliders"></i></button>
+              <button class="opc-power on" type="button"><i class="fas fa-power-off"></i><span>مُفعّل</span></button>
+            </div>
+          </div>
+          <div class="opc-preview">
+            <iframe class="opc-frame" data-kind="list-2" loading="lazy" title="معاينة القائمة الثانية"></iframe>
+            <div class="opc-off" hidden><i class="fas fa-power-off"></i><span>المعاينة مُعطّلة</span></div>
+          </div>
+          <div class="opc-footer">
+            <button class="opc-copy" type="button"><i class="fas fa-copy"></i><span>نسخ الرابط</span></button>
+            <a class="opc-iconbtn opc-open" data-kind="list-2" target="_blank" rel="noopener noreferrer" href="#" title="فتح في تبويب جديد"><i class="fas fa-up-right-from-square"></i></a>
+            <button class="opc-iconbtn opc-reload" type="button" title="إعادة تحميل المعاينة"><i class="fas fa-rotate-right"></i></button>
+          </div>
+          <div class="opc-settings" id="opc-settings-list-2">
+            <div class="ovl-field">
+              <label>العنوان</label>
+              <input type="text" id="smlTitle2" value="كبار الداعمين" />
+            </div>
+            <div class="ovl-field">
+              <label>الأسماء (كل اسم في سطر)</label>
+              <textarea id="smlNames2" rows="4" placeholder="اكتب الأسماء..."></textarea>
+            </div>
+            <div class="ovl-field">
+              <label>تحديد التاج <i class="fas fa-crown"></i></label>
+              <div class="sml-crowns" id="smlCrowns2"></div>
+            </div>
+            <div class="ovl-field">
+              <label>الثيم</label>
+              <select id="smlTheme2">
+                <option value="theme-gold">VIP ذهبي</option>
+                <option value="theme-neon">نيون سايبر</option>
+                <option value="theme-purple">بنفسجي</option>
+              </select>
+            </div>
+            <div class="ovl-row3">
+              <div class="ovl-color"><input type="color" id="smlGlow2" value="#ffcc00" /><span>التوهج</span></div>
+              <div class="ovl-color"><input type="color" id="smlBadge2" value="#a855f7" /><span>الأرقام</span></div>
+              <div class="ovl-field grow"><label>العرض (px)</label><input type="number" id="smlWidth2" value="285" min="100" max="600" /></div>
+              <div class="ovl-field grow"><label>الارتفاع (px)</label><input type="number" id="smlHeight2" value="500" min="200" max="1000" /></div>
+            </div>
+            <div class="ovl-actions-row">
+              <button class="sml-reset" type="button" data-overlay="2"><i class="fas fa-trash"></i> مسح الأسماء</button>
+              <button class="sml-restore" type="button" data-overlay="2"><i class="fas fa-rotate-left"></i> استعادة الافتراضي</button>
               <span class="sml-status" id="smlStatus2"></span>
             </div>
           </div>
         </div>
       </div>
-      <!-- لوحة العداد الأصلية (بدون حقن خارجي) -->
-      <div
-        id="winsPanelNative"
-        dir="rtl"
-        style="
-          display: none;
-          width: 100%;
-          font-family: 'Cairo', 'Open Sans', sans-serif;
-        "
-      >
-        <div class="ovl-previews">
-          <div class="ovl-preview-card">
-            <h4 class="ovl-preview-title"><i class="fas fa-trophy"></i> عداد الفوز/الخسارة</h4>
-            <div class="ovl-frame-wrap"><div class="ovl-live" id="ovlLiveWins"></div></div>
-            <div class="ovl-preview-actions">
-              <button class="btn btn-primary ovl-open-panel" data-panel="winsPanelControls" data-kind="wins" data-title="لوحة تحكم العداد"><i class="fas fa-sliders"></i> لوحة التحكم</button>
-              <button class="btn btn-secondary" id="smwCardCopy"><i class="fas fa-clipboard"></i> نسخ الرابط</button>
-            </div>
-          </div>
-        </div>
-        <div id="winsPanelHome" style="display: none">
-        <div
-          style="
-            display: grid;
-            grid-template-columns: 360px 1fr;
-            gap: 20px;
-            align-items: start;
-          "
-          class="smw-layout"
-        >
-          <div id="winsPanelControls"
-            style="
-              background: #12131c;
-              border: 1px solid #26283b;
-              border-radius: 16px;
-              padding: 20px;
-              display: flex;
-              flex-direction: column;
-              gap: 14px;
-            "
-          >
-            <div
-              style="
-                background: rgba(29, 217, 230, 0.06);
-                border: 1px dashed #1dd9e6;
-                border-radius: 10px;
-                padding: 10px 12px;
-                display: flex;
-                flex-direction: column;
-                gap: 8px;
-              "
-            >
-              <label
-                style="
-                  font-size: 0.8rem;
-                  font-weight: 700;
-                  color: #a0a0c0;
-                "
-                ><i class="fas fa-link"></i> رابط OBS (الصقه في المتصفح داخل OBS):</label
-              >
-              <div style="display: flex; gap: 8px; align-items: center">
-                <input
-                  type="text"
-                  id="smwLinkUrl"
-                  readonly
-                  value="جاري تحميل الرابط..."
-                  onclick="this.select()"
-                  style="
-                    flex: 1;
-                    min-width: 0;
-                    padding: 8px 10px;
-                    background: #090a0f;
-                    border: 1px solid #26283b;
-                    border-radius: 8px;
-                    color: #1dd9e6;
-                    font-size: 0.72rem;
-                    font-family: monospace;
-                    direction: ltr;
-                    text-align: left;
-                  "
-                />
-                <button
-                  id="smwCopyLink"
-                  style="
-                    background: #1dd9e6;
-                    color: #000;
-                    padding: 9px 16px;
-                    border-radius: 8px;
-                    border: none;
-                    font-weight: 900;
-                    cursor: pointer;
-                    font-size: 0.85rem;
-                    white-space: nowrap;
-                  "
-                >
-                  <i class="fas fa-clipboard"></i> نسخ
-                </button>
-              </div>
-            </div>
-            <div
-              style="
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 10px;
-              "
-            >
-              <div
-                style="
-                  background: #1b1d2a;
-                  padding: 12px;
-                  border-radius: 10px;
-                  text-align: center;
-                  border: 2px solid #10b981;
-                "
-              >
-                <input
-                  type="text"
-                  id="smwWinLabel"
-                  placeholder="اسم خانة الفوز"
-                  style="
-                    width: 100%;
-                    padding: 6px 10px;
-                    background: #090a0f;
-                    border: 1px solid #374151;
-                    border-radius: 8px;
-                    color: #fff;
-                    font-size: 0.85rem;
-                  "
-                />
-                <div
-                  id="smwWinVal"
-                  style="font-size: 1.8rem; font-weight: 900; margin: 8px 0"
-                >
-                  0
-                </div>
-                <div style="display: flex; gap: 4px">
-                  <button
-                    id="smwWinPlus"
-                    style="
-                      flex: 1;
-                      padding: 6px;
-                      border: none;
-                      border-radius: 6px;
-                      background: #10b981;
-                      color: #000;
-                      font-weight: bold;
-                      cursor: pointer;
-                    "
-                  >
-                    +
-                  </button>
-                  <button
-                    id="smwWinMinus"
-                    style="
-                      flex: 1;
-                      padding: 6px;
-                      border: none;
-                      border-radius: 6px;
-                      background: #374151;
-                      color: #fff;
-                      font-weight: bold;
-                      cursor: pointer;
-                    "
-                  >
-                    -
-                  </button>
-                </div>
-              </div>
-              <div
-                style="
-                  background: #1b1d2a;
-                  padding: 12px;
-                  border-radius: 10px;
-                  text-align: center;
-                  border: 2px solid #ef4444;
-                "
-              >
-                <input
-                  type="text"
-                  id="smwLossLabel"
-                  placeholder="اسم خانة الخسارة"
-                  style="
-                    width: 100%;
-                    padding: 6px 10px;
-                    background: #090a0f;
-                    border: 1px solid #374151;
-                    border-radius: 8px;
-                    color: #fff;
-                    font-size: 0.85rem;
-                  "
-                />
-                <div
-                  id="smwLossVal"
-                  style="font-size: 1.8rem; font-weight: 900; margin: 8px 0"
-                >
-                  0
-                </div>
-                <div style="display: flex; gap: 4px">
-                  <button
-                    id="smwLossPlus"
-                    style="
-                      flex: 1;
-                      padding: 6px;
-                      border: none;
-                      border-radius: 6px;
-                      background: #ef4444;
-                      color: #fff;
-                      font-weight: bold;
-                      cursor: pointer;
-                    "
-                  >
-                    +
-                  </button>
-                  <button
-                    id="smwLossMinus"
-                    style="
-                      flex: 1;
-                      padding: 6px;
-                      border: none;
-                      border-radius: 6px;
-                      background: #374151;
-                      color: #fff;
-                      font-weight: bold;
-                      cursor: pointer;
-                    "
-                  >
-                    -
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div>
-              <label
-                style="
-                  font-size: 0.85rem;
-                  color: #a0a0c0;
-                  display: block;
-                  margin-bottom: 4px;
-                "
-                ><i class="fas fa-palette"></i> اختر الشكل:</label
-              >
-              <select
-                id="smwTheme"
-                style="
-                  width: 100%;
-                  padding: 8px 12px;
-                  background: #090a0f;
-                  border: 1px solid #374151;
-                  border-radius: 8px;
-                  color: #fff;
-                  font-size: 0.85rem;
-                "
-              >
-                <option value="pscontroller"><i class="fas fa-gamepad"></i> إطار دراع بلايستيشن</option>
-                <option value="headset"><i class="fas fa-headphones"></i> إطار سماعة جيمنج</option>
-                <option value="shield"><i class="fas fa-shield-halved"></i> إطار درع الحرب</option>
-                <option value="cyber"><i class="fas fa-bolt"></i> جيمنج نيون</option>
-                <option value="dragon"><i class="fas fa-dragon"></i> التنين الأحمر</option>
-                <option value="toxic"><i class="fas fa-biohazard"></i> سام نيون</option>
-                <option value="mouse"><i class="fas fa-computer-mouse"></i> إطار ماوس جيمنج</option>
-                <option value="royale"><i class="fas fa-crown"></i> فخامة VIP</option>
-                <option value="fireice"><i class="fas fa-fire"></i> نار وثلج</option>
-                <option value="arcade"><i class="fas fa-ghost"></i> ريترو أركيد</option>
-                <option value="kitty"><i class="fas fa-cat"></i> إطار القطة كيتي</option>
-                <option value="bunny"><i class="fas fa-star"></i> إطار الأرنب</option>
-                <option value="magicstar"><i class="fas fa-wand-magic-sparkles"></i> النجمة السحرية</option>
-                <option value="purpleneon"><i class="fas fa-wand-magic-sparkles"></i> بنفسجي تويتش</option>
-                <option value="minimal"><i class="fas fa-wand-magic-sparkles"></i> مينيمال بسيط</option>
-              </select>
-            </div>
-            <div>
-              <label
-                style="
-                  font-size: 0.85rem;
-                  color: #a0a0c0;
-                  display: block;
-                  margin-bottom: 4px;
-                "
-                ><i class="fas fa-square-plus"></i> العرض (px):</label
-              >
-              <input
-                type="number"
-                id="smwWidth"
-                value="285"
-                min="100"
-                max="600"
-                style="
-                  width: 100%;
-                  padding: 8px 12px;
-                  background: #090a0f;
-                  border: 1px solid #374151;
-                  border-radius: 8px;
-                  color: #fff;
-                  font-size: 0.85rem;
-                "
-              />
-            </div>
-            <button
-              id="smwReset"
-              style="
-                background: #dc2626;
-                color: #fff;
-                padding: 8px;
-                border: none;
-                border-radius: 8px;
-                cursor: pointer;
-                font-weight: bold;
-              "
-            >
-              <i class="fas fa-trash"></i> تصفير العداد
-            </button>
-          </div>
-          <div
-            style="
-              background: #12131c;
-              border: 1px dashed #1dd9e6;
-              border-radius: 16px;
-              min-height: 320px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              position: relative;
-            "
-          >
-            <span
-              style="
-                position: absolute;
-                top: 10px;
-                right: 15px;
-                font-size: 0.8rem;
-                color: #1dd9e6;
-                background: rgba(0, 0, 0, 0.6);
-                padding: 2px 8px;
-                border-radius: 4px;
-              "
-              ><i class="fas fa-eye"></i> معاينة حية</span
-            >
-            <div class="smw-box pscontroller" id="smwPreview">
-              <div class="smw-kitty-bow" id="smwKittyBow" style="display: none"><i class="fas fa-star"></i></div>
-              <div class="smw-item smw-w">
-                <span class="lbl" id="smwPrevWLabel">WIN</span>
-                <span id="smwPrevWNum">0</span>
-              </div>
-              <div class="smw-line"></div>
-              <div class="smw-item smw-l">
-                <span class="lbl" id="smwPrevLLabel">LOSE</span>
-                <span id="smwPrevLNum">0</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        </div>
-      </div>
     </div>
 
-    <style>
-      /* ستايلات لوحة قوائم الأوفرلاى — محصورة في بادئة sml- */
-      #listsPanelNative,
-      #listsPanelNative * {
-        box-sizing: border-box;
-        font-family: "Cairo", "Open Sans", sans-serif;
-        text-align: right;
-      }
-      #listsPanelNative .sml-url {
-        text-align: left;
-      }
-      .sml-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
-      }
-      .sml-panel {
-        background: #1b1d2a;
-        border: 1px solid #26283b;
-        border-radius: 14px;
-        padding: 18px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-      .sml-panel h3 {
-        margin: 0 0 6px;
-        color: #1dd9e6;
-        font-size: 1.05rem;
-      }
-      .sml-linkbox {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex-wrap: wrap;
-        background: #090a0f;
-        border: 1px solid #26283b;
-        border-radius: 8px;
-        padding: 8px 10px;
-        margin-bottom: 6px;
-      }
-      .sml-url {
-        direction: ltr;
-        font-size: 0.75rem;
-        color: #1dd9e6;
-        word-break: break-all;
-        flex: 1;
-      }
-      .sml-copy,
-      .sml-reset,
-      .sml-restore {
-        padding: 6px 12px;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-        font-weight: bold;
-        font-size: 0.8rem;
-        color: #000;
-        background: #1dd9e6;
-      }
-      .sml-reset {
-        background: #dc2626;
-        color: #fff;
-      }
-      .sml-restore {
-        background: #64748b;
-        color: #fff;
-      }
-      .sml-label {
-        font-size: 0.8rem;
-        color: #a0a0c0;
-        margin-top: 4px;
-      }
-      .sml-input {
-        width: 100%;
-        padding: 7px 10px;
-        background: #090a0f;
-        border: 1px solid #374151;
-        border-radius: 8px;
-        color: #fff;
-        font-size: 0.85rem;
-      }
-      .sml-mini {
-        font-size: 0.7rem;
-        color: #a0a0c0;
-      }
-      .sml-crowns {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        max-height: 110px;
-        overflow-y: auto;
-        background: #090a0f;
-        border: 1px solid #26283b;
-        border-radius: 8px;
-        padding: 8px;
-      }
-      .sml-crown-btn {
-        background: #1b1d2a;
-        border: 1px solid #374151;
-        color: #ccc;
-        border-radius: 20px;
-        padding: 4px 10px;
-        font-size: 0.78rem;
-        cursor: pointer;
-      }
-      .sml-crown-btn.active {
-        background: #ffd700;
-        color: #000;
-        border-color: #ffd700;
-        font-weight: bold;
-      }
-      .sml-status {
-        font-size: 0.78rem;
-        color: #4caf50;
-      }
-      @media (max-width: 900px) {
-        .sml-grid {
-          grid-template-columns: 1fr;
+      <!-- لوحات إعدادات أوفرلايز اللايف — تُنقل للنافذة العائمة عند الفتح -->
+      <div class="opc-settings" id="ovl-pref-viewers"></div>
+      <div class="opc-settings" id="ovl-pref-followers"></div>
+      <div class="opc-settings" id="ovl-pref-leaderboard"></div>
+      <div class="opc-settings" id="ovl-pref-coinjar"></div>
+      <div class="opc-settings" id="ovl-pref-fireworks"></div>
+
+      <style>
+        /* ===== كروت الأوفرلايز الموحدة — مطابقة لتصميم OverlaysSection ===== */
+        #startSection5,
+        #startSection5 * {
+          box-sizing: border-box;
+          font-family: "Cairo", "Open Sans", sans-serif;
         }
-      }
-
-      /* ===== معاينات الأوفرلاي الحية + النافذة العائمة ===== */
-      .ovl-previews {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-        gap: 20px;
-      }
-      .ovl-preview-card {
-        background: #1b1d2a;
-        border: 1px solid #26283b;
-        border-radius: 14px;
-        padding: 16px;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-      .ovl-preview-title {
-        margin: 0;
-        color: #1dd9e6;
-        font-size: 1.05rem;
-      }
-      .ovl-frame-wrap {
-        position: relative;
-        height: auto;
-        min-height: 160px;
-        border-radius: 10px;
-        overflow: hidden;
-        background:
-          linear-gradient(45deg, #16171f 25%, transparent 25%, transparent 75%, #16171f 75%),
-          linear-gradient(45deg, #16171f 25%, transparent 25%, transparent 75%, #16171f 75%);
-        background-size: 22px 22px;
-        background-position: 0 0, 11px 11px;
-        border: 1px dashed #26283b;
-      }
-      .ovl-frame {
-        width: 100%;
-        height: 100%;
-        border: none;
-        background: transparent;
-      }
-      .ovl-preview-actions {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-      }
-      #overlayFloatModal #overlayFloatCard {
-        font-family: "Cairo", "Open Sans", sans-serif;
-      }
-      #overlayFloatBody .sml-panel,
-      #overlayFloatBody .smw-layout {
-        background: transparent;
-        border: none;
-        padding: 0;
-      }
-
-      /* ===== المعاينة الحية — نسخة مطابقة لصفحة الأوفرلاي ===== */
-      .ovl-live {
-        height: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 8px;
-        overflow: hidden;
-      }
-      .ovl-box {
-        max-height: none;
-        overflow: hidden;
-        background: rgba(18, 18, 28, 0.9);
-        border: 2px solid #00ffe1;
-        border-radius: 14px;
-        padding: 12px;
-        display: flex;
-        flex-direction: column;
-        font-family: "Cairo", sans-serif;
-      }
-      .ovl-box-head {
-        text-align: center;
-        padding-bottom: 8px;
-        margin-bottom: 8px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-      }
-      .ovl-box-head h2 {
-        font-size: 15px;
-        font-weight: 900;
-        margin: 0;
-        color: #00ffe1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .ovl-box.theme-gold .ovl-box-head h2 { color: #ffd700; }
-      .ovl-box.theme-purple .ovl-box-head h2 { color: #ec4899; }
-      .ovl-box-list {
-        flex: 1;
-        overflow-y: auto;
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        min-height: 60px;
-      }
-      .ovl-box-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        background: rgba(255, 255, 255, 0.04);
-        border-radius: 8px;
-        padding: 5px 8px;
-      }
-      .ovl-box-num {
-        min-width: 22px;
-        height: 22px;
-        border-radius: 6px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 900;
-        font-size: 11px;
-        color: #fff;
-        flex-shrink: 0;
-      }
-      .ovl-box-name {
-        flex: 1;
-        font-size: 12px;
-        font-weight: 700;
-        color: #fff;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .ovl-box-row .fa-crown {
-        color: #ffd700;
-        font-size: 12px;
-        flex-shrink: 0;
-      }
-      .ovl-box-empty {
-        color: #888;
-        font-size: 11px;
-        text-align: center;
-        padding: 12px 0;
-      }
-      #ovlLiveWins .smw-box {
-        white-space: nowrap;
-        margin: 10px 0;
-      }
-    </style>
-
-    <style>
-      /* ستايلات عداد الفوز/الخسارة — محصورة في بادئة smw- */
-      #winsPanelNative,
-      #winsPanelNative * {
-        box-sizing: border-box;
-        font-family: "Cairo", "Open Sans", sans-serif;
-      }
-      /* مطابق تماماً لصفحة OBS (wins.html) — نفس الأشكال والألوان والخطوط */
-      .smw-box {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 16px;
-        padding: 12px 28px;
-        border-radius: 50px;
-        position: relative;
-        transition: all 0.3s ease;
-        width: auto;
-        background: rgba(18, 24, 38, 0.95);
-        border: 3px solid #3b82f6;
-        box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
-      }
-      .smw-box * {
-        font-size: 1.4rem !important;
-      }
-      .smw-item {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 1.4rem;
-        font-weight: 900;
-      }
-      .smw-line {
-        width: 2px;
-        height: 24px;
-        background: rgba(255, 255, 255, 0.2);
-      }
-      .smw-box .lbl {
-        font-size: 1.4rem;
-        font-weight: 900;
-      }
-      .pscontroller {
-        background: rgba(18, 24, 38, 0.95);
-        border: 3px solid #3b82f6;
-        border-radius: 40px 40px 20px 20px;
-        box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
-        padding: 16px 36px;
-      }
-      .pscontroller::before {
-        content: "<i class="fas fa-gamepad"></i>";
-        position: absolute;
-        top: -16px;
-        left: 50%;
-        transform: translateX(-50%);
-        font-size: 1.2rem;
-        background: #3b82f6;
-        border-radius: 50%;
-        padding: 2px 6px;
-      }
-      .pscontroller .smw-w {
-        color: #60a5fa;
-        font-family: "Orbitron", sans-serif;
-      }
-      .pscontroller .smw-l {
-        color: #f43f5e;
-        font-family: "Orbitron", sans-serif;
-      }
-      .pscontroller .smw-line {
-        background: rgba(255, 255, 255, 0.2);
-      }
-      .headset {
-        background: rgba(15, 23, 42, 0.95);
-        border: 2px solid #10b981;
-        border-radius: 25px;
-        box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
-        margin-top: 10px;
-      }
-      .headset::before {
-        content: "";
-        position: absolute;
-        top: -14px;
-        left: 15px;
-        right: 15px;
-        height: 14px;
-        border: 3px solid #10b981;
-        border-bottom: none;
-        border-radius: 20px 20px 0 0;
-      }
-      .headset .smw-w {
-        color: #34d399;
-      }
-      .headset .smw-l {
-        color: #f87171;
-      }
-      .headset .smw-line {
-        background: rgba(255, 255, 255, 0.2);
-      }
-      .shield {
-        background: rgba(20, 20, 30, 0.95);
-        border: 3px solid #eab308;
-        border-radius: 10px 10px 40px 40px;
-        box-shadow: 0 0 15px rgba(234, 179, 8, 0.4);
-      }
-      .shield .smw-w {
-        color: #facc15;
-        font-family: "Orbitron", sans-serif;
-      }
-      .shield .smw-l {
-        color: #ef4444;
-        font-family: "Orbitron", sans-serif;
-      }
-      .shield .smw-line {
-        background: #eab308;
-      }
-      .cyber {
-        background: rgba(10, 15, 25, 0.92);
-        border: 2px solid #00ffe1;
-        box-shadow: 0 0 15px rgba(0, 255, 225, 0.4);
-      }
-      .cyber .smw-w {
-        color: #00ffe1;
-        text-shadow: 0 0 8px rgba(0, 255, 225, 0.6);
-      }
-      .cyber .smw-l {
-        color: #ff0055;
-        text-shadow: 0 0 8px rgba(255, 0, 85, 0.6);
-      }
-      .cyber .smw-line {
-        background: rgba(255, 255, 255, 0.2);
-      }
-      .dragon {
-        background: rgba(30, 10, 10, 0.95);
-        border: 2px solid #dc2626;
-        box-shadow: 0 0 18px rgba(220, 38, 38, 0.6);
-        border-radius: 15px 40px 15px 40px;
-      }
-      .dragon .smw-w {
-        color: #f87171;
-      }
-      .dragon .smw-l {
-        color: #fbbf24;
-      }
-      .dragon .smw-line {
-        background: #dc2626;
-      }
-      .toxic {
-        background: rgba(10, 25, 10, 0.95);
-        border: 2px solid #84cc16;
-        box-shadow: 0 0 15px rgba(132, 204, 22, 0.5);
-      }
-      .toxic .smw-w {
-        color: #a3e635;
-        text-shadow: 0 0 8px #a3e635;
-      }
-      .toxic .smw-l {
-        color: #f43f5e;
-      }
-      .toxic .smw-line {
-        background: #84cc16;
-      }
-      .mouse {
-        background: rgba(15, 15, 25, 0.95);
-        border: 2px solid #a855f7;
-        border-radius: 40px 40px 30px 30px;
-        box-shadow: 0 0 15px rgba(168, 85, 247, 0.4);
-      }
-      .mouse::before {
-        content: "";
-        position: absolute;
-        top: 0;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 2px;
-        height: 12px;
-        background: #a855f7;
-      }
-      .mouse .smw-w {
-        color: #c084fc;
-      }
-      .mouse .smw-l {
-        color: #f43f5e;
-      }
-      .mouse .smw-line {
-        background: rgba(255, 255, 255, 0.2);
-      }
-      .royale {
-        background: rgba(20, 16, 8, 0.95);
-        border: 2px solid #ffcc00;
-        box-shadow: 0 0 15px rgba(255, 204, 0, 0.3);
-      }
-      .royale .smw-w {
-        color: #ffcc00;
-        text-shadow: 0 0 8px rgba(255, 204, 0, 0.5);
-      }
-      .royale .smw-l {
-        color: #ef4444;
-      }
-      .royale .smw-line {
-        background: rgba(255, 204, 0, 0.3);
-      }
-      .fireice {
-        background: rgba(15, 15, 20, 0.9);
-        border: 2px solid #38bdf8;
-        box-shadow: 0 0 15px rgba(249, 115, 22, 0.4);
-      }
-      .fireice .smw-w {
-        color: #f97316;
-        text-shadow: 0 0 8px #f97316;
-      }
-      .fireice .smw-l {
-        color: #38bdf8;
-        text-shadow: 0 0 8px #38bdf8;
-      }
-      .fireice .smw-line {
-        background: rgba(255, 255, 255, 0.2);
-      }
-      .arcade {
-        background: #000;
-        border: 3px solid #3b82f6;
-        border-radius: 8px;
-        font-family: "Press Start 2P", cursive;
-      }
-      .arcade .smw-item {
-        font-size: 0.85rem;
-      }
-      .arcade
-      .arcade .smw-w {
-        color: #22c55e;
-      }
-      .arcade .smw-l {
-        color: #ef4444;
-      }
-      .arcade .smw-line {
-        background: #3b82f6;
-      }
-      .kitty {
-        background: rgba(255, 240, 245, 0.95);
-        border: 3px solid #ff69b4;
-        border-radius: 60px 60px 40px 40px;
-        box-shadow: 0 0 15px rgba(255, 105, 180, 0.5);
-        margin-top: 12px;
-      }
-      .kitty::before,
-      .kitty::after {
-        content: "";
-        position: absolute;
-        top: -14px;
-        width: 0;
-        height: 0;
-        border-left: 14px solid transparent;
-        border-right: 14px solid transparent;
-        border-bottom: 16px solid #ff69b4;
-      }
-      .kitty::before {
-        left: 18px;
-        transform: rotate(-15deg);
-      }
-      .kitty::after {
-        right: 18px;
-        transform: rotate(15deg);
-      }
-      .smw-kitty-bow {
-        position: absolute;
-        top: -18px;
-        right: 32px;
-        font-size: 1.2rem;
-        z-index: 2;
-      }
-      .kitty .smw-w {
-        color: #ff1493;
-        font-family: "Fredoka One", cursive;
-      }
-      .kitty .smw-l {
-        color: #8a2be2;
-        font-family: "Fredoka One", cursive;
-      }
-      .kitty .smw-line {
-        background: #ffb6c1;
-      }
-      .bunny {
-        background: rgba(255, 255, 255, 0.95);
-        border: 3px solid #ffb6c1;
-        border-radius: 30px;
-        box-shadow: 0 0 15px rgba(255, 182, 193, 0.6);
-        margin-top: 15px;
-      }
-      .bunny::before,
-      .bunny::after {
-        content: "";
-        position: absolute;
-        top: -20px;
-        width: 14px;
-        height: 22px;
-        background: #fff;
-        border: 3px solid #ffb6c1;
-        border-radius: 12px 12px 0 0;
-      }
-      .bunny::before {
-        left: 25px;
-        transform: rotate(-10deg);
-      }
-      .bunny::after {
-        right: 25px;
-        transform: rotate(10deg);
-      }
-      .bunny .smw-w {
-        color: #ff69b4;
-        font-family: "Fredoka One", cursive;
-      }
-      .bunny .smw-l {
-        color: #a78bfa;
-        font-family: "Fredoka One", cursive;
-      }
-      .bunny .smw-line {
-        background: #ffd1dc;
-      }
-      .magicstar {
-        background: rgba(30, 15, 45, 0.92);
-        border: 2px solid #f472b6;
-        border-radius: 20px;
-        box-shadow: 0 0 18px rgba(244, 114, 182, 0.5);
-      }
-      .magicstar::before {
-        content: "<i class="fas fa-wand-magic-sparkles"></i>";
-        position: absolute;
-        top: -12px;
-        left: -10px;
-        font-size: 1.2rem;
-      }
-      .magicstar::after {
-        content: "<i class="fas fa-star"></i>";
-        position: absolute;
-        bottom: -12px;
-        right: -10px;
-        font-size: 1.1rem;
-      }
-      .magicstar .smw-w {
-        color: #f472b6;
-        font-family: "Fredoka One", cursive;
-      }
-      .magicstar .smw-l {
-        color: #c084fc;
-        font-family: "Fredoka One", cursive;
-      }
-      .magicstar .smw-line {
-        background: rgba(244, 114, 182, 0.4);
-      }
-      .minimal {
-        background: rgba(18, 18, 18, 0.85);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-      }
-      .minimal .smw-w {
-        color: #10b981;
-      }
-      .minimal .smw-l {
-        color: #ef4444;
-      }
-      .minimal .smw-line {
-        background: rgba(255, 255, 255, 0.2);
-      }
-      .purpleneon {
-        background: rgba(20, 10, 35, 0.92);
-        border: 2px solid #a855f7;
-        box-shadow: 0 0 15px rgba(168, 85, 247, 0.5);
-      }
-      .purpleneon .smw-w {
-        color: #c084fc;
-        text-shadow: 0 0 8px #c084fc;
-      }
-      .purpleneon .smw-l {
-        color: #f43f5e;
-        text-shadow: 0 0 8px #f43f5e;
-      }
-      .purpleneon .smw-line {
-        background: rgba(168, 85, 247, 0.4);
-      }
-      @media (max-width: 900px) {
-        .smw-layout {
-          grid-template-columns: 1fr !important;
+        .ovl-previews {
+          /* شبكة موحدة — كل الكروت متساوية زي OverlaysSection */
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+          gap: 20px;
         }
-      }
-    </style>
+        .ovl-previews .opc {
+          break-inside: avoid;
+          -webkit-column-break-inside: avoid;
+          margin: 0 0 20px;
+        }
+        .opc {
+          display: flex;
+          flex-direction: column;
+          background: linear-gradient(180deg, #1d2032 0%, #171925 100%);
+          border: 1px solid #26283b;
+          border-radius: 16px;
+          overflow: hidden;
+          box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+          transition: transform 0.3s, border-color 0.3s, box-shadow 0.3s, opacity 0.3s;
+        }
+        .opc:hover {
+          transform: translateY(-3px);
+          border-color: rgba(29, 217, 230, 0.35);
+          box-shadow: 0 14px 32px rgba(0, 0, 0, 0.5);
+        }
+        .opc.is-off {
+          opacity: 0.7;
+        }
+        .opc-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 14px 20px;
+          background: rgba(255, 255, 255, 0.02);
+          border-bottom: 1px solid rgba(38, 40, 59, 0.6);
+        }
+        .opc-head-left {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          min-width: 0;
+        }
+        .opc-icon {
+          flex-shrink: 0;
+          width: 44px;
+          height: 44px;
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid;
+          font-size: 19px;
+        }
+        .opc-head-names {
+          min-width: 0;
+        }
+        .opc-head-names h3 {
+          margin: 0;
+          font-weight: 800;
+          font-size: 1rem;
+          color: #fff;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .opc-head-names p {
+          margin: 0;
+          font-size: 11px;
+          color: #9ca3af;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .opc-head-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-shrink: 0;
+        }
+        .opc-gear {
+          background: transparent;
+          border: 1px solid #374151;
+          color: #9ca3af;
+          width: 32px;
+          height: 32px;
+          border-radius: 8px;
+          cursor: pointer;
+          font-size: 13px;
+          transition: all 0.2s;
+        }
+        .opc-gear:hover {
+          color: #fff;
+          border-color: rgba(255, 255, 255, 0.4);
+        }
+        .opc-gear.active {
+          color: #000;
+          background: #1dd9e6;
+          border-color: #1dd9e6;
+        }
+        .opc-power {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 12px;
+          border-radius: 8px;
+          border: 2px solid;
+          cursor: pointer;
+          font-size: 12px;
+          font-weight: 800;
+          font-family: inherit;
+          transition: all 0.3s;
+          background: transparent;
+          white-space: nowrap;
+        }
+        .opc-power.on {
+          background: rgba(34, 197, 94, 0.15);
+          border-color: rgba(34, 197, 94, 0.5);
+          color: #4ade80;
+        }
+        .opc-power.on:hover {
+          background: rgba(34, 197, 94, 0.25);
+        }
+        .opc-power.off {
+          border-color: #374151;
+          color: #9ca3af;
+        }
+        .opc-power.off:hover {
+          color: #fff;
+          border-color: rgba(255, 255, 255, 0.4);
+        }
+        .opc-preview {
+          position: relative;
+          width: 100%;
+          aspect-ratio: 16 / 10;
+          background:
+            radial-gradient(130% 100% at 50% 0%, rgba(29, 217, 230, 0.06), transparent 55%),
+            #05060a;
+          border-bottom: 1px solid rgba(38, 40, 59, 0.6);
+          overflow: hidden;
+        }
+        .opc-preview .opc-frame {
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          /* العرض والارتفاع الطبيعيون + نسبة التصغير يحسبهما overlay.js */
+          transform: translate(-50%, -50%);
+          border: 0;
+          background: transparent;
+        }
+        .opc-off[hidden] {
+          display: none;
+        }
+        .opc-off {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          color: #9ca3af;
+          font-size: 14px;
+          background: #000;
+          z-index: 2;
+        }
+        .opc-off i {
+          font-size: 26px;
+          opacity: 0.4;
+        }
+        .opc-footer {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 12px;
+        }
+        .opc-copy {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          padding: 9px 14px;
+          border: none;
+          border-radius: 8px;
+          background: #1dd9e6;
+          color: #000;
+          font-weight: 900;
+          font-size: 0.85rem;
+          cursor: pointer;
+          font-family: inherit;
+          transition: filter 0.2s, background 0.2s;
+          white-space: nowrap;
+        }
+        .opc-copy:hover {
+          filter: brightness(1.12);
+        }
+        .opc-copy.copied {
+          background: #22c55e;
+          color: #fff;
+          filter: none;
+        }
+        .opc-iconbtn {
+          flex-shrink: 0;
+          width: 40px;
+          padding: 9px 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: none;
+          border-radius: 8px;
+          background: #26283b;
+          color: #cfcfe6;
+          cursor: pointer;
+          font-size: 14px;
+          text-decoration: none;
+          transition: all 0.2s;
+        }
+        .opc-iconbtn:hover {
+          background: #343750;
+          color: #fff;
+        }
+
+        /* ===== لوحات الإعدادات داخل الكروت (عداد الفوز + القوائم) ===== */
+        .opc-settings {
+          display: none;
+          flex-direction: column;
+          gap: 12px;
+          border-top: 1px solid rgba(38, 40, 59, 0.6);
+          padding: 16px 20px;
+          background: #161824;
+          text-align: right;
+        }
+        .opc-settings.open {
+          display: flex;
+        }
+        /* داخل النافذة العائمة تظهر لوحة التحكم دائماً */
+        #overlayFloatBody .opc-settings {
+          display: flex;
+          padding: 0;
+          border-top: none;
+          background: transparent;
+        }
+
+        /* ── لوحات الأشكال/السكنز ── */
+        .ovl-pref-title {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-weight: 800;
+          font-size: 1.05rem;
+          background: linear-gradient(180deg, #fff8b8, #ffd700 45%, #ff9500);
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+          margin-bottom: 4px;
+        }
+        .ovl-pref-sub {
+          font-size: 0.78rem;
+          color: #9ca3af;
+          margin-bottom: 10px;
+        }
+        .ovl-pref-section {
+          font-size: 0.72rem;
+          font-weight: 800;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+          color: rgba(255,255,255,0.6);
+          margin: 14px 0 8px;
+        }
+        .ovl-skin-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+          gap: 8px;
+        }
+        .ovl-skin-btn {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 6px;
+          padding: 10px 6px;
+          border-radius: 12px;
+          background: rgba(255,255,255,0.03);
+          border: 1.5px solid rgba(255,255,255,0.08);
+          color: #cfcfe6;
+          cursor: pointer;
+          transition: all 0.25s ease;
+          font-family: inherit;
+        }
+        .ovl-skin-btn:hover {
+          border-color: rgba(255,215,0,0.35);
+          transform: translateY(-2px);
+        }
+        .ovl-skin-btn.is-active {
+          background: rgba(255,215,0,0.08);
+          border-color: rgba(255,215,0,0.9);
+          color: #fff;
+          box-shadow: 0 0 16px rgba(255,215,0,0.35);
+        }
+        .ovl-skin-swatch {
+          width: 30px;
+          height: 30px;
+          border-radius: 50%;
+          box-shadow: 0 0 10px rgba(0,0,0,0.5), inset 0 0 6px rgba(255,255,255,0.35);
+        }
+        .ovl-skin-name {
+          font-size: 11px;
+          font-weight: 700;
+          text-align: center;
+          line-height: 1.2;
+          color: #fff;
+        }
+        .ovl-skin-tag {
+          font-size: 9px;
+          color: #9ca3af;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+        }
+        .ovl-shape-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+          gap: 8px;
+        }
+        .ovl-toggle-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 12px 16px;
+          border-radius: 12px;
+          background: rgba(255,255,255,0.03);
+          border: 1.5px solid rgba(255,255,255,0.08);
+        }
+        .ovl-toggle-label {
+          font-size: 0.85rem;
+          font-weight: 700;
+          color: #fff;
+        }
+        .ovl-switch {
+          position: relative;
+          width: 46px;
+          height: 26px;
+          border-radius: 999px;
+          background: rgba(255,255,255,0.1);
+          border: 1.5px solid rgba(255,255,255,0.15);
+          cursor: pointer;
+          transition: all 0.25s ease;
+          padding: 0;
+          flex-shrink: 0;
+        }
+        .ovl-switch.is-on {
+          background: rgba(29,217,230,0.55);
+          border-color: #1dd9e6;
+          box-shadow: 0 0 14px rgba(29,217,230,0.55);
+        }
+        .ovl-switch-thumb {
+          position: absolute;
+          top: 2px;
+          left: 2px;
+          width: 19px;
+          height: 19px;
+          border-radius: 50%;
+          background: #fff;
+          transition: transform 0.3s cubic-bezier(.34,1.56,.64,1);
+          box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+        }
+        .ovl-switch.is-on .ovl-switch-thumb { transform: translateX(19px); }
+        .ovl-num-row {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        .ovl-num-row label {
+          flex: 1;
+          font-size: 0.8rem;
+          font-weight: 700;
+          color: #a0a0c0;
+        }
+        .ovl-num-row input {
+          width: 110px;
+          padding: 7px 10px;
+          background: #090a0f;
+          border: 1px solid #374151;
+          border-radius: 8px;
+          color: #fff;
+          font-size: 0.85rem;
+          font-family: inherit;
+        }
+        #startSection5 .ovl-field > label {
+          display: block;
+          font-size: 0.8rem;
+          font-weight: 700;
+          color: #a0a0c0;
+          margin-bottom: 5px;
+        }
+        #startSection5 .ovl-field input[type="text"],
+        #startSection5 .ovl-field input[type="number"],
+        #startSection5 .ovl-field select,
+        #startSection5 .ovl-field textarea {
+          width: 100%;
+          padding: 7px 10px;
+          background: #090a0f;
+          border: 1px solid #374151;
+          border-radius: 8px;
+          color: #fff;
+          font-size: 0.85rem;
+          font-family: inherit;
+        }
+        #startSection5 .ovl-field textarea {
+          resize: vertical;
+        }
+        #startSection5 .ovl-field.grow {
+          flex: 1;
+          min-width: 110px;
+        }
+        .ovl-linkrow {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+        }
+        .ovl-linkrow input {
+          flex: 1;
+          min-width: 0;
+          padding: 8px 10px;
+          background: #090a0f;
+          border: 1px solid #26283b;
+          border-radius: 8px;
+          color: #1dd9e6;
+          font-size: 0.72rem;
+          font-family: monospace;
+          direction: ltr;
+        }
+        .ovl-linkrow button {
+          background: #1dd9e6;
+          color: #000;
+          padding: 8px 14px;
+          border-radius: 8px;
+          border: none;
+          font-weight: 900;
+          cursor: pointer;
+          white-space: nowrap;
+          font-size: 0.85rem;
+          font-family: inherit;
+        }
+        .ovl-counter-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+        }
+        .ovl-counter-box {
+          background: #12131c;
+          padding: 12px;
+          border-radius: 10px;
+          text-align: center;
+          border: 2px solid #10b981;
+        }
+        .ovl-counter-box.loss {
+          border-color: #ef4444;
+        }
+        .ovl-counter-box input {
+          width: 100%;
+          padding: 6px 10px;
+          background: #090a0f;
+          border: 1px solid #374151;
+          border-radius: 8px;
+          color: #fff;
+          font-size: 0.85rem;
+          font-family: inherit;
+        }
+        .ovl-counter-val {
+          font-size: 1.8rem;
+          font-weight: 900;
+          margin: 8px 0;
+          color: #fff;
+        }
+        .ovl-counter-btns {
+          display: flex;
+          gap: 4px;
+        }
+        .ovl-counter-btns button {
+          flex: 1;
+          padding: 6px;
+          border: none;
+          border-radius: 6px;
+          font-weight: bold;
+          cursor: pointer;
+          font-size: 1rem;
+          font-family: inherit;
+        }
+        .ovl-counter-box.win .ovl-counter-btns button:first-child {
+          background: #10b981;
+          color: #000;
+        }
+        .ovl-counter-box.loss .ovl-counter-btns button:first-child {
+          background: #ef4444;
+          color: #fff;
+        }
+        .ovl-counter-btns button:last-child {
+          background: #374151;
+          color: #fff;
+        }
+        .ovl-danger-btn {
+          background: #dc2626;
+          color: #fff;
+          padding: 8px;
+          border: none;
+          border-radius: 8px;
+          cursor: pointer;
+          font-weight: bold;
+          font-family: inherit;
+          font-size: 0.85rem;
+        }
+        .ovl-row3 {
+          display: flex;
+          gap: 14px;
+          align-items: flex-end;
+          flex-wrap: wrap;
+        }
+        .ovl-color {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 3px;
+        }
+        .ovl-color input[type="color"] {
+          width: 42px;
+          height: 30px;
+          border: 1px solid #374151;
+          border-radius: 6px;
+          background: #090a0f;
+          padding: 2px;
+          cursor: pointer;
+        }
+        .ovl-color span {
+          font-size: 0.7rem;
+          color: #a0a0c0;
+        }
+        .ovl-actions-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+        .sml-reset,
+        .sml-restore {
+          padding: 6px 12px;
+          border: none;
+          border-radius: 6px;
+          cursor: pointer;
+          font-weight: bold;
+          font-size: 0.8rem;
+          color: #000;
+          background: #1dd9e6;
+          font-family: inherit;
+        }
+        .sml-reset {
+          background: #dc2626;
+          color: #fff;
+        }
+        .sml-restore {
+          background: #64748b;
+          color: #fff;
+        }
+        .sml-status {
+          font-size: 0.78rem;
+          color: #4caf50;
+        }
+        .sml-crowns {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          max-height: 110px;
+          overflow-y: auto;
+          background: #090a0f;
+          border: 1px solid #26283b;
+          border-radius: 8px;
+          padding: 8px;
+        }
+        .sml-crown-btn {
+          background: #1b1d2a;
+          border: 1px solid #374151;
+          color: #ccc;
+          border-radius: 20px;
+          padding: 4px 10px;
+          font-size: 0.78rem;
+          cursor: pointer;
+          font-family: inherit;
+        }
+        .sml-crown-btn.active {
+          background: #ffd700;
+          color: #000;
+          border-color: #ffd700;
+          font-weight: bold;
+        }
+
+      </style>
+    </div>
 
     <!-- ===== قسم Hotkey ===== -->
     <div
@@ -2227,6 +2092,714 @@
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+
+    <!-- ===== قسم اللايف فيد (Live Feed) ===== -->
+    <div
+      class="livefeed-section section-css"
+      id="startSectionLivefeed"
+      style="display: none"
+    >
+      <div class="addon-header">
+        <h2><i class="fas fa-satellite-dish"></i> اللايف فيد (Live Feed)</h2>
+        <p>
+          كل ما يحدث في اللايف لحظة بلحظة — التعليقات واللايكات والهدايا
+          والمتابعات بالاسم والصورة.
+        </p>
+      </div>
+
+      <div class="lf-stats">
+        <div class="lf-stat">
+          <span class="lf-stat-num" id="lfStatComments">0</span>
+          <span class="lf-stat-lbl">💬 تعليق</span>
+        </div>
+        <div class="lf-stat">
+          <span class="lf-stat-num" id="lfStatLikes">0</span>
+          <span class="lf-stat-lbl">❤️ لايك</span>
+        </div>
+        <div class="lf-stat">
+          <span class="lf-stat-num" id="lfStatGifts">0</span>
+          <span class="lf-stat-lbl">🎁 هدية</span>
+        </div>
+        <div class="lf-stat">
+          <span class="lf-stat-num" id="lfStatFollows">0</span>
+          <span class="lf-stat-lbl">➕ متابعة</span>
+        </div>
+        <div class="lf-stat">
+          <span class="lf-stat-num" id="lfStatShares">0</span>
+          <span class="lf-stat-lbl">🔄 مشاركة</span>
+        </div>
+        <div class="lf-stat">
+          <span class="lf-stat-num" id="lfStatJoins">0</span>
+          <span class="lf-stat-lbl">👋 دخول</span>
+        </div>
+      </div>
+
+      <div class="lf-toolbar">
+        <span id="lfStatus" class="lf-status"></span>
+        <button id="lfClearBtn" class="btn btn-secondary">
+          <i class="fas fa-broom"></i> تفريغ الفيد
+        </button>
+      </div>
+
+      <div class="lf-filters" id="lfFilters">
+        <label class="lf-filter"><input type="checkbox" data-type="chat" checked /><span>💬 تعليق</span></label>
+        <label class="lf-filter"><input type="checkbox" data-type="like" checked /><span>❤️ لايك</span></label>
+        <label class="lf-filter"><input type="checkbox" data-type="gift" checked /><span>🎁 هدية</span></label>
+        <label class="lf-filter"><input type="checkbox" data-type="follow" checked /><span>➕ متابعة</span></label>
+        <label class="lf-filter"><input type="checkbox" data-type="join" checked /><span>👋 دخول</span></label>
+        <label class="lf-filter"><input type="checkbox" data-type="share" checked /><span>🔄 مشاركة</span></label>
+        <label class="lf-filter"><input type="checkbox" data-type="subscribe" checked /><span>⭐ اشتراك</span></label>
+      </div>
+
+      <div class="lf-container">
+        <div id="lfProfileCard" class="lf-profile-card" hidden>
+          <button id="lfProfileClose" class="lf-profile-close">&times;</button>
+          <div class="lf-profile-head">
+            <img
+              id="lfProfileAvatar"
+              src=""
+              alt=""
+              referrerpolicy="no-referrer"
+              onerror="this.style.visibility='hidden'"
+            />
+            <div class="lf-profile-names">
+              <div class="lf-profile-nick" id="lfProfileNick"></div>
+              <div class="lf-profile-user" id="lfProfileUser"></div>
+            </div>
+          </div>
+          <div class="lf-profile-roles" id="lfProfileRoles"></div>
+          <div class="lf-profile-stat">
+            <i class="fas fa-users"></i>
+            <span id="lfProfileFollowers">—</span>
+            <span class="lf-profile-stat-lbl" id="lfProfileFollowersLbl"
+              >عدد متابعيه</span
+            >
+          </div>
+          <div class="lf-profile-stats">
+            <span id="lfProfileCoins" title="عملات هذا البث">🪙 0</span>
+            <span id="lfProfileLikes" title="لايكات هذا البث">❤️ 0</span>
+            <span id="lfProfileComments" title="تعليقات هذا البث">💬 0</span>
+            <span id="lfProfileGifts" title="هدايا هذا البث">🎁 0</span>
+          </div>
+        </div>
+        <div id="feed-list" class="feed-list"></div>
+        <div id="feed-empty" class="lf-empty">
+          <i class="fas fa-satellite-dish"></i>
+          <p>لا توجد أحداث بعد — اربط حسابك وابدأ البث ليظهر الفيد هنا.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== قسم قراءة التعليقات صوتياً (TTS) ===== -->
+    <div
+      class="tts-section section-css"
+      id="startSectionTts"
+      style="display: none"
+    >
+      <div class="addon-header">
+        <h2><i class="fas fa-comment-dots"></i> قراءة التعليقات صوتياً (TTS)</h2>
+        <p>
+          اقرأ تعليقات اللايف بصوت طبيعي مع صلاحيات وفلاتر وكولداون — تعمل
+          تلقائياً مع بداية البث، وأي تعديل يُحفظ تلقائياً.
+        </p>
+      </div>
+
+      <div class="tts-grid">
+        <div class="tts-card">
+          <h3><i class="fas fa-sliders"></i> الصوت والنطق</h3>
+          <div class="addon-row toggle-row">
+            <label class="addon-switch">
+              <input type="checkbox" id="ttsEnabled" checked />
+              <span class="addon-slider"></span>
+            </label>
+            <span class="toggle-label">تفعيل القراءة الصوتية</span>
+          </div>
+          <div class="addon-row">
+            <label for="ttsVoiceSelect">الصوت المستخدم:</label>
+            <select id="ttsVoiceSelect"></select>
+          </div>
+          <div class="addon-row toggle-row">
+            <label class="addon-switch">
+              <input type="checkbox" id="ttsRandomVoice" />
+              <span class="addon-slider"></span>
+            </label>
+            <span class="toggle-label">صوت عشوائي لكل تعليق (أصوات عربية)</span>
+          </div>
+          <div class="addon-row">
+            <button type="button" class="btn btn-secondary" id="ttsTikTokStyle">
+              <i class="fas fa-wand-magic-sparkles"></i>
+              نمط تيك توك — سرعة 1.2× ونبرة أخف (لصوت سلمى)
+            </button>
+          </div>
+          <div class="addon-row">
+            <label for="ttsSpeed"
+              >السرعة: <output id="ttsSpeedVal">1.00</output>x</label
+            >
+            <input
+              type="range"
+              id="ttsSpeed"
+              min="0.5"
+              max="2"
+              step="0.05"
+              value="1"
+            />
+          </div>
+          <div class="addon-row">
+            <label for="ttsPitch"
+              >النبرة: <output id="ttsPitchVal">1.00</output>x</label
+            >
+            <input
+              type="range"
+              id="ttsPitch"
+              min="0.5"
+              max="2"
+              step="0.05"
+              value="1"
+            />
+          </div>
+          <div class="addon-row">
+            <label for="ttsVolume"
+              >مستوى الصوت: <output id="ttsVolumeVal">100</output>%</label
+            >
+            <input
+              type="range"
+              id="ttsVolume"
+              min="0"
+              max="100"
+              step="5"
+              value="100"
+            />
+          </div>
+          <div class="addon-row">
+            <label for="ttsTestText">تجربة الصوت:</label>
+            <div class="tts-test-row">
+              <input
+                type="text"
+                id="ttsTestText"
+                placeholder="اكتب نصاً لتجربته..."
+              />
+              <button id="ttsTestBtn" class="btn btn-secondary">
+                <i class="fas fa-play"></i> استمع
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="tts-card">
+          <h3><i class="fas fa-user-shield"></i> من يحق له أن يُقرأ؟</h3>
+          <div class="addon-check"><input type="checkbox" id="ttsPermAll" /><label for="ttsPermAll">الجميع</label></div>
+          <div class="addon-check"><input type="checkbox" id="ttsPermFollowers" /><label for="ttsPermFollowers">المتابعون فقط</label></div>
+          <div class="addon-check">
+            <input type="checkbox" id="ttsPermSubscribers" />
+            <label for="ttsPermSubscribers">المشتركون (قلب الفريق) من مستوى</label>
+            <input type="number" id="ttsSubsLevel" min="1" max="50" value="1" style="width:70px; margin-inline-start:8px;" />
+            <small style="margin-inline-start:6px">وأعلى</small>
+          </div>
+          <div class="addon-check"><input type="checkbox" id="ttsPermModerators" /><label for="ttsPermModerators">المشرفون (Mods) فقط</label></div>
+          <div class="addon-check">
+            <input type="checkbox" id="ttsPermTopFan" />
+            <label for="ttsPermTopFan">أفضل معجب (Top Fan)</label>
+          </div>
+          <div class="addon-check">
+            <input type="checkbox" id="ttsPermTopGifters" />
+            <label for="ttsPermTopGifters">Top Viewers — أول</label>
+            <input type="number" id="ttsTopGiftersCount" min="1" max="50" value="3" style="width:70px; margin-inline-start:8px;" />
+            <small style="margin-inline-start:6px">من مشاهدي البث الحالي</small>
+          </div>
+          <div class="addon-check"><input type="checkbox" id="ttsPermVip" /><label for="ttsPermVip">الأشخاص المميزين</label></div>
+          <div class="addon-row">
+            <label for="ttsMaxLen">أقصى طول للنص المقروء (حرف):</label>
+            <input type="number" id="ttsMaxLen" min="20" max="300" value="150" />
+          </div>
+        </div>
+
+        <div class="tts-card">
+          <h3><i class="fas fa-star"></i> النقاط</h3>
+          <p class="addon-hint" style="color: var(--text-muted); font-size: 12px; margin: 0 0 10px;">
+            نقاط يكسبها المشاهدون تلقائياً وتُصرف على طلبات الأغاني — نفس رصيد نقاط قسم الأغاني.
+          </p>
+          <div class="addon-row" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
+            <div class="addon-check" style="flex: none;">
+              <input type="checkbox" id="ttsReadCostOn" />
+              <label for="ttsReadCostOn">سعر القراءة (نقاط)</label>
+            </div>
+            <input type="number" id="ttsReadCost" min="0" value="1" style="width: 90px;" />
+            <small style="color: var(--text-muted);">مفعل = يُقرأ تعليق المشاهد بخصم السعر من نقاط قسم TTS — أنت وأصحاب الصوت المخصص معفيون</small>
+          </div>
+          <div class="addon-row three-cols">
+            <div>
+              <div class="addon-check">
+                <input type="checkbox" id="ttsPointsMsgOn" />
+                <label for="ttsPointsMsgOn">نقاط لكل رسالة شات</label>
+              </div>
+              <input type="number" id="ttsPointsPerMessage" min="0" max="100" value="1" />
+            </div>
+            <div>
+              <div class="addon-check">
+                <input type="checkbox" id="ttsPointsLikeOn" />
+                <label for="ttsPointsLikeOn">نقاط لكل تكبيس (كل X لايكات = نقطة)</label>
+              </div>
+              <input type="number" id="ttsPointsPerLike" min="0" value="0" />
+            </div>
+            <div>
+              <div class="addon-check">
+                <input type="checkbox" id="ttsPointsCoinsOn" />
+                <label for="ttsPointsCoinsOn">نقاط لكل عملات (كل X عملات = نقطة)</label>
+              </div>
+              <input type="number" id="ttsPointsPerCoins" min="0" value="0" />
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: 14px;">
+            <span><i class="fas fa-ranking-star"></i> أعلى المشاهدين نقاطاً</span>
+            <input type="text" id="ttsPointsSearch" class="pb-search" placeholder="ابحث باليوزر...">
+            <button type="button" id="ttsPointsRefresh" class="btn btn-secondary" style="padding: 4px 12px;">
+              <i class="fas fa-rotate-right"></i>
+            </button>
+          </div>
+          <div class="vps-table-wrap" style="max-height: 240px; overflow-y: auto; overflow-x: hidden; margin-top: 8px;">
+            <table class="vps-table" style="min-width: 0;">
+              <thead>
+                <tr>
+                  <th style="width: 55%">المشاهد</th>
+                  <th style="width: 20%">النقاط</th>
+                  <th style="width: 25%">الخيارات</th>
+                </tr>
+              </thead>
+              <tbody id="ttsPointsBoardBody">
+                <tr><td colspan="3" class="vps-empty">لا يوجد مشاهدون بنقاط بعد — تُكتسب من الشات واللايكات والهدايا</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: 14px;">
+            <span title="معفون من أسعار الطلب والتخطي — دائمون ولا يُصفَّرون مع اللايف"><i class="fas fa-crown"></i> الأشخاص المميزين</span>
+            <input type="text" id="ttsVipUser" class="pb-search" placeholder="اسم المستخدم">
+            <button type="button" id="ttsVipAdd" class="btn btn-secondary" style="padding: 4px 12px;">
+              <i class="fas fa-plus"></i>
+            </button>
+          </div>
+          <div class="vps-table-wrap" style="max-height: 180px; overflow-y: auto; overflow-x: hidden; margin-top: 8px;">
+            <table class="vps-table" style="min-width: 0;">
+              <thead>
+                <tr>
+                  <th style="width: 70%">المشاهد</th>
+                  <th style="width: 30%">الخيارات</th>
+                </tr>
+              </thead>
+              <tbody id="ttsVipBody">
+                <tr><td colspan="2" class="vps-empty">لا يوجد أشخاص مميزين بعد — أضف من الحقل أعلاه</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="tts-card">
+          <h3><i class="fas fa-filter"></i> الفلاتر</h3>
+          <div class="addon-check"><input type="checkbox" id="ttsFilterCmds" /><label for="ttsFilterCmds">تجاهل الأوامر (الرسائل التي تبدأ بـ !)</label></div>
+          <div class="addon-check"><input type="checkbox" id="ttsFilterLetter" /><label for="ttsFilterLetter">تجاهل سبام الحروف المكررة (أأأأأ)</label></div>
+          <div class="addon-check"><input type="checkbox" id="ttsFilterMentions" /><label for="ttsFilterMentions">حذف المنشن (@user) من القراءة — عند الإيقاف تُقرأ كلمة «منشن» بدلها</label></div>
+          <div class="addon-row">
+            <label for="ttsBlacklist">قائمة كلمات ممنوعة (مفصولة بفاصلة):</label>
+            <textarea
+              id="ttsBlacklist"
+              rows="3"
+              placeholder="كلمة1، كلمة2، كلمة3"
+            ></textarea>
+            <div class="addon-check" style="margin-top: 8px; margin-bottom: 0;">
+              <input type="checkbox" id="ttsBlacklistBlockAll" />
+              <label for="ttsBlacklistBlockAll">منع الجملة كلها — افتراضياً تُخفى الكلمة الممنوعة فقط ويُكمل قراءة باقي الجملة</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="tts-card">
+          <h3><i class="fas fa-microphone-lines"></i> مستخدمون بصوت مخصص</h3>
+          <p class="addon-hint" style="color: var(--text-muted); font-size: 12px; margin: 0 0 10px;">
+            أضف يوزر معين واختر له صوتاً ونبرة ومستوى صوت — يُقرأ تعليقه دائماً بهذه الإعدادات مهما كانت الصلاحيات.
+          </p>
+          <div class="tts-test-row" style="flex-wrap: wrap; gap: 8px;">
+            <input type="text" id="ttsUVUser" placeholder="اسم المستخدم" style="flex: 1 1 140px; min-width: 120px;" />
+            <select id="ttsUVVoice" style="flex: 1 1 180px; min-width: 150px;"></select>
+          </div>
+          <div class="tts-test-row" style="flex-wrap: wrap; gap: 10px; margin-top: 10px;">
+            <label style="flex: 1 1 150px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted);">
+              النبرة: <output id="ttsUVPitchVal">1.00</output>x
+              <input type="range" id="ttsUVPitch" min="0.5" max="2" step="0.05" value="1" />
+            </label>
+            <label style="flex: 1 1 150px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted);">
+              مستوى الصوت: <output id="ttsUVVolumeVal">100</output>%
+              <input type="range" id="ttsUVVolume" min="0" max="100" step="5" value="100" />
+            </label>
+            <button id="ttsUVAdd" class="btn btn-secondary" style="align-self: flex-end;">
+              <i class="fas fa-plus"></i> إضافة
+            </button>
+          </div>
+          <div class="vps-table-wrap" style="max-height: 260px; overflow-y: auto; margin-top: 10px;">
+            <table class="vps-table">
+              <thead>
+                <tr>
+                  <th style="width: 11%">اكتيف</th>
+                  <th style="width: 27%">المستخدم</th>
+                  <th style="width: 28%">الصوت</th>
+                  <th style="width: 10%">النبرة</th>
+                  <th style="width: 11%">الصوت %</th>
+                  <th style="width: 13%">الخيارات</th>
+                </tr>
+              </thead>
+              <tbody id="ttsUserVoicesBody">
+                <tr><td colspan="6" class="vps-empty">لا يوجد مستخدمون مخصصون بعد</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="addon-actions">
+        <span id="ttsStatus" class="addon-status"></span>
+      </div>
+    </div>
+
+    <!-- ===== قسم طلبات الأغاني (Song Requests) ===== -->
+    <div
+      class="songs-section section-css"
+      id="startSectionSongs"
+      style="display: none"
+    >
+      <div class="addon-header">
+        <h2><i class="fas fa-music"></i> طلبات الأغاني (Song Requests)</h2>
+        <p>
+          المشاهد يكتب !play اسم الأغنية أو !play لينك ساوند كلاود في الشات
+          لتُضاف للطابور وتشتغل تلقائياً على أوفرلاي OBS.
+        </p>
+      </div>
+
+      <div class="sr-topbar">
+        <span id="srSearchState" class="sr-search-state"></span>
+        <button id="srCopyOverlayBtn" class="btn btn-secondary">
+          <i class="fas fa-copy"></i> نسخ رابط أوفرلاي OBS
+        </button>
+      </div>
+
+      <div class="sr-grid">
+        <div class="sr-card sr-settings-card">
+          <h3><i class="fas fa-gear"></i> إعدادات الطلبات</h3>
+          <div class="addon-row toggle-row">
+            <label class="addon-switch">
+              <input type="checkbox" id="srEnabled" checked />
+              <span class="addon-slider"></span>
+            </label>
+            <span class="toggle-label">تفعيل نظام الطلبات</span>
+          </div>
+          <div class="addon-check"><input type="checkbox" id="srPlayEnabled" /><label for="srPlayEnabled">أمر الطلب (!play) مفعّل</label></div>
+          <div class="addon-check"><input type="checkbox" id="srSkipEnabled" /><label for="srSkipEnabled">أمر التخطي (!skip) مفعّل</label></div>
+          <div class="addon-row two-cols">
+            <div>
+              <label for="srPlayCost">سعر الطلب (نقاط)</label>
+              <input type="number" id="srPlayCost" min="0" value="0" />
+            </div>
+            <div>
+              <label for="srSkipCost">سعر التخطي (نقاط)</label>
+              <input type="number" id="srSkipCost" min="0" value="1" />
+            </div>
+          </div>
+          <div class="addon-row two-cols">
+            <div>
+              <label for="srMaxQueue">أقصى طول للطابور</label>
+              <input type="number" id="srMaxQueue" min="1" max="100" value="20" />
+            </div>
+            <div>
+              <label for="srMaxQueuePerUser">أقصى طلبات لكل مستخدم</label>
+              <input type="number" id="srMaxQueuePerUser" min="1" max="10" value="2" />
+            </div>
+          </div>
+          <div class="addon-row two-cols">
+            <div>
+              <label for="srVolume"
+                >صوت المشغل في OBS: <output id="srVolumeVal">80</output>%</label
+              >
+              <input
+                type="range"
+                id="srVolume"
+                min="0"
+                max="100"
+                step="5"
+                value="80"
+              />
+            </div>
+            <div>
+              <label for="srOverlayScale"
+                >حجم كارت الأوفرلاي: <output id="srOverlayScaleVal">100</output>%</label
+              >
+              <input
+                type="range"
+                id="srOverlayScale"
+                min="40"
+                max="200"
+                step="5"
+                value="100"
+              />
+            </div>
+          </div>
+          <div class="sr-allowed-for">
+            <span class="sr-af-label">من يستطيع الطلب:</span>
+            <div class="addon-check"><input type="checkbox" id="srAllowedAll" /><label for="srAllowedAll">الجميع</label></div>
+            <div class="addon-check"><input type="checkbox" id="srAllowedFollowers" /><label for="srAllowedFollowers">المتابعون</label></div>
+            <div class="addon-check">
+              <input type="checkbox" id="srAllowedSubs" />
+              <label for="srAllowedSubs">المشتركون (قلب الفريق) من مستوى</label>
+              <input type="number" id="srAllowedSubsLevel" min="1" max="50" value="1" style="width:70px; margin-inline-start:8px;" />
+              <small style="margin-inline-start:6px">وأعلى</small>
+            </div>
+            <div class="addon-check"><input type="checkbox" id="srAllowedMods" /><label for="srAllowedMods">المشرفون</label></div>
+            <div class="addon-check">
+              <input type="checkbox" id="srAllowedTopFan" />
+              <label for="srAllowedTopFan">أفضل معجب (Top Fan)</label>
+            </div>
+            <div class="addon-check">
+              <input type="checkbox" id="srAllowedTopGifters" />
+              <label for="srAllowedTopGifters">Top Viewers — أول</label>
+              <input type="number" id="srAllowedTopGiftersCount" min="1" max="50" value="3" style="width:70px; margin-inline-start:8px;" />
+              <small style="margin-inline-start:6px">من مشاهدي البث الحالي</small>
+            </div>
+          </div>
+          <div class="addon-check"><input type="checkbox" id="srAllowExplicit" /><label for="srAllowExplicit">السماح بالمحتوى الصريح</label></div>
+          <div class="addon-check"><input type="checkbox" id="srAllowSkipRequested" /><label for="srAllowSkipRequested">صاحب الطلب يتخطى طلبه مجاناً</label></div>
+          <div class="addon-check"><input type="checkbox" id="srOverlayPermanent" /><label for="srOverlayPermanent">كارت الأوفرلاي ظاهر دائماً (حتى بدون أغنية)</label></div>
+        </div>
+
+        <div class="sr-card sr-settings-card">
+          <h3><i class="fas fa-star"></i> النقاط</h3>
+          <p class="addon-hint" style="color: var(--text-muted); font-size: 12px; margin: 0 0 10px;">
+            نقاط يكسبها المشاهدون تلقائياً من الشات واللايكات والهدايا — تُصرف على سعر الطلب والتخطي.
+          </p>
+          <div class="addon-row three-cols">
+            <div>
+              <div class="addon-check">
+                <input type="checkbox" id="srPointsMsgOn" />
+                <label for="srPointsMsgOn">نقاط لكل رسالة شات</label>
+              </div>
+              <input type="number" id="srPointsPerMessage" min="0" max="100" value="1" />
+            </div>
+            <div>
+              <div class="addon-check">
+                <input type="checkbox" id="srPointsLikeOn" />
+                <label for="srPointsLikeOn">نقاط لكل تكبيس (كل X لايكات = نقطة)</label>
+              </div>
+              <input type="number" id="srPointsPerLike" min="0" value="0" />
+            </div>
+            <div>
+              <div class="addon-check">
+                <input type="checkbox" id="srPointsCoinsOn" />
+                <label for="srPointsCoinsOn">نقاط لكل عملات (كل X عملات = نقطة)</label>
+              </div>
+              <input type="number" id="srPointsPerCoins" min="0" value="0" />
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: 14px;">
+            <span><i class="fas fa-ranking-star"></i> أعلى المشاهدين نقاطاً</span>
+            <input type="text" id="srPointsSearch" class="pb-search" placeholder="ابحث باليوزر...">
+            <button type="button" id="srPointsRefresh" class="btn btn-secondary" style="padding: 4px 12px;">
+              <i class="fas fa-rotate-right"></i>
+            </button>
+          </div>
+          <div class="vps-table-wrap" style="max-height: 240px; overflow-y: auto; overflow-x: hidden; margin-top: 8px;">
+            <table class="vps-table" style="min-width: 0;">
+              <thead>
+                <tr>
+                  <th style="width: 55%">المشاهد</th>
+                  <th style="width: 20%">النقاط</th>
+                  <th style="width: 25%">الخيارات</th>
+                </tr>
+              </thead>
+              <tbody id="srPointsBoardBody">
+                <tr><td colspan="3" class="vps-empty">لا يوجد مشاهدون بنقاط بعد — تُكتسب من الشات واللايكات والهدايا</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: 14px;">
+            <span title="معفون من أسعار الطلب والتخطي — دائمون ولا يُصفَّرون مع اللايف"><i class="fas fa-crown"></i> الأشخاص المميزين</span>
+            <input type="text" id="srVipUser" class="pb-search" placeholder="اسم المستخدم">
+            <button type="button" id="srVipAdd" class="btn btn-secondary" style="padding: 4px 12px;">
+              <i class="fas fa-plus"></i>
+            </button>
+          </div>
+          <div class="vps-table-wrap" style="max-height: 180px; overflow-y: auto; overflow-x: hidden; margin-top: 8px;">
+            <table class="vps-table" style="min-width: 0;">
+              <thead>
+                <tr>
+                  <th style="width: 70%">المشاهد</th>
+                  <th style="width: 30%">الخيارات</th>
+                </tr>
+              </thead>
+              <tbody id="srVipBody">
+                <tr><td colspan="2" class="vps-empty">لا يوجد أشخاص مميزين بعد — أضف من الحقل أعلاه</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="sr-card sr-search-card">
+          <h3><i class="fas fa-magnifying-glass"></i> إضافة أغنية يدوياً</h3>
+          <div class="sr-search-row">
+            <input
+              type="text"
+              id="srSearchInput"
+              placeholder="اكتب اسم أغنية أو لصق لينك ساوند كلاود..."
+            />
+            <button id="srAddBtn" class="btn btn-primary">
+              <i class="fas fa-plus"></i> إضافة
+            </button>
+          </div>
+          <div id="srSearchResults" class="sr-search-results"></div>
+        </div>
+
+        <div class="sr-card sr-now-card">
+          <h3><i class="fas fa-compact-disc"></i> قيد التشغيل الآن</h3>
+          <div id="srNowEmpty" class="sr-now-empty">
+            لا توجد أغنية مشغلة حالياً
+          </div>
+          <div id="srNowBody" class="sr-now-body" style="display: none">
+            <img id="srNowArt" src="" alt="" style="display: none" />
+            <div class="sr-now-info">
+              <div class="sr-now-title" id="srNowTitle"></div>
+              <div class="sr-now-artist" id="srNowArtist"></div>
+              <div class="sr-now-req" id="srNowReq"></div>
+              <span id="srNowPaused" class="sr-paused-badge" hidden
+                ><i class="fas fa-pause"></i> متوقفة مؤقتاً</span
+              >
+            </div>
+          </div>
+          <div class="sr-controls">
+            <button id="srPauseBtn" class="btn btn-secondary" title="إيقاف مؤقت"><i class="fas fa-pause"></i></button>
+            <button id="srResumeBtn" class="btn btn-secondary" title="استئناف"><i class="fas fa-play"></i></button>
+            <button id="srRestartBtn" class="btn btn-secondary" title="إعادة من البداية"><i class="fas fa-rotate-left"></i></button>
+            <button id="srSkipBtn" class="btn btn-danger"><i class="fas fa-forward"></i> تخطي</button>
+          </div>
+        </div>
+
+        <div class="sr-card sr-queue-card">
+          <div class="sr-queue-head">
+            <h3><i class="fas fa-list-ol"></i> الطابور</h3>
+            <button id="srClearBtn" class="btn btn-danger">
+              <i class="fas fa-trash"></i> تفريغ
+            </button>
+          </div>
+          <div id="srQueueList" class="sr-queue-list"></div>
+        </div>
+
+        <div class="sr-card sr-history-card">
+          <h3><i class="fas fa-clock-rotate-left"></i> آخر التشغيلات</h3>
+          <div style="overflow-x: auto">
+            <table class="sr-history-table">
+              <thead>
+                <tr>
+                  <th style="width: 30%">الأغنية</th>
+                  <th style="width: 20%">مَن طلبها</th>
+                  <th style="width: 20%">الحالة</th>
+                  <th style="width: 30%">الوقت</th>
+                </tr>
+              </thead>
+              <tbody id="srHistoryBody">
+                <tr>
+                  <td colspan="4" class="sr-history-empty">
+                    لا يوجد سجل بعد
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="addon-actions">
+        <span id="srStatus" class="addon-status"></span>
+      </div>
+    </div>
+
+
+    <!-- ===== قسم نقاط المشاهدين (Users Points) ===== -->
+    <div
+      class="viewerpoints-section section-css"
+      id="startSectionViewerpoints"
+      style="display: none"
+    >
+      <div class="addon-header">
+        <h2><i class="fas fa-ranking-star"></i> نقاط المشاهدين (Users Points)</h2>
+        <p>
+          سجل دائم لكل مشاهد: عدد متابعيه والعملات التي دعمها عبر كل البثوات
+          وأول وآخر نشاط له — يتحدث لحظياً من أحداث البث.
+        </p>
+      </div>
+
+      <div class="vps-controls">
+        <div class="vps-search-row">
+          <input
+            type="text"
+            id="vpsSearch"
+            placeholder="ابحث بالاسم أو اليوزر..."
+          />
+        </div>
+        <div class="vps-minmax-row">
+          <input
+            type="number"
+            id="vpsMin"
+            min="0"
+            placeholder="أقل عملات"
+            title="أقل عدد عملات"
+          />
+          <input
+            type="number"
+            id="vpsMax"
+            min="0"
+            placeholder="أعلى عملات"
+            title="أعلى عدد عملات"
+          />
+          <span class="vps-count"
+            >عدد المشاهدين: <b id="vpsCount">0</b></span
+          >
+        </div>
+        <div class="vps-date-row">
+          <label for="vpsDate"
+            ><i class="fas fa-clock-rotate-left"></i> اعرض العملات حتى تاريخ
+            معين:</label
+          >
+          <input type="datetime-local" id="vpsDate" />
+          <button id="vpsDateApply" class="btn btn-secondary">
+            <i class="fas fa-magnifying-glass"></i> تطبيق
+          </button>
+          <button id="vpsDateClear" class="btn btn-secondary">
+            <i class="fas fa-xmark"></i> إلغاء الفلتر
+          </button>
+          <button id="vpsDeleteAll" class="btn btn-danger" style="margin-inline-start: auto;">
+            <i class="fas fa-trash-can"></i> حذف الكل
+          </button>
+        </div>
+      </div>
+
+      <div class="vps-table-wrap">
+        <table class="vps-table">
+          <thead>
+            <tr>
+              <th style="width: 8%">الخيارات</th>
+              <th style="width: 7%">الترتيب</th>
+              <th style="width: 6%">الصورة</th>
+              <th style="width: 18%">المشاهد</th>
+              <th style="width: 12%">العملات</th>
+              <th style="width: 9%">متابعيه</th>
+              <th style="width: 14%">أول نشاط</th>
+              <th style="width: 14%">آخر نشاط</th>
+              <th style="width: 12%">الرابط</th>
+            </tr>
+          </thead>
+          <tbody id="vpsTableBody">
+            <tr>
+              <td colspan="9" class="vps-empty">
+                لا توجد بيانات بعد — تجمع تلقائياً من أحداث البث
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
