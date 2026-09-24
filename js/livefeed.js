@@ -7,7 +7,8 @@
 // ============================================================
 import __S from "./state.js";
 import { escapeHtml, fetchWithAuth } from "./utils-core.js";
-import { showAddonSection } from "./addons-nav.js";
+import { showAddonSection, registerAddonLoader } from "./addons-nav.js";
+import { displayName } from "./user-context.js";
 
 const T = (s) => (window.AppI18n ? AppI18n.t(s) : s);
 
@@ -24,14 +25,14 @@ const viewerProfiles = new Map();
 let visibleTypes = null; // Set أو null (null = الكل ظاهر)
 
 const TYPE_META = {
-  chat: { emoji: "💬" },
-  gift: { emoji: "🎁" },
-  like: { emoji: "❤️" },
-  follow: { emoji: "➕" },
-  join: { emoji: "👋" },
-  share: { emoji: "🔄" },
-  subscribe: { emoji: "⭐" },
-  system: { emoji: "⭐" },
+  chat: { emoji: '<i class="fas fa-comment"></i>' },
+  gift: { emoji: '<i class="fas fa-gift"></i>' },
+  like: { emoji: '<i class="fas fa-heart"></i>' },
+  follow: { emoji: '<i class="fas fa-user-plus"></i>' },
+  join: { emoji: '<i class="fas fa-right-to-bracket"></i>' },
+  share: { emoji: '<i class="fas fa-share-nodes"></i>' },
+  subscribe: { emoji: '<i class="fas fa-star"></i>' },
+  system: { emoji: '<i class="fas fa-star"></i>' },
 };
 // الأنواع القابلة للفلترة (system دائماً ظاهر ولا يدخل العد)
 const FILTERABLE_TYPES = [
@@ -163,7 +164,7 @@ function describeItem(type, data) {
 function buildItemHtml(item) {
   const meta = TYPE_META[item.type] || TYPE_META.system;
   const isSystem = item.type === "system";
-  const user = isSystem ? "Stream Moon" : item.nickname || item.user || "—";
+  const user = isSystem ? "Stream Moon" : displayName(item.nickname, item.user) || "—";
   const text = describeItem(item.type, item);
   const avatar = item.avatar
     ? '<img class="feed-item-avatar" src="' +
@@ -172,7 +173,7 @@ function buildItemHtml(item) {
     : "";
   const coinsHtml =
     item.type === "gift" && item.coins
-      ? '<span class="feed-item-coins">+' + item.coins + " 🪙</span>"
+      ? '<span class="feed-item-coins">+' + item.coins + ' <i class="fas fa-coins"></i></span>'
       : "";
   return (
     '<div class="feed-item-icon ' +
@@ -280,14 +281,17 @@ async function loadFeedSnapshot() {
   updateFeedStatus();
 }
 
+// ✅ ضمان التحميل مرة واحدة — من فتح القسم ومن تاب "الكل"
+export function ensureLivefeedLoaded() {
+  if (!loadedOnce) {
+    loadedOnce = true;
+    loadFeedSnapshot();
+  }
+  updateFeedStatus();
+}
+
 function openLivefeedSection() {
-  showAddonSection("startSectionLivefeed", ".livefeed", () => {
-    if (!loadedOnce) {
-      loadedOnce = true;
-      loadFeedSnapshot();
-    }
-    updateFeedStatus();
-  });
+  showAddonSection("startSectionLivefeed", ".livefeed", ensureLivefeedLoaded);
 }
 
 // ---- ملفات المشاهدين ----
@@ -302,9 +306,8 @@ function followerChipHtml(username) {
 }
 
 function formatCount(n) {
-  if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
-  if (n >= 1000) return (n / 1000).toFixed(1) + "K";
-  return String(n);
+  // ✅ الأرقام تُعرض كاملة بفواصل الآلاف — بدون اختصار K/M
+  return (parseInt(n, 10) || 0).toLocaleString("en-US");
 }
 
 function attachFollowerChip(div, username) {
@@ -378,30 +381,30 @@ function renderProfileCard(p) {
   el("lfProfileUser").textContent = "@" + (p.username || "");
   el("lfProfileFollowers").textContent =
     p.followersCount != null ? formatCount(p.followersCount) : "—";
-  el("lfProfileCoins").textContent = "🪙 " + (p.coins || 0);
-  el("lfProfileLikes").textContent = "❤️ " + (p.likes || 0);
-  el("lfProfileComments").textContent = "💬 " + (p.comments || 0);
-  el("lfProfileGifts").textContent = "🎁 " + (p.gifts || 0);
+  el("lfProfileCoins").innerHTML = '<i class="fas fa-coins"></i> ' + (p.coins || 0);
+  el("lfProfileLikes").innerHTML = '<i class="fas fa-heart"></i> ' + (p.likes || 0);
+  el("lfProfileComments").innerHTML = '<i class="fas fa-comment"></i> ' + (p.comments || 0);
+  el("lfProfileGifts").innerHTML = '<i class="fas fa-gift"></i> ' + (p.gifts || 0);
   const roles = el("lfProfileRoles");
   roles.innerHTML = "";
   const f = roleLabel(p.followsStreamer);
   if (f) {
     const s = document.createElement("span");
     s.className = "lf-role-badge " + f.cls;
-    s.textContent = "➕ " + T("متابع لك") + " (" + f.text + ")";
+    s.innerHTML = '<i class="fas fa-user-plus"></i> ' + T("متابع لك") + " (" + escapeHtml(f.text) + ")";
     roles.appendChild(s);
   }
   const sb = roleLabel(p.subscriber);
   if (sb) {
     const s = document.createElement("span");
     s.className = "lf-role-badge " + sb.cls;
-    s.textContent = "⭐ " + T("مشترك") + " (" + sb.text + ")";
+    s.innerHTML = '<i class="fas fa-star"></i> ' + T("مشترك") + " (" + escapeHtml(sb.text) + ")";
     roles.appendChild(s);
   }
   if (p.teamMemberLevel) {
     const s = document.createElement("span");
     s.className = "lf-role-badge yes";
-    s.textContent = "🛡 " + T("قلب الفريق") + " L" + p.teamMemberLevel;
+    s.innerHTML = '<i class="fas fa-shield-halved"></i> ' + T("قلب الفريق") + " L" + Number(p.teamMemberLevel || 0);
     roles.appendChild(s);
   }
   if (!roles.children.length) {
@@ -416,6 +419,8 @@ function renderProfileCard(p) {
 function init() {
   const nav = document.querySelector(".livefeed");
   if (nav) nav.addEventListener("click", openLivefeedSection);
+  // ✅ تاب "الكل" يعرض القسم ويحمّل بياناته (نفس محمّل الفتح)
+  registerAddonLoader("startSectionLivefeed", ensureLivefeedLoaded);
 
   const clearBtn = el("lfClearBtn");
   if (clearBtn)

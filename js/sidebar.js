@@ -6,6 +6,10 @@ import { applyHotkeySettings } from "./hotkeys.js";
 import { loadAdminDashboard } from "./admin.js";
 import { loadScreens } from "./screens.js";
 import { initOverlaysSection } from "./overlay.js";
+// ✅ إصلاح "التبديل بين الأقسام يعرض أقساماً أخرى": كل زر تنقل قديم يخفي
+// أقسام الإضافات مباشرة بدل الاعتماد على لفّ onclick متراكب من addons-nav.js
+// (كان أي إسناد لاحق يمسح اللفّ فيبقى قسم إضافي ظاهراً مع القسم المطلوب)
+import { hideAddonSections, showAllAddonsInAllTab } from "./addons-nav.js";
 
 // ============================================================
 // التجاوب: زر القائمة الجانبية على الشاشات الصغيرة
@@ -44,6 +48,7 @@ import { initOverlaysSection } from "./overlay.js";
 
 if (__S.hotkeyNav && __S.startSectionHotkey) {
   __S.hotkeyNav.onclick = function () {
+    hideAddonSections();
     __S.startSection.style.display = "none";
     __S.startSection2.style.display = "none";
     __S.startSection3.style.display = "none";
@@ -94,8 +99,6 @@ if (__S.allNav) {
     __S.startSection.style.display = "block";
     __S.startSection2.style.display = "block";
     __S.startSection3.style.display = "block";
-    if (__S.startSectionHotkey) __S.startSectionHotkey.style.display = "none";
-    if (__S.startSection5) __S.startSection5.style.display = "none";
     if (__S.currentUserRole === "admin") {
       __S.startSection4.style.display = "block"; // البيانات محملة مسبقاً عند الفتح
     } else {
@@ -105,6 +108,9 @@ if (__S.allNav) {
       .querySelectorAll(".button-select-slide")
       .forEach((el) => el.classList.remove("active"));
     __S.allNav.classList.add("active");
+    // ✅ أقسام الإضافات + الاختصارات + الأوفرلايز + تحميل بياناتها —
+    // استدعاء مباشر بدل لفّ onclick الذي كان يُمسح بإسناد لاحق
+    Promise.resolve(showAllAddonsInAllTab()).catch(() => {});
   };
 }
 
@@ -124,6 +130,7 @@ if (__S.allNav && !__S.allNav.classList.contains("active")) {
 
 if (__S.startNav) {
   __S.startNav.onclick = function () {
+    hideAddonSections();
     __S.startSection.style.display = "block";
     __S.startSection2.style.display = "none";
     __S.startSection3.style.display = "none";
@@ -139,6 +146,7 @@ if (__S.startNav) {
 
 if (__S.actionNav) {
   __S.actionNav.onclick = function () {
+    hideAddonSections();
     __S.startSection.style.display = "none";
     __S.startSection2.style.display = "block";
     __S.startSection3.style.display = "none";
@@ -154,6 +162,7 @@ if (__S.actionNav) {
 
 if (__S.screensNav) {
   __S.screensNav.onclick = function () {
+    hideAddonSections();
     __S.startSection.style.display = "none";
     __S.startSection2.style.display = "none";
     __S.startSection3.style.display = "block";
@@ -214,6 +223,7 @@ __S.hotkeyNav.onclick = function () {
 
 if (__S.overlaysNav) {
   __S.overlaysNav.onclick = async function () {
+    hideAddonSections();
     if (__S.startSection) __S.startSection.style.display = "none";
     if (__S.startSection2) __S.startSection2.style.display = "none";
     if (__S.startSection3) __S.startSection3.style.display = "none";

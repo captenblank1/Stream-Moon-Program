@@ -100,9 +100,15 @@ function showProSubscribedModal({ planType, expiry } = {}) {
       : "اشتراكك مفعّل";
 
   const features = [
-    ["fa-bolt", "حتى 100 أمر نشط في كل بروفايل (بدل 7)"],
-    ["fa-folder-open", "كل البروفايلات مفتوحة — 20 بروفايل"],
-    ["fa-headset", "دعم فني ذو أولوية للمشتركين"],
+    ["fa-user-plus", "20 بروفايل"],
+    ["fa-tv", "10 شاشات أوفرلاي"],
+    ["fa-bolt", "100 أمر نشط لكل بروفايل"],
+    ["fa-keyboard", "100 اختصار هوت كي"],
+    ["fa-coins", "500,000 نقطة مستخدمين"],
+    ["fa-microphone-lines", "قراءة تعليقات صوتية (Siri)"],
+    ["fa-layer-group", "أوفرلاي عادي + أوفرلاي Pro"],
+    ["fa-music", "ميوزك غير محدود — طلبات أغاني بلا حدود"],
+    ["fa-headset", "دعم فني ذو أولوية"],
   ];
 
   overlay.innerHTML = `
@@ -353,5 +359,33 @@ function safeMediaUrl(url, type = "audio") {
   if (typeof fn === "function") window[fn.name] = fn;
 });
 
+
+// ============================================================
+// ✅ المفتاح الرئيسي لخيارات النقاط (قسم TTS وقسم الأغاني) — مكوّن مشترك:
+// إيقافه يعطل الخيارات الفرعية (تعطيل فقط دون مسح تعليمها) — حالة كل خيار
+// تظل كما هي محفوظة في الصفحة وفي قاعدة البيانات (pointsEnabled بالباكند
+// يمنح صفر نقاط ما دام المفتاح مطفأ)، وإعادة تفعيله تُرجع كل خيار كما كان
+// ============================================================
+export function initPointsMasterSwitch(masterId, containerId) {
+  const master = document.getElementById(masterId);
+  const container = document.getElementById(containerId);
+  if (!master || !container) return;
+  const apply = () => {
+    const boxes = container.querySelectorAll('input[type="checkbox"]');
+    // ✅ تعطيل فقط — لا نُلغي تعليم الخيارات فتبقى حالتها محفوظة
+    // (داخل الجلسة وبعد إعادة تحميل الصفحة عبر pointsEnabled)
+    boxes.forEach((b) => {
+      b.disabled = !master.checked;
+    });
+    container.style.opacity = master.checked ? "" : "0.55";
+    container.style.pointerEvents = master.checked ? "" : "none";
+  };
+  master.addEventListener("change", apply);
+  // ✅ متاح لـ fillForm ليعيد تطبيق الحالة المحفوظة بعد تعبئة المفتاح
+  master.__applyPointsMasterState = apply;
+  // تطبيق الحالة الحالية فوراً (المفتاح قد يُستوضح محفوظاً مطفأً)
+  apply();
+  // حدث التغيير يصعد أصلاً لتفويض الحفظ التلقائي في القسم
+}
 
 export { getCookie, escapeHtml, decodeHtmlEntities, showMessage, showProSubscribedModal, waitForProActivation, getDeviceId, fetchWithAuth, showConfirm, safeImageUrl, safeMediaUrl };

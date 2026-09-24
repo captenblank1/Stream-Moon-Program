@@ -6,7 +6,7 @@
 
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' https: data:; connect-src 'self' https: wss: http://127.0.0.1:3000 http://localhost:3000 ws://127.0.0.1:3000 ws://localhost:3000; object-src 'none'; frame-src 'self' http: https:; base-uri 'none'"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https: http://127.0.0.1:3000 http://localhost:3000 http://127.0.0.1:3210; media-src 'self' https: data:; connect-src 'self' https: wss: http://127.0.0.1:3000 http://localhost:3000 ws://127.0.0.1:3000 ws://localhost:3000; object-src 'none'; frame-src 'self' http: https:; base-uri 'none'"
     />
     <meta
       name="description"
@@ -115,35 +115,8 @@
         font-weight: bold;
         color: #1dd9e6e1;
       }
-      .hotkey-edit-btn {
-        padding: 4px 10px;
-        font-size: 12px;
-        background: #4caf50;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        margin-right: 4px;
-        transition: all 0.3s ease;
-      }
-      .hotkey-edit-btn:hover {
-        background: #388e3c;
-        transform: scale(1.05);
-      }
-      .hotkey-delete-btn {
-        padding: 4px 10px;
-        font-size: 12px;
-        background: #f44336;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-      }
-      .hotkey-delete-btn:hover {
-        background: #d32f2f;
-        transform: scale(1.05);
-      }
+      /* ✅ أزرار تعديل/حذف جدول الاختصارات بنظام الأزرار الموحد
+         (.row-act في table.css) — حُذفت التسكينة المحلية القديمة */
       .hotkey-toggle {
         width: 20px;
         height: 20px;

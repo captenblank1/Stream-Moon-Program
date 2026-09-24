@@ -634,9 +634,11 @@ async function loadAdminNotifications() {
         <td style="text-align:center;">${n.durationUnit === "hour" ? "ساعة" : n.durationUnit === "minute" ? "دقيقة" : "ثانية"}</td>
         <td style="text-align:center;">${new Date(n.expiresAt).toLocaleString("ar-EG")}</td>
         <td style="text-align:center;">${isActive ? "<i class='fas fa-circle' style='color:#4caf50'></i> نشط" : "<i class='fas fa-circle' style='color:#f44336'></i> منتهي/غير نشط"}</td>
-        <td style="text-align:center;">
-          <button class="admin-edit-notification" data-id="${n._id}" style="background:#ffc107; border:none; padding:4px 10px; border-radius:4px; cursor:pointer;"><i class="fas fa-pen-to-square"></i> تعديل</button>
-          <button class="admin-delete-notification" data-id="${n._id}" style="background:#dc3545; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; color:white;"><i class="fas fa-trash-can"></i> حذف</button>
+        <td style="text-align:center; min-width: 140px;">
+          <div class="row-actions" style="display: flex; align-items: center; justify-content: center; width: 100%;">
+            <button class="row-act admin-edit-notification" data-id="${n._id}" title="تعديل"><i class="fas fa-pen-to-square"></i></button>
+            <button class="row-act del admin-delete-notification" data-id="${n._id}" title="حذف"><i class="fas fa-trash-can"></i></button>
+          </div>
         </td>
       `;
       tbody.appendChild(tr);

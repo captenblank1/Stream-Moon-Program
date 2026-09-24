@@ -138,7 +138,12 @@ function registerAppProtocol() {
     if (!buffer) return new Response("Not Found", { status: 404 });
     const ext = path.extname(p).toLowerCase();
     return new Response(new Uint8Array(buffer), {
-      headers: { "Content-Type": MIME[ext] || "application/octet-stream" },
+      headers: {
+        "Content-Type": MIME[ext] || "application/octet-stream",
+        // ✅ لا كاش لأصول الواجهة — كان Chromium يخدم نسخة مخزنة قديمة
+        // من CSS/JS بعد أي تعديل فيبدو أن الإصلاحات "مش بتتحفظ"
+        "Cache-Control": "no-cache",
+      },
     });
   });
 }
@@ -365,6 +370,19 @@ function getHardwareAnchors() {
     if (out && out !== "" && out.toLowerCase() !== "none") parts.push(out);
   } catch (_) {}
   return parts;
+}
+
+// ✅ هوية عتاد مستقلة عن أي ملف — مشتقة من MachineGuid (ريجستري ويندوز
+// محمي) + رقم اللوحة الأم + مواصفات الجهاز. لا يمكن تعديلها من AppData
+// (عكس ملف machine-id المخزن اللي يقدر أي حد يكتب فيه قيمة جديدة)،
+// وتُرسل مع سوكيت البرنامج كمفتاح ثانٍ لحصة الميوزك ومكافحة الغش
+function getHardwareId() {
+  try {
+    const raw = [getLegacyMachineId(), ...getHardwareAnchors()].join("|");
+    return crypto.createHash("sha256").update(raw).digest("hex").substring(0, 32);
+  } catch (_) {
+    return null;
+  }
 }
 
 let _machineIdCache = null;
@@ -1585,7 +1603,11 @@ function connectToServer() {
 
   const socket = io(wsUrl, {
     transports: ["websocket"],
-    auth: { token: config.sessionToken, machineId: getMachineId() },
+    auth: {
+            token: config.sessionToken,
+            machineId: getMachineId(),
+            hwId: getHardwareId() || undefined,
+          },
     reconnection: true,
     reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
@@ -1815,8 +1837,9 @@ ipcMain.handle("open-payment-window", (event, token) => {
     return { success: true };
   }
   paymentWindow = new BrowserWindow({
-    width: 620,
-    height: 680,
+    width: 840,
+    height: 740,
+    minWidth: 700,
     parent: mainWindow,
     modal: true,
     title: "اشتراك - Stream Moon",

@@ -30,6 +30,14 @@ aside .connected-profile {
   padding: 20px;
   border-bottom: 1px solid var(--border-color);
   gap: 15px;
+  /* ✅ الحاوية كلها قابلة للضغط (الصورة + الاسم + الحالة) — الضغط
+     أثناء عدم الاتصال يبدأ الاتصال فوراً */
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+aside .connected-profile:hover {
+  background: rgba(255, 255, 255, 0.03);
 }
 
 aside .connected-profile img {

@@ -1,12 +1,19 @@
-/* ==================== شريط التمرير ==================== */
+/* ==================== شريط التمرير + ✅ الشكل الموحد لكل شرائح التمرير ====================
+   هذا هو المعرّف الوحيد لشكل input[type=range] في الموقع كله — نفس الشكل
+   والعرض (300px) في كل الأقسام: الرئيسية/الأوامر/TTS/الأغاني/نقاط المشاهدين
+   (كان الشكل معرّف هنا وفي reset.css بقيم مختلفة فكان يتبدل حسب القسم) */
 input[type="range"] {
   width: 300px;
+  max-width: 100%;
   height: 5px;
   background: var(--border-color);
   border-radius: 5px;
   -webkit-appearance: none;
   appearance: none;
   margin-right: 7px;
+  outline: none;
+  cursor: pointer;
+  accent-color: var(--primary-color);
 }
 
 input[type="range"]::-webkit-slider-thumb {
@@ -17,4 +24,28 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 50%;
   background: var(--primary-color);
   cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.12);
+  box-shadow: 0 0 10px rgba(29, 217, 230, 0.55);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 15px;
+  height: 15px;
+  border: none;
+  border-radius: 50%;
+  background: var(--primary-color);
+  cursor: pointer;
+}
+
+input[type="range"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+input[type="range"]:disabled::-webkit-slider-thumb {
+  cursor: not-allowed;
+  transform: none;
 }

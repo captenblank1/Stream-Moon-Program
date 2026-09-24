@@ -1,7 +1,7 @@
 // ⚠️ ملف مولّد آلياً من main.js — جزء من إعادة الهيكلة ES6. لا تحرّر النص المنقول.
 import __S from "./state.js";
 import { withTableSkeleton } from "./auth-flow.js";
-import { fetchWithAuth } from "./utils-core.js";
+import { fetchWithAuth, escapeHtml } from "./utils-core.js";
 import { loadHotkeyCommands } from "./hotkeys.js";
 import { renderHotkeysList } from "./hotkeys.js";
 import { showMessage } from "./utils-core.js";
@@ -89,7 +89,12 @@ function renderProfileSelect(profiles, selectedId) {
       li.appendChild(input);
       input.focus();
 
+      // ✅ حارس حفظ مزدوج: Enter يستدعي blur فيُنفّذ saveName مرة عبر
+      // keypress ومرة عبر blur — طلبا PUT متتاليان كان ثانيهما يظهر خطأ
+      let saving = false;
       const saveName = async () => {
+        if (saving) return;
+        saving = true;
         const newName = input.value.trim();
         if (newName && newName !== currentName) {
           await updateProfileName(profile.id, newName);
@@ -103,6 +108,10 @@ function renderProfileSelect(profiles, selectedId) {
         if (e.key === "Enter") {
           e.preventDefault();
           input.blur();
+        } else if (e.key === "Escape") {
+          // ✅ هروب بلا حفظ — إعادة الرسم بالاسم القديم
+          input.removeEventListener("blur", saveName);
+          renderProfileSelect(profiles, selectedId);
         }
       });
     });
@@ -176,12 +185,21 @@ async function updateProfileName(profileId, newName) {
         body: JSON.stringify({ name: newName }),
       },
     );
-    const data = await res.json();
+    // ✅ رد غير JSON (خطأ خادم/وكيل) كان يرمي استثناء برسالة "خطأ في
+    // الاتصال" مضللة — نفكّ الحالة الحقيقية ونعرضها
+    const data = await res.json().catch(() => ({
+      success: false,
+      message: `رد غير متوقع من الخادم (${res.status})`,
+    }));
     if (data.success) {
       __S.profileNames[profileId] = newName;
       showMessage("<i class='fas fa-circle-check'></i> تم تحديث اسم البروفايل");
       await loadProfiles();
-    } else showMessage("<i class='fas fa-circle-xmark'></i> فشل تحديث الاسم");
+    } else
+      showMessage(
+        "<i class='fas fa-circle-xmark'></i> " +
+          escapeHtml(data.message || "فشل تحديث الاسم"),
+      );
   } catch (err) {
     console.error(err);
     showMessage("<i class='fas fa-circle-xmark'></i> خطأ في الاتصال");

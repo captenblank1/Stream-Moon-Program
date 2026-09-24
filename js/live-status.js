@@ -2,6 +2,8 @@
 import __S from "./state.js";
 import { fetchWithAuth } from "./utils-core.js";
 import { setConnectBtnState } from "./tiktok.js";
+// ✅ كتابة هوية/حالة الاتصال عبر السياق الموحد user-context.js
+import { setConnectionStatus, setSidebarUsername } from "./user-context.js";
 
 // ============================================================
 // دوال الحالة المباشرة (Live Status)
@@ -11,14 +13,10 @@ import { setConnectBtnState } from "./tiktok.js";
 const t = (s) => (window.AppI18n ? AppI18n.t(s) : s);
 
 function updateUIForDisconnected() {
-  const connectText = document.getElementById("connect-text");
-  const connectProfile = document.getElementById("connect-profile-aside");
   __S.isLiveConnected = false;
   setConnectBtnState("connect");
-  if (connectText) {
-    connectText.textContent = t("Disconnected");
-    connectText.style.color = "red";
-  }
+  setConnectionStatus("Disconnected", "red");
+  const connectProfile = document.getElementById("connect-profile-aside");
   if (connectProfile) {
     connectProfile.style.pointerEvents = "auto";
     connectProfile.style.opacity = 1;
@@ -36,10 +34,8 @@ async function checkLiveStatus() {
       return;
     }
     const data = await res.json();
-    const connectText = document.getElementById("connect-text");
-    const tiktokDisplay = document.getElementById("tiktok-display");
-    const connectProfile = document.getElementById("connect-profile-aside");
     const userInput = document.getElementById("user-tiktok");
+    const connectProfile = document.getElementById("connect-profile-aside");
 
     if (data.username && document.activeElement !== userInput) {
       userInput.value = data.username;
@@ -48,11 +44,8 @@ async function checkLiveStatus() {
     if (data.isLive === true) {
       __S.isLiveConnected = true;
       setConnectBtnState("disconnect");
-      tiktokDisplay.textContent = data.username || "username";
-      if (connectText) {
-        connectText.textContent = t("Connected");
-        connectText.style.color = "#1dd9e6e1";
-      }
+      setSidebarUsername(data.username || "");
+      setConnectionStatus("Connected", "#1dd9e6e1");
       if (connectProfile) {
         connectProfile.style.pointerEvents = "none";
         connectProfile.style.opacity = 0.6;

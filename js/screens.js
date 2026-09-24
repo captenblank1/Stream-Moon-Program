@@ -2,6 +2,7 @@
 import __S from "./state.js";
 import { fetchWithAuth } from "./utils-core.js";
 import { escapeHtml } from "./utils-core.js";
+import { overlayBase } from "./overlay-links.js";
 
 // ============================================================
 // دوال الشاشات (Screens)
@@ -14,7 +15,10 @@ function buildScreensHtml(cid = "") {
   }
   html += '<div class="screens-grid">';
   for (let i = 1; i <= 10; i++) {
-    const screenUrl = `${__S.WIDGET_BASE}/widget/screens?cid=${encodeURIComponent(cid)}&screen=${i}`;
+    // ✅ نفس قاعدة روابط الأوفرلايز: متصل بالسحابة → روابط الدومين،
+    // متصل بسيرفر محلي → روابط محلية (روابط الدومين مع سيرفر محلي
+    // تعني صفحات لا تصلك عليها أي أحداث — التراكب لا يظهر إطلاقاً)
+    const screenUrl = `${overlayBase()}/widget/screens?cid=${encodeURIComponent(cid)}&screen=${i}`;
     const safeUrl = escapeHtml(screenUrl);
     html += `
       <div class="screen-card">

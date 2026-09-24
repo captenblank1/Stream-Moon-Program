@@ -6,7 +6,7 @@
 
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' https: data:; connect-src 'self' https: wss: http://127.0.0.1:3000 http://localhost:3000 ws://127.0.0.1:3000 ws://localhost:3000; object-src 'none'; frame-src 'self' http: https:; base-uri 'none'"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https: http://127.0.0.1:3000 http://localhost:3000 http://127.0.0.1:3210; media-src 'self' https: data:; connect-src 'self' https: wss: http://127.0.0.1:3000 http://localhost:3000 ws://127.0.0.1:3000 ws://localhost:3000; object-src 'none'; frame-src 'self' http: https:; base-uri 'none'"
     />
     <meta
       name="description"
@@ -115,35 +115,8 @@
         font-weight: bold;
         color: #1dd9e6e1;
       }
-      .hotkey-edit-btn {
-        padding: 4px 10px;
-        font-size: 12px;
-        background: #4caf50;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        margin-right: 4px;
-        transition: all 0.3s ease;
-      }
-      .hotkey-edit-btn:hover {
-        background: #388e3c;
-        transform: scale(1.05);
-      }
-      .hotkey-delete-btn {
-        padding: 4px 10px;
-        font-size: 12px;
-        background: #f44336;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-      }
-      .hotkey-delete-btn:hover {
-        background: #d32f2f;
-        transform: scale(1.05);
-      }
+      /* ✅ أزرار تعديل/حذف جدول الاختصارات بنظام الأزرار الموحد
+         (.row-act في table.css) — حُذفت التسكينة المحلية القديمة */
       .hotkey-toggle {
         width: 20px;
         height: 20px;
@@ -519,10 +492,10 @@
           <i class="fas fa-magnifying-glass"></i> بانتظار الربط التلقائي… تأكد أنك استخدمت النسخة المحمّلة من الزر بالأعلى (أو أن بيانات ماين كرافت مطابقة للسيرفر ثم اضغط <b>Send</b>)
         </p>
         <p style="font-size: 13px; color: #aaa; line-height: 1.6; margin: 0 0 8px;">
-          <i class="fas fa-lock"></i> في حالات الفشل النادرة فقط: اكتب <b>/streammoon code</b> في كونسول السيرفر وانسخ الكود هنا:
+          <i class="fas fa-lock"></i> في حالات الفشل النادرة فقط: اكتب <b>streammoon code</b> في كونسول السيرفر وانسخ الكود هنا:
         </p>
         <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-          <input id="pairCodeInput" type="text" placeholder="كود الربط (مثل A7K-9MX)" maxlength="8"
+          <input id="pairCodeInput" type="text" placeholder="streammoon code" maxlength="8"
                  style="flex: 1; min-width: 130px; max-width: 220px; padding: 8px 12px; border-radius: 6px; border: 1px solid #555; background: #2a2a2e; color: #eee; text-align: center; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; font-size: 15px; outline: none;" />
           <button id="pairWithCodeBtn" type="button" class="btn btn-primary" style="border: none; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-weight: 600;">
             <i class="fas fa-link"></i> ربط
@@ -907,6 +880,64 @@
               max="60"
               step="1"
             />
+          </div>
+          <!-- ✅ تكامل TTS — نطق نص مخصص عند تنفيذ الأمر (نفس مكونات قسم TTS) -->
+          <div class="form-group">
+            <label
+              ><input type="checkbox" id="cmdTtsEnabled" /> تفعيل TTS — يُنطق
+              نص عند تنفيذ الأمر</label
+            >
+          </div>
+          <div class="form-group" id="cmdTtsGroup" style="display: none">
+            <label for="cmdTtsText">النص المُنطق (يدعم {user} و {nickname})</label>
+            <textarea
+              id="cmdTtsText"
+              rows="2"
+              maxlength="300"
+              placeholder="اكتب النص الذي سيُنطق عند تنفيذ الأمر"
+            ></textarea>
+            <label for="cmdTtsVoice" style="margin-top: 8px">الصوت</label>
+            <select id="cmdTtsVoice"></select>
+            <div
+              style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px"
+            >
+              <label
+                style="flex: 1 1 130px; display: flex; flex-direction: column; gap: 4px; font-size: 12px"
+                >السرعة: <output id="cmdTtsSpeedVal">1.00</output>x
+                <input
+                  type="range"
+                  id="cmdTtsSpeed"
+                  min="0.5"
+                  max="2"
+                  step="0.05"
+                  value="1"
+                />
+              </label>
+              <label
+                style="flex: 1 1 130px; display: flex; flex-direction: column; gap: 4px; font-size: 12px"
+                >النبرة: <output id="cmdTtsPitchVal">1.00</output>x
+                <input
+                  type="range"
+                  id="cmdTtsPitch"
+                  min="0.5"
+                  max="2"
+                  step="0.05"
+                  value="1"
+                />
+              </label>
+              <label
+                style="flex: 1 1 130px; display: flex; flex-direction: column; gap: 4px; font-size: 12px"
+                >مستوى الصوت: <output id="cmdTtsVolumeVal">100</output>%
+                <input
+                  type="range"
+                  id="cmdTtsVolume"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value="100"
+                />
+              </label>
+            </div>
           </div>
           <div class="actions">
             <button
@@ -2112,27 +2143,27 @@
       <div class="lf-stats">
         <div class="lf-stat">
           <span class="lf-stat-num" id="lfStatComments">0</span>
-          <span class="lf-stat-lbl">💬 تعليق</span>
+          <span class="lf-stat-lbl"><i class="fas fa-comment"></i> تعليق</span>
         </div>
         <div class="lf-stat">
           <span class="lf-stat-num" id="lfStatLikes">0</span>
-          <span class="lf-stat-lbl">❤️ لايك</span>
+          <span class="lf-stat-lbl"><i class="fas fa-heart"></i> لايك</span>
         </div>
         <div class="lf-stat">
           <span class="lf-stat-num" id="lfStatGifts">0</span>
-          <span class="lf-stat-lbl">🎁 هدية</span>
+          <span class="lf-stat-lbl"><i class="fas fa-gift"></i> هدية</span>
         </div>
         <div class="lf-stat">
           <span class="lf-stat-num" id="lfStatFollows">0</span>
-          <span class="lf-stat-lbl">➕ متابعة</span>
+          <span class="lf-stat-lbl"><i class="fas fa-user-plus"></i> متابعة</span>
         </div>
         <div class="lf-stat">
           <span class="lf-stat-num" id="lfStatShares">0</span>
-          <span class="lf-stat-lbl">🔄 مشاركة</span>
+          <span class="lf-stat-lbl"><i class="fas fa-share-nodes"></i> مشاركة</span>
         </div>
         <div class="lf-stat">
           <span class="lf-stat-num" id="lfStatJoins">0</span>
-          <span class="lf-stat-lbl">👋 دخول</span>
+          <span class="lf-stat-lbl"><i class="fas fa-right-to-bracket"></i> دخول</span>
         </div>
       </div>
 
@@ -2144,13 +2175,13 @@
       </div>
 
       <div class="lf-filters" id="lfFilters">
-        <label class="lf-filter"><input type="checkbox" data-type="chat" checked /><span>💬 تعليق</span></label>
-        <label class="lf-filter"><input type="checkbox" data-type="like" checked /><span>❤️ لايك</span></label>
-        <label class="lf-filter"><input type="checkbox" data-type="gift" checked /><span>🎁 هدية</span></label>
-        <label class="lf-filter"><input type="checkbox" data-type="follow" checked /><span>➕ متابعة</span></label>
-        <label class="lf-filter"><input type="checkbox" data-type="join" checked /><span>👋 دخول</span></label>
-        <label class="lf-filter"><input type="checkbox" data-type="share" checked /><span>🔄 مشاركة</span></label>
-        <label class="lf-filter"><input type="checkbox" data-type="subscribe" checked /><span>⭐ اشتراك</span></label>
+        <label class="lf-filter"><input type="checkbox" data-type="chat" checked /><span><i class="fas fa-comment"></i> تعليق</span></label>
+        <label class="lf-filter"><input type="checkbox" data-type="like" checked /><span><i class="fas fa-heart"></i> لايك</span></label>
+        <label class="lf-filter"><input type="checkbox" data-type="gift" checked /><span><i class="fas fa-gift"></i> هدية</span></label>
+        <label class="lf-filter"><input type="checkbox" data-type="follow" checked /><span><i class="fas fa-user-plus"></i> متابعة</span></label>
+        <label class="lf-filter"><input type="checkbox" data-type="join" checked /><span><i class="fas fa-right-to-bracket"></i> دخول</span></label>
+        <label class="lf-filter"><input type="checkbox" data-type="share" checked /><span><i class="fas fa-share-nodes"></i> مشاركة</span></label>
+        <label class="lf-filter"><input type="checkbox" data-type="subscribe" checked /><span><i class="fas fa-star"></i> اشتراك</span></label>
       </div>
 
       <div class="lf-container">
@@ -2178,10 +2209,10 @@
             >
           </div>
           <div class="lf-profile-stats">
-            <span id="lfProfileCoins" title="عملات هذا البث">🪙 0</span>
-            <span id="lfProfileLikes" title="لايكات هذا البث">❤️ 0</span>
-            <span id="lfProfileComments" title="تعليقات هذا البث">💬 0</span>
-            <span id="lfProfileGifts" title="هدايا هذا البث">🎁 0</span>
+            <span id="lfProfileCoins" title="عملات هذا البث"><i class="fas fa-coins"></i> 0</span>
+            <span id="lfProfileLikes" title="لايكات هذا البث"><i class="fas fa-heart"></i> 0</span>
+            <span id="lfProfileComments" title="تعليقات هذا البث"><i class="fas fa-comment"></i> 0</span>
+            <span id="lfProfileGifts" title="هدايا هذا البث"><i class="fas fa-gift"></i> 0</span>
           </div>
         </div>
         <div id="feed-list" class="feed-list"></div>
@@ -2293,18 +2324,18 @@
           <div class="addon-check"><input type="checkbox" id="ttsPermFollowers" /><label for="ttsPermFollowers">المتابعون فقط</label></div>
           <div class="addon-check">
             <input type="checkbox" id="ttsPermSubscribers" />
-            <label for="ttsPermSubscribers">المشتركون (قلب الفريق) من مستوى</label>
+            <label for="ttsPermSubscribers">اعضاء قلب الفريق</label>
             <input type="number" id="ttsSubsLevel" min="1" max="50" value="1" style="width:70px; margin-inline-start:8px;" />
             <small style="margin-inline-start:6px">وأعلى</small>
           </div>
-          <div class="addon-check"><input type="checkbox" id="ttsPermModerators" /><label for="ttsPermModerators">المشرفون (Mods) فقط</label></div>
+          <div class="addon-check"><input type="checkbox" id="ttsPermModerators" /><label for="ttsPermModerators">المشرفين</label></div>
           <div class="addon-check">
             <input type="checkbox" id="ttsPermTopFan" />
-            <label for="ttsPermTopFan">أفضل معجب (Top Fan)</label>
+            <label for="ttsPermTopFan">افضل معجب</label>
           </div>
           <div class="addon-check">
             <input type="checkbox" id="ttsPermTopGifters" />
-            <label for="ttsPermTopGifters">Top Viewers — أول</label>
+            <label for="ttsPermTopGifters">اول المشاهدين</label>
             <input type="number" id="ttsTopGiftersCount" min="1" max="50" value="3" style="width:70px; margin-inline-start:8px;" />
             <small style="margin-inline-start:6px">من مشاهدي البث الحالي</small>
           </div>
@@ -2320,43 +2351,47 @@
           <p class="addon-hint" style="color: var(--text-muted); font-size: 12px; margin: 0 0 10px;">
             نقاط يكسبها المشاهدون تلقائياً وتُصرف على طلبات الأغاني — نفس رصيد نقاط قسم الأغاني.
           </p>
-          <div class="addon-row" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
-            <div class="addon-check" style="flex: none;">
-              <input type="checkbox" id="ttsReadCostOn" />
-              <label for="ttsReadCostOn">سعر القراءة (نقاط)</label>
-            </div>
-            <input type="number" id="ttsReadCost" min="0" value="1" style="width: 90px;" />
-            <small style="color: var(--text-muted);">مفعل = يُقرأ تعليق المشاهد بخصم السعر من نقاط قسم TTS — أنت وأصحاب الصوت المخصص معفيون</small>
+          <!-- ✅ المفتاح الرئيسي لخيارات النقاط — إيقافه يعطل كل الخيارات
+              الفرعية معاً، وإعادة تفعيله تستعيد حالة كل خيار كما كانت -->
+          <div class="addon-row toggle-row" style="margin-bottom: 12px;">
+            <label class="addon-switch">
+              <input type="checkbox" id="ttsPointsMaster" checked />
+              <span class="addon-slider"></span>
+            </label>
+            <span class="toggle-label">تفعيل خيارات النقاط</span>
           </div>
+          <div id="ttsPointsOptions">
           <div class="addon-row three-cols">
             <div>
               <div class="addon-check">
                 <input type="checkbox" id="ttsPointsMsgOn" />
-                <label for="ttsPointsMsgOn">نقاط لكل رسالة شات</label>
+                <label for="ttsPointsMsgOn">اكتب كل كم تعليق يتحسب كم نقطه</label>
               </div>
               <input type="number" id="ttsPointsPerMessage" min="0" max="100" value="1" />
             </div>
             <div>
               <div class="addon-check">
                 <input type="checkbox" id="ttsPointsLikeOn" />
-                <label for="ttsPointsLikeOn">نقاط لكل تكبيس (كل X لايكات = نقطة)</label>
+                <label for="ttsPointsLikeOn">اكتب كل كم تكبيسه تنحسب نقطه</label>
               </div>
               <input type="number" id="ttsPointsPerLike" min="0" value="0" />
             </div>
             <div>
               <div class="addon-check">
                 <input type="checkbox" id="ttsPointsCoinsOn" />
-                <label for="ttsPointsCoinsOn">نقاط لكل عملات (كل X عملات = نقطة)</label>
+                <label for="ttsPointsCoinsOn">اكتب كل كم عمله تنحسب نقطه</label>
               </div>
               <input type="number" id="ttsPointsPerCoins" min="0" value="0" />
             </div>
           </div>
-          <div style="display: flex; align-items: center; gap: 8px; margin-top: 14px;">
-            <span><i class="fas fa-ranking-star"></i> أعلى المشاهدين نقاطاً</span>
+          <div class="addon-row" style="margin-top: 10px;">
+            <label for="ttsReadCost"><i class="fas fa-coins"></i> سعر قراءة التعليق (TTS) — نقاط تُخصم من المشاهد مع كل تعليق يُقرأ (0 = مجاني):</label>
+            <input type="number" id="ttsReadCost" min="0" max="1000000" value="0" style="max-width: 140px;" />
+          </div>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 14px;">
+            <span><i class="fas fa-ranking-star"></i>نقاط المشاهدين (يمكنك التمرير لرؤيه المزيد)</span>
             <input type="text" id="ttsPointsSearch" class="pb-search" placeholder="ابحث باليوزر...">
-            <button type="button" id="ttsPointsRefresh" class="btn btn-secondary" style="padding: 4px 12px;">
-              <i class="fas fa-rotate-right"></i>
-            </button>
           </div>
           <div class="vps-table-wrap" style="max-height: 240px; overflow-y: auto; overflow-x: hidden; margin-top: 8px;">
             <table class="vps-table" style="min-width: 0;">
@@ -2364,7 +2399,7 @@
                 <tr>
                   <th style="width: 55%">المشاهد</th>
                   <th style="width: 20%">النقاط</th>
-                  <th style="width: 25%">الخيارات</th>
+                  <th class="vps-opts-col">الخيارات</th>
                 </tr>
               </thead>
               <tbody id="ttsPointsBoardBody">
@@ -2372,10 +2407,10 @@
               </tbody>
             </table>
           </div>
-          <div style="display: flex; align-items: center; gap: 8px; margin-top: 14px;">
-            <span title="معفون من أسعار الطلب والتخطي — دائمون ولا يُصفَّرون مع اللايف"><i class="fas fa-crown"></i> الأشخاص المميزين</span>
+          <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 14px;">
+            <span title="معفون من أسعار الطلب والتخطي — دائمون ولا يُصفَّرون مع اللايف"><i class="fas fa-crown"></i>الاشخاص المعفيين من النقاط (بدون نقاط ينقرا تعليقاتهم)</span>
             <input type="text" id="ttsVipUser" class="pb-search" placeholder="اسم المستخدم">
-            <button type="button" id="ttsVipAdd" class="btn btn-secondary" style="padding: 4px 12px;">
+            <button type="button" id="ttsVipAdd" class="btn btn-secondary">
               <i class="fas fa-plus"></i>
             </button>
           </div>
@@ -2384,7 +2419,7 @@
               <thead>
                 <tr>
                   <th style="width: 70%">المشاهد</th>
-                  <th style="width: 30%">الخيارات</th>
+                  <th class="vps-opts-col">الخيارات</th>
                 </tr>
               </thead>
               <tbody id="ttsVipBody">
@@ -2398,15 +2433,36 @@
           <h3><i class="fas fa-filter"></i> الفلاتر</h3>
           <div class="addon-check"><input type="checkbox" id="ttsFilterCmds" /><label for="ttsFilterCmds">تجاهل الأوامر (الرسائل التي تبدأ بـ !)</label></div>
           <div class="addon-check"><input type="checkbox" id="ttsFilterLetter" /><label for="ttsFilterLetter">تجاهل سبام الحروف المكررة (أأأأأ)</label></div>
-          <div class="addon-check"><input type="checkbox" id="ttsFilterMentions" /><label for="ttsFilterMentions">حذف المنشن (@user) من القراءة — عند الإيقاف تُقرأ كلمة «منشن» بدلها</label></div>
-          <div class="addon-row">
-            <label for="ttsBlacklist">قائمة كلمات ممنوعة (مفصولة بفاصلة):</label>
-            <textarea
-              id="ttsBlacklist"
-              rows="3"
-              placeholder="كلمة1، كلمة2، كلمة3"
-            ></textarea>
-            <div class="addon-check" style="margin-top: 8px; margin-bottom: 0;">
+          <div class="addon-check"><input type="checkbox" id="ttsSkipMentionName" checked /><label for="ttsSkipMentionName">منع قراءه الايموجى لو موجود فى الاسم (فقط التعليق)</label></div>
+          <div class="addon-check"><input type="checkbox" id="ttsFilterNameEmoji" /><label for="ttsFilterNameEmoji">قراءة الاسم فقط بدون الإيموجي — بدون التفعيل يظهر اسم المشاهد مع الإيموجي</label></div>
+          <!-- ✅ جدول الكلمات الممنوعة — كل كلمة في صف بمفتاح تفعيل مستقل
+              + تعديل/حذف + زر تفعيل/تعطيل الكل بضغطة واحدة -->
+          <div class="addon-row" style="flex-direction: column; align-items: stretch; gap: 8px;">
+            <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;">
+              <label for="ttsBlacklistWord" style="flex: none;"><i class="fas fa-ban"></i> كلمات ممنوعة:</label>
+              <input type="text" id="ttsBlacklistWord" placeholder="اكتب الكلمة ثم أضفها" style="flex: 1; min-width: 140px;" />
+              <button type="button" id="ttsBlacklistAdd" class="btn btn-secondary" style="flex: none;">
+                <i class="fas fa-plus"></i> إضافة
+              </button>
+              <button type="button" id="ttsBlacklistToggleAll" class="btn btn-secondary" style="flex: none;" title="إغلاق أو تفعيل جميع الكلمات بضغطة واحدة">
+                <i class="fas fa-toggle-off"></i> إغلاق الكل
+              </button>
+            </div>
+            <div class="vps-table-wrap" style="max-height: 220px; overflow-y: auto; overflow-x: hidden;">
+              <table class="vps-table" style="min-width: 0;">
+                <thead>
+                  <tr>
+                    <th style="width: 16%">مفعلة</th>
+                    <th style="width: 48%">الكلمة</th>
+                    <th class="vps-opts-col">الخيارات</th>
+                  </tr>
+                </thead>
+                <tbody id="ttsBlacklistBody">
+                  <tr><td colspan="3" class="vps-empty">لا توجد كلمات ممنوعة بعد — أضف من الحقل أعلاه</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="addon-check" style="margin-top: 4px; margin-bottom: 0;">
               <input type="checkbox" id="ttsBlacklistBlockAll" />
               <label for="ttsBlacklistBlockAll">منع الجملة كلها — افتراضياً تُخفى الكلمة الممنوعة فقط ويُكمل قراءة باقي الجملة</label>
             </div>
@@ -2414,24 +2470,33 @@
         </div>
 
         <div class="tts-card">
-          <h3><i class="fas fa-microphone-lines"></i> مستخدمون بصوت مخصص</h3>
+          <h3 style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+            <span><i class="fas fa-microphone-lines"></i> الأشخاص المميزين</span>
+            <button type="button" id="ttsUVToggleAll" class="btn btn-secondary" title="إغلاق أو تفعيل جميع المستخدمين بضغطة واحدة">
+              <i class="fas fa-toggle-off"></i> إغلاق الكل
+            </button>
+          </h3>
           <p class="addon-hint" style="color: var(--text-muted); font-size: 12px; margin: 0 0 10px;">
-            أضف يوزر معين واختر له صوتاً ونبرة ومستوى صوت — يُقرأ تعليقه دائماً بهذه الإعدادات مهما كانت الصلاحيات.
+            أضف يوزر معين واختر له صوتاً ونبرة ومستوى صوت — يُقرأ بهذه الإعدادات طالما خيار «الأشخاص المميزين» مفعل في «من يحق له أن يُقرأ؟».
           </p>
           <div class="tts-test-row" style="flex-wrap: wrap; gap: 8px;">
             <input type="text" id="ttsUVUser" placeholder="اسم المستخدم" style="flex: 1 1 140px; min-width: 120px;" />
             <select id="ttsUVVoice" style="flex: 1 1 180px; min-width: 150px;"></select>
           </div>
           <div class="tts-test-row" style="flex-wrap: wrap; gap: 10px; margin-top: 10px;">
-            <label style="flex: 1 1 150px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted);">
+            <label class="uv-range-label">
               النبرة: <output id="ttsUVPitchVal">1.00</output>x
               <input type="range" id="ttsUVPitch" min="0.5" max="2" step="0.05" value="1" />
             </label>
-            <label style="flex: 1 1 150px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted);">
+            <label class="uv-range-label">
               مستوى الصوت: <output id="ttsUVVolumeVal">100</output>%
               <input type="range" id="ttsUVVolume" min="0" max="100" step="5" value="100" />
             </label>
-            <button id="ttsUVAdd" class="btn btn-secondary" style="align-self: flex-end;">
+          </div>
+          <!-- ✅ زر الإضافة في سطر مستقل تحت السلايدرات — كان جنب مستوى
+              الصوت فيضيّق حاويته ويأكل من مساحة السلايدر -->
+          <div style="display: flex; justify-content: flex-end; margin-top: 10px;">
+            <button id="ttsUVAdd" class="btn btn-secondary">
               <i class="fas fa-plus"></i> إضافة
             </button>
           </div>
@@ -2444,7 +2509,7 @@
                   <th style="width: 28%">الصوت</th>
                   <th style="width: 10%">النبرة</th>
                   <th style="width: 11%">الصوت %</th>
-                  <th style="width: 13%">الخيارات</th>
+                  <th class="vps-opts-col">الخيارات</th>
                 </tr>
               </thead>
               <tbody id="ttsUserVoicesBody">
@@ -2469,8 +2534,7 @@
       <div class="addon-header">
         <h2><i class="fas fa-music"></i> طلبات الأغاني (Song Requests)</h2>
         <p>
-          المشاهد يكتب !play اسم الأغنية أو !play لينك ساوند كلاود في الشات
-          لتُضاف للطابور وتشتغل تلقائياً على أوفرلاي OBS.
+    تشغيل اعانى من ساوند كلاود
         </p>
       </div>
 
@@ -2505,7 +2569,7 @@
           </div>
           <div class="addon-row two-cols">
             <div>
-              <label for="srMaxQueue">أقصى طول للطابور</label>
+              <label for="srMaxQueue">أقصى طول لطابور الاغانى</label>
               <input type="number" id="srMaxQueue" min="1" max="100" value="20" />
             </div>
             <div>
@@ -2547,18 +2611,18 @@
             <div class="addon-check"><input type="checkbox" id="srAllowedFollowers" /><label for="srAllowedFollowers">المتابعون</label></div>
             <div class="addon-check">
               <input type="checkbox" id="srAllowedSubs" />
-              <label for="srAllowedSubs">المشتركون (قلب الفريق) من مستوى</label>
+              <label for="srAllowedSubs">اعضاء قلب الفريق</label>
               <input type="number" id="srAllowedSubsLevel" min="1" max="50" value="1" style="width:70px; margin-inline-start:8px;" />
               <small style="margin-inline-start:6px">وأعلى</small>
             </div>
             <div class="addon-check"><input type="checkbox" id="srAllowedMods" /><label for="srAllowedMods">المشرفون</label></div>
             <div class="addon-check">
               <input type="checkbox" id="srAllowedTopFan" />
-              <label for="srAllowedTopFan">أفضل معجب (Top Fan)</label>
+              <label for="srAllowedTopFan">افضل معجب</label>
             </div>
             <div class="addon-check">
               <input type="checkbox" id="srAllowedTopGifters" />
-              <label for="srAllowedTopGifters">Top Viewers — أول</label>
+              <label for="srAllowedTopGifters">اول المشاهدين</label>
               <input type="number" id="srAllowedTopGiftersCount" min="1" max="50" value="3" style="width:70px; margin-inline-start:8px;" />
               <small style="margin-inline-start:6px">من مشاهدي البث الحالي</small>
             </div>
@@ -2573,35 +2637,43 @@
           <p class="addon-hint" style="color: var(--text-muted); font-size: 12px; margin: 0 0 10px;">
             نقاط يكسبها المشاهدون تلقائياً من الشات واللايكات والهدايا — تُصرف على سعر الطلب والتخطي.
           </p>
+          <!-- ✅ المفتاح الرئيسي لخيارات النقاط — إيقافه يعطل كل الخيارات
+              الفرعية معاً، وإعادة تفعيله تستعيد حالة كل خيار كما كانت -->
+          <div class="addon-row toggle-row" style="margin-bottom: 12px;">
+            <label class="addon-switch">
+              <input type="checkbox" id="srPointsMaster" checked />
+              <span class="addon-slider"></span>
+            </label>
+            <span class="toggle-label">تفعيل خيارات النقاط</span>
+          </div>
+          <div id="srPointsOptions">
           <div class="addon-row three-cols">
             <div>
               <div class="addon-check">
                 <input type="checkbox" id="srPointsMsgOn" />
-                <label for="srPointsMsgOn">نقاط لكل رسالة شات</label>
+                <label for="srPointsMsgOn">اكتب كم ينحسب عند كل تعليق</label>
               </div>
               <input type="number" id="srPointsPerMessage" min="0" max="100" value="1" />
             </div>
             <div>
               <div class="addon-check">
                 <input type="checkbox" id="srPointsLikeOn" />
-                <label for="srPointsLikeOn">نقاط لكل تكبيس (كل X لايكات = نقطة)</label>
+                <label for="srPointsLikeOn">اكتب كل كم تكبيسه تنحسب نقطه</label>
               </div>
               <input type="number" id="srPointsPerLike" min="0" value="0" />
             </div>
             <div>
               <div class="addon-check">
                 <input type="checkbox" id="srPointsCoinsOn" />
-                <label for="srPointsCoinsOn">نقاط لكل عملات (كل X عملات = نقطة)</label>
+                <label for="srPointsCoinsOn">اكتب كل كم عمله تنحسب نقطه</label>
               </div>
               <input type="number" id="srPointsPerCoins" min="0" value="0" />
             </div>
           </div>
-          <div style="display: flex; align-items: center; gap: 8px; margin-top: 14px;">
-            <span><i class="fas fa-ranking-star"></i> أعلى المشاهدين نقاطاً</span>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 14px;">
+            <span><i class="fas fa-ranking-star"></i>نقاط المشاهدين (يمكنك التمرير لرؤيه المزيد)</span>
             <input type="text" id="srPointsSearch" class="pb-search" placeholder="ابحث باليوزر...">
-            <button type="button" id="srPointsRefresh" class="btn btn-secondary" style="padding: 4px 12px;">
-              <i class="fas fa-rotate-right"></i>
-            </button>
           </div>
           <div class="vps-table-wrap" style="max-height: 240px; overflow-y: auto; overflow-x: hidden; margin-top: 8px;">
             <table class="vps-table" style="min-width: 0;">
@@ -2609,7 +2681,7 @@
                 <tr>
                   <th style="width: 55%">المشاهد</th>
                   <th style="width: 20%">النقاط</th>
-                  <th style="width: 25%">الخيارات</th>
+                  <th class="vps-opts-col">الخيارات</th>
                 </tr>
               </thead>
               <tbody id="srPointsBoardBody">
@@ -2617,10 +2689,10 @@
               </tbody>
             </table>
           </div>
-          <div style="display: flex; align-items: center; gap: 8px; margin-top: 14px;">
-            <span title="معفون من أسعار الطلب والتخطي — دائمون ولا يُصفَّرون مع اللايف"><i class="fas fa-crown"></i> الأشخاص المميزين</span>
+          <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 14px;">
+            <span title="معفون من أسعار الطلب والتخطي — دائمون ولا يُصفَّرون مع اللايف"><i class="fas fa-crown"></i>الاشخاص المعفيين من النقاط (بدون نقاط تشتغل اغانيهم)</span>
             <input type="text" id="srVipUser" class="pb-search" placeholder="اسم المستخدم">
-            <button type="button" id="srVipAdd" class="btn btn-secondary" style="padding: 4px 12px;">
+            <button type="button" id="srVipAdd" class="btn btn-secondary">
               <i class="fas fa-plus"></i>
             </button>
           </div>
@@ -2629,7 +2701,7 @@
               <thead>
                 <tr>
                   <th style="width: 70%">المشاهد</th>
-                  <th style="width: 30%">الخيارات</th>
+                  <th class="vps-opts-col">الخيارات</th>
                 </tr>
               </thead>
               <tbody id="srVipBody">
@@ -2689,7 +2761,12 @@
         </div>
 
         <div class="sr-card sr-history-card">
-          <h3><i class="fas fa-clock-rotate-left"></i> آخر التشغيلات</h3>
+          <h3 style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+            <span><i class="fas fa-clock-rotate-left"></i> آخر التشغيلات</span>
+            <button id="srHistoryClearBtn" class="btn btn-danger" title="حذف كل سجل آخر التشغيلات">
+              <i class="fas fa-trash"></i> حذف آخر التشغيلات
+            </button>
+          </h3>
           <div style="overflow-x: auto">
             <table class="sr-history-table">
               <thead>
@@ -2775,13 +2852,14 @@
             <i class="fas fa-trash-can"></i> حذف الكل
           </button>
         </div>
+        <!-- ✅ شريط توضيح وضع "حتى تاريخ" — يظهر عند تطبيق الفلتر -->
+        <div id="vpsAsOfInfo" class="vps-asof-info" style="display: none"></div>
       </div>
 
       <div class="vps-table-wrap">
         <table class="vps-table">
           <thead>
             <tr>
-              <th style="width: 8%">الخيارات</th>
               <th style="width: 7%">الترتيب</th>
               <th style="width: 6%">الصورة</th>
               <th style="width: 18%">المشاهد</th>
@@ -2790,6 +2868,7 @@
               <th style="width: 14%">أول نشاط</th>
               <th style="width: 14%">آخر نشاط</th>
               <th style="width: 12%">الرابط</th>
+              <th class="vps-opts-col">الخيارات</th>
             </tr>
           </thead>
           <tbody id="vpsTableBody">

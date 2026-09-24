@@ -5,8 +5,9 @@
 // روابط الأوفرلايز الموجودة في البرنامج.
 // ============================================================
 import __S from "./state.js";
-import { escapeHtml, fetchWithAuth, showMessage, showConfirm, getDeviceId } from "./utils-core.js";
-import { showAddonSection } from "./addons-nav.js";
+import { escapeHtml, fetchWithAuth, showMessage, showConfirm, getDeviceId, initPointsMasterSwitch } from "./utils-core.js";
+import { showAddonSection, registerAddonLoader } from "./addons-nav.js";
+import { displayName } from "./user-context.js";
 import { overlayBase, getScreenTokenCached, getWidgetCid, avatarHtml, ensureAvatarToken } from "./overlay-links.js";
 import { getAuthToken } from "./pairing.js";
 
@@ -19,6 +20,15 @@ let currentSearchResults = [];
 
 function el(id) {
   return document.getElementById(id);
+}
+
+// ✅ كتابة حالة القسم — كانت مستدعاة في مواضع كثيرة بلا تعريف داخل الموديول
+// (ReferenceError صامت يوقف رسائل الحفظ التلقائي) — نفس نمط tts.js
+function showStatus(text, ok) {
+  const status = el("srStatus");
+  if (!status) return;
+  status.textContent = text;
+  status.style.color = ok ? "#4caf50" : "var(--danger-color)";
 }
 
 // ✅ سلسلة بدائل لصور المشاهد (تُستخدم في كل الجداول):
@@ -50,8 +60,11 @@ function renderNowPlaying(current, paused) {
   }
   el("srNowTitle").textContent = current.title || "";
   el("srNowArtist").textContent = current.artist || "";
-  el("srNowReq").textContent =
-    "🎵 " + T("مطلوبة بواسطة") + " " + (current.requestedBy || "");
+  el("srNowReq").innerHTML =
+    '<i class="fas fa-music"></i> ' +
+    T("مطلوبة بواسطة") +
+    " " +
+    escapeHtml(current.requestedBy || "");
   if (pausedBadge) pausedBadge.hidden = !paused;
 }
 
@@ -99,10 +112,13 @@ function renderSearchState(available) {
     return;
   }
   if (available) {
-    badge.textContent = "🟢 " + T("البحث في ساوند كلاود متاح");
+    badge.innerHTML =
+      '<i class="fas fa-circle-check"></i> ' + T("البحث في ساوند كلاود متاح");
     badge.className = "sr-search-state ok";
   } else {
-    badge.textContent = "🔴 " + T("البحث غير متاح الآن — جرّب لاحقاً أو استخدم لينك مباشر");
+    badge.innerHTML =
+      '<i class="fas fa-circle-xmark"></i> ' +
+      T("البحث غير متاح الآن — جرّب لاحقاً أو استخدم لينك مباشر");
     badge.className = "sr-search-state down";
   }
 }
@@ -191,6 +207,13 @@ function fillSettingsForm(s) {
   set("srPointsMsgOn", (s.pointsPerMessage ?? 0) > 0);
   set("srPointsLikeOn", (s.pointsPerLike ?? 0) > 0);
   set("srPointsCoinsOn", (s.pointsPerCoins ?? 0) > 0);
+  // ✅ المفتاح الرئيسي لخيارات النقاط — محفوظ بالسيرفر: إعادة التفعيل
+  // تعرض الخيارات كما كانت قبل الإيقاف
+  const master = el("srPointsMaster");
+  if (master) {
+    master.checked = s.pointsEnabled !== false;
+    master.__applyPointsMasterState?.();
+  }
   num("srVolume", s.volume ?? 80);
   num("srOverlayScale", s.overlayScale ?? 100);
   // ✅ مزامنة القيم المعروضة — كانت تعتمد على حدث input فقط فظلت تعرض
@@ -224,6 +247,7 @@ function collectSettingsForm() {
     maxQueue: parseInt(el("srMaxQueue").value, 10) || 20,
     maxQueuePerUser: parseInt(el("srMaxQueuePerUser").value, 10) || 2,
     // ✅ ثلاثية النقاط: التشيك بوكس مطفي = القيمة تصفر (0 = معطل بالباكند)
+    pointsEnabled: el("srPointsMaster")?.checked !== false,
     pointsPerMessage: el("srPointsMsgOn")?.checked
       ? parseInt(el("srPointsPerMessage").value, 10) || 0
       : 0,
@@ -271,10 +295,9 @@ function collectSettingsForm() {
 // قسم الأغاني وقسم TTS — نفس رصيد النقاط) — تُصدَّر لـ tts.js
 // ============================================================
 function fmtCount(n) {
+  // ✅ الأرقام تُعرض كاملة بفواصل الآلاف — بدون اختصار K/M
   if (n == null) return "—";
-  if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
-  if (n >= 1000) return (n / 1000).toFixed(1) + "K";
-  return String(n);
+  return (parseInt(n, 10) || 0).toLocaleString("en-US");
 }
 
 
@@ -330,7 +353,7 @@ function renderPointsBoard(tbodyId) {
         '<td><span style="display: flex; align-items: center; gap: 8px;">' +
         avatarHtml(r.username, r.avatar) +
         '<span class="vps-names"><b>' +
-        escapeHtml(r.nickname || r.username) +
+        escapeHtml(displayName(r.nickname, r.username)) +
         "</b><i>@" +
         u +
         "</i></span>" +
@@ -338,13 +361,15 @@ function renderPointsBoard(tbodyId) {
         '<td class="pb-points-cell"><span style="font-weight: 700;"><i class="fas fa-star"></i> ' +
         fmtCount(r.points) +
         "</span></td>" +
-        '<td class="vps-options">' +
+        '<td class="vps-options" style="min-width: 140px;">' +
+        '<div class="row-actions" style="display: flex; align-items: center; justify-content: center; width: 100%;">' +
         `<button type="button" class="vps-act edit pb-act" data-act="edit" data-u="${u}" title="${T(
           "تعديل النقاط",
         )}"><i class="fas fa-pen-to-square"></i></button>` +
         `<button type="button" class="vps-act del pb-act" data-act="del" data-u="${u}" title="${T(
           "حذف النقاط",
         )}"><i class="fas fa-trash"></i></button>` +
+        "</div>" +
         "</td>" +
         "</tr>"
       );
@@ -372,7 +397,8 @@ async function handlePointsBoardAction(e, tbodyId, base = "/api/songs") {
     cell.innerHTML =
       '<span style="display: inline-flex; align-items: center; gap: 6px;">' +
       `<input type="number" class="pb-points-input" value="${current}" min="0" style="width: 90px;">` +
-      `<button type="button" class="btn btn-secondary pb-act" data-act="save" data-u="${escapeHtml(
+      // ✅ نفس زر الحفظ الموحد 30×30 (.vps-act) المستخدم في جداول الموقع
+      `<button type="button" class="vps-act save pb-act" data-act="save" data-u="${escapeHtml(
         user,
       )}" title="${T("حفظ")}"><i class="fas fa-check"></i></button>` +
       "</span>";
@@ -465,18 +491,20 @@ export async function loadVipBoard(tbodyId, base = "/api/songs") {
         '<td><span style="display: flex; align-items: center; gap: 8px;">' +
         avatarHtml(r.username, r.avatar) +
         '<span class="vps-names"><b>' +
-        escapeHtml(r.nickname || r.username) +
+        escapeHtml(displayName(r.nickname, r.username)) +
         "</b><i>@" +
         u +
         "</i></span>" +
         "</span></td>" +
-        '<td class="vps-options">' +
+        '<td class="vps-options" style="min-width: 140px;">' +
+          '<div class="row-actions" style="display: flex; align-items: center; justify-content: center; width: 100%;">' +
           `<button type="button" class="vps-act edit vip-act" data-act="edit" data-u="${u}" title="${T(
             "تعديل",
           )}"><i class="fas fa-pen"></i></button>` +
           `<button type="button" class="vps-act del vip-act" data-act="del" data-u="${u}" title="${T(
             "حذف",
           )}"><i class="fas fa-trash"></i></button>` +
+          "</div>" +
           "</td>" +
           "</tr>"
         );
@@ -520,7 +548,9 @@ async function handleVipAdd(cfg) {
       if (addBtn)
         addBtn.innerHTML = '<i class="fas fa-plus"></i> ' + T("إضافة");
       if (input) input.value = "";
-      loadVipBoard(cfg.tbodyId);
+      // ✅ تمرير مخزن القسم (/api/songs أو /api/tts) — كان يُحمّل قائمة
+      // الأغاني دائماً فبدا كأن جدول TTS لا يتحدث بعد الإضافة
+      loadVipBoard(cfg.tbodyId, cfg.base);
     } else {
       showMessage(
         "<i class='fas fa-triangle-exclamation'></i> " +
@@ -575,7 +605,7 @@ async function handleVipBoardAction(e, cfg) {
           addBtn.innerHTML = '<i class="fas fa-plus"></i> ' + T("إضافة");
           if (input) input.value = "";
         }
-        loadVipBoard(cfg.tbodyId);
+        loadVipBoard(cfg.tbodyId, cfg.base);
       } else {
         showMessage(
           "<i class='fas fa-triangle-exclamation'></i> " +
@@ -782,34 +812,37 @@ async function copyOverlayLink() {
 // ============================================================
 // التحميل الأولي والربط
 // ============================================================
+// ✅ ضمان تحميل بيانات القسم — يُستدعى من فتح القسم ومن تاب "الكل"
+export function ensureSongsLoaded() {
+  if (!loadedOnce) {
+    loadedOnce = true;
+    loadState();
+  } else if (!settingsReady) {
+    // ✅ تحميل سابق فشل — أعد المحاولة قبل السماح بالحفظ
+    loadState();
+  }
+  // ✅ جدول أعلى المشاهدين نقاطاً + جدول الأشخاص المميزين
+  loadPointsBoard("srPointsBoardBody");
+  loadVipBoard("srVipBody");
+  const st = el("srStatus");
+  if (st && !st.textContent) {
+    st.textContent = T("الحفظ تلقائي — أي تعديل يُحفظ مباشرة");
+    st.style.color = "var(--text-muted)";
+  }
+}
+
 function openSongsSection() {
-  showAddonSection("startSectionSongs", ".songs", () => {
-    if (!loadedOnce) {
-      loadedOnce = true;
-      loadState();
-    } else if (!settingsReady) {
-      // ✅ تحميل سابق فشل — أعد المحاولة قبل السماح بالحفظ
-      loadState();
-    }
-    // ✅ جدول أعلى المشاهدين نقاطاً + جدول الأشخاص المميزين
-    loadPointsBoard("srPointsBoardBody");
-    loadVipBoard("srVipBody");
-    const st = el("srStatus");
-    if (st && !st.textContent) {
-      st.textContent = T("الحفظ تلقائي — أي تعديل يُحفظ مباشرة");
-      st.style.color = "var(--text-muted)";
-    }
-  });
+  showAddonSection("startSectionSongs", ".songs", ensureSongsLoaded);
 }
 
 function init() {
   const nav = document.querySelector(".songs");
   if (nav) nav.addEventListener("click", openSongsSection);
 
-  // ✅ تحديث جدول أعلى المشاهدين نقاطاً
-  el("srPointsRefresh")?.addEventListener("click", () =>
-    loadPointsBoard("srPointsBoardBody"),
-  );
+  // ✅ تاب "الكل" يعرض القسم ويحمّل بياناته (نفس محمّل الفتح)
+  registerAddonLoader("startSectionSongs", ensureSongsLoaded);
+
+  // ✅ زر التحديث أُزيل — الجدول يتحدث لحظياً عبر السوكيت تلقائياً
   // ✅ تعديل/حذف نقاط المشاهدين — لكل قسم مخزن نقاطه: الأغاني /api/songs
   // وTTS /api/tts
   el("srPointsBoardBody")?.addEventListener("click", (e) =>
@@ -827,9 +860,10 @@ function init() {
   };
   bindPointsSearch("srPointsSearch", "srPointsBoardBody");
   bindPointsSearch("ttsPointsSearch", "ttsPointsBoardBody");
-  // ✅ جدول الأشخاص المميزين (المعفيون) — قائمة مستقلة لكل قسم
+  // ✅ جدول الأشخاص المميزين (المعفيون) — قائمة مستقلة لكل قسم.
+  // ✅ ربط عناصر TTS يحدث في tts.js فقط — كان مربوطاً هنا أيضاً فكل ضغطة
+  // إضافة تطلق طلبين وإعادة تحميلين متتاليين على نفس الجدول
   bindVipBoardControls("srVipUser", "srVipAdd", "srVipBody");
-  bindVipBoardControls("ttsVipUser", "ttsVipAdd", "ttsVipBody", "/api/tts");
 
   // أزرار التحكم بالمشغل
   el("srPauseBtn")?.addEventListener("click", () =>
@@ -863,6 +897,28 @@ function init() {
       () => {},
     ),
   );
+
+  // ✅ حذف آخر التشغيلات — تأكيد ثم مسح السجل (لا يمس الطابور ولا النقاط)
+  el("srHistoryClearBtn")?.addEventListener("click", async () => {
+    const ok = await showConfirm(T("حذف كل سجل آخر التشغيلات؟"));
+    if (!ok) return;
+    try {
+      const res = await fetchWithAuth(`${__S.API_BASE}/api/songs/history/clear`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const d = await res.json();
+      if (d.success) {
+        renderHistory([]);
+        showStatus(T("تم حذف سجل التشغيلات"), true);
+      } else {
+        showStatus(d.message || T("فشل الحذف"), false);
+      }
+    } catch (e) {
+      showStatus(T("فشل الحذف"), false);
+    }
+  });
 
   // إزالة أغنية من الطابور (حدث مفوَّض على الحاوية)
   el("srQueueList")?.addEventListener("click", (e) => {
@@ -928,6 +984,9 @@ function init() {
         n.value = def;
     });
   }
+
+  // ✅ المفتاح الرئيسي لخيارات النقاط — نفس مكوّن قسم TTS
+  initPointsMasterSwitch("srPointsMaster", "srPointsOptions");
 
   // ✅ حفظ تلقائي: أي تغيير في أي إعداد داخل القسم يحفظ فوراً بعد تهدئة
   // (حقل البحث مستثنى — له سلوكه الخاص)

@@ -1,5 +1,9 @@
 /* ==================== الجدول ==================== */
+/* ✅ كل جداول الموقع RTL — ترتيب الأعمدة الطبيعي للعربية: أول عمود
+   يميناً وعمود الإجراءات (حذف/تعديل) في آخر الجدول يساراً — بدل الوراثة
+   LTR من body اللي كانت تقلب الترتيب وتلاصق عمود الأزرار بالبوردر */
 table {
+  direction: rtl;
   width: 100%;
   border-collapse: collapse;
   background: var(--bg-dark);
@@ -53,6 +57,24 @@ td .options {
   gap: 5px;
 }
 
+/* ✅ توسيط أيقونات العمليات (حذف/تعديل/تشغيل) أفقياً في منتصف الخلية —
+  خلية جدول الأوامر تحمل الكلاس options بنفسها (td.options) وليست داخلها */
+td.options {
+  text-align: center;
+  vertical-align: middle;
+  /* ✅ عرض مريح ثابت — عمود الإجراءات بعرض المحتوى كان يلزق بحد الجدول
+     وتبدو أزراره ملتصقة بالبوردر رغم توسيطها داخل الخلية */
+  min-width: 140px;
+}
+
+/* ✅ كل خلايا الإجراءات في أي جدول — توسيط أفقي مضمون (حتى الجداول
+   القديمة بلا حاوية row-actions) فلا تلتصق الأزرار بأي بوردر */
+td.cell-actions,
+td[class*="action"],
+td:last-child .row-actions {
+  text-align: center;
+}
+
 td .options button {
   background: transparent;
   border: none;
@@ -67,6 +89,78 @@ td .options button {
 td .options button:hover {
   background: var(--primary-color);
   color: white;
+}
+
+/* ==================== ✅ أزرار الإجراءات الموحدة في كل المشروع ====================
+   نفس فكرة توحيد input[type=range]: شكل واحد لأزرار أيقونات الإجراءات
+   (تعديل/حذف/تشغيل/إزالة) في كل جداول الموقع — 30×30 بحواف دائرية وحد
+   شفاف، وأحمر عند تحويم الحذف وبلون الموقع عند تحويم التعديل
+   (row-act.danger = حذف) — وداخل حاوية row-actions بتوسيط flex مضمون
+   مهما اختلف اتجاه الجدول أو ظهر شريط تمرير */
+.row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* ✅ شبكة أمان شاملة — أي خلية أخيرة فيها أزرار إجراءات تأخذ عرضاً
+   أدنى مريحاً فلا يتقلص العمود لعرض الأزرار ويلزق بالحد الشمال */
+td:last-child .row-actions {
+  min-width: 100px;
+}
+
+/* ✅✅ أزرار الإجراءات أيقونية فقط — هامش حماية الأيقونات (6px من
+   fontawesome-protection) كان يدفع الأيقونة 3px عن منتصف الزر.
+   الصفر هنا يعيد أيقونة Font Awesome لمنتصف الزر تماماً */
+.row-actions .row-act i,
+.row-actions .vps-act i,
+.vps-act i {
+  margin: 0 !important;
+}
+
+/* الزر داخل الحاوية بلا هوامش — التباعد من gap موحد */
+.row-actions .vps-act,
+.row-actions .row-act {
+  margin: 0;
+}
+
+.row-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  padding: 0;
+  margin: 0;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: var(--transition);
+}
+
+.row-act:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  box-shadow: 0 0 10px rgba(29, 217, 230, 0.2);
+}
+
+.row-act.danger:hover,
+.row-act.del:hover {
+  border-color: var(--danger-color);
+  color: #ff8a80;
+  box-shadow: 0 0 10px rgba(244, 67, 54, 0.25);
+}
+
+.row-act.save,
+.row-act.confirm {
+  color: #66e08a;
+  border-color: rgba(76, 175, 80, 0.5);
 }
 
 td .fathertd {

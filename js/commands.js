@@ -14,6 +14,8 @@ import { getGiftImage, getGiftImages } from "./gifts.js";
 import { safeImageUrl } from "./utils-core.js";
 import { loadHotkeyCommands } from "./hotkeys.js";
 import { checkStorageNotifications } from "./storage.js";
+// ✅ تكامل TTS في منشئ الأوامر — إعادة استخدام مكونات قسم TTS الرئيسي
+import { getTtsVoices, populateVoiceSelect } from "./tts.js";
 
 // ============================================================
 // دوال الأوامر (Commands)
@@ -382,6 +384,41 @@ function _showAddCard(commandData = null) {
     if (overlayTextInput)
       overlayTextInput.value = commandData.overlayText || "";
     if (durationInput) durationInput.value = commandData.duration || 5;
+    // ✅ تكامل TTS — تعبئة حقول النطق من بيانات الأمر عند التعديل
+    const cmdTtsEnabled = document.getElementById("cmdTtsEnabled");
+    const cmdTtsGroup = document.getElementById("cmdTtsGroup");
+    if (cmdTtsEnabled) cmdTtsEnabled.checked = !!commandData.ttsEnabled;
+    if (cmdTtsGroup)
+      cmdTtsGroup.style.display = commandData.ttsEnabled ? "block" : "none";
+    const cmdTtsText = document.getElementById("cmdTtsText");
+    if (cmdTtsText) cmdTtsText.value = commandData.ttsText || "";
+    if (commandData.ttsEnabled) {
+      getTtsVoices().then((voices) =>
+        populateVoiceSelect(
+          document.getElementById("cmdTtsVoice"),
+          voices,
+          commandData.ttsVoice || "tt:en_us_002",
+        ),
+      );
+    }
+    const cmdSpeed = document.getElementById("cmdTtsSpeed");
+    if (cmdSpeed) {
+      cmdSpeed.value = commandData.ttsSpeed ?? 1;
+      const out = document.getElementById("cmdTtsSpeedVal");
+      if (out) out.textContent = Number(cmdSpeed.value).toFixed(2);
+    }
+    const cmdPitch = document.getElementById("cmdTtsPitch");
+    if (cmdPitch) {
+      cmdPitch.value = commandData.ttsPitch ?? 1;
+      const out = document.getElementById("cmdTtsPitchVal");
+      if (out) out.textContent = Number(cmdPitch.value).toFixed(2);
+    }
+    const cmdVolume = document.getElementById("cmdTtsVolume");
+    if (cmdVolume) {
+      cmdVolume.value = Math.round((commandData.ttsVolume ?? 1) * 100);
+      const out = document.getElementById("cmdTtsVolumeVal");
+      if (out) out.textContent = cmdVolume.value;
+    }
     if (__S.overlayTextGroup) {
       __S.overlayTextGroup.style.display =
         showOverlayCheck && showOverlayCheck.checked ? "block" : "none";
@@ -442,6 +479,25 @@ function _showAddCard(commandData = null) {
     if (showOverlayCheck) showOverlayCheck.checked = false;
     if (overlayTextInput) overlayTextInput.value = "";
     if (durationInput) durationInput.value = 5;
+    // ✅ تكامل TTS — تصفير حقول النطق للأمر الجديد
+    const newCmdTtsEnabled = document.getElementById("cmdTtsEnabled");
+    const newCmdTtsGroup = document.getElementById("cmdTtsGroup");
+    if (newCmdTtsEnabled) newCmdTtsEnabled.checked = false;
+    if (newCmdTtsGroup) newCmdTtsGroup.style.display = "none";
+    const newCmdTtsText = document.getElementById("cmdTtsText");
+    if (newCmdTtsText) newCmdTtsText.value = "";
+    const newCmdSpeed = document.getElementById("cmdTtsSpeed");
+    if (newCmdSpeed) newCmdSpeed.value = 1;
+    const newCmdSpeedOut = document.getElementById("cmdTtsSpeedVal");
+    if (newCmdSpeedOut) newCmdSpeedOut.textContent = "1.00";
+    const newCmdPitch = document.getElementById("cmdTtsPitch");
+    if (newCmdPitch) newCmdPitch.value = 1;
+    const newCmdPitchOut = document.getElementById("cmdTtsPitchVal");
+    if (newCmdPitchOut) newCmdPitchOut.textContent = "1.00";
+    const newCmdVolume = document.getElementById("cmdTtsVolume");
+    if (newCmdVolume) newCmdVolume.value = 100;
+    const newCmdVolumeOut = document.getElementById("cmdTtsVolumeVal");
+    if (newCmdVolumeOut) newCmdVolumeOut.textContent = "100";
     if (__S.overlayTextGroup) __S.overlayTextGroup.style.display = "none";
   }
 
@@ -570,6 +626,27 @@ async function confirmAdd(event) {
     const duration =
       parseInt(document.getElementById("durationInput").value) || 5;
 
+    // ✅ تكامل TTS — إرسال إعدادات النطق مع الأمر (0 مستوى صوت صالح فلا || خداع)
+    const cmdTtsVolumeRaw = parseInt(
+      document.getElementById("cmdTtsVolume")?.value,
+      10,
+    );
+    const cmdTts = {
+      ttsEnabled:
+        document.getElementById("cmdTtsEnabled")?.checked === true,
+      ttsText: (
+        document.getElementById("cmdTtsText")?.value || ""
+      ).trim(),
+      ttsVoice: document.getElementById("cmdTtsVoice")?.value || "",
+      ttsSpeed:
+        parseFloat(document.getElementById("cmdTtsSpeed")?.value) || 1,
+      ttsPitch:
+        parseFloat(document.getElementById("cmdTtsPitch")?.value) || 1,
+      ttsVolume: Number.isFinite(cmdTtsVolumeRaw)
+        ? Math.min(100, Math.max(0, cmdTtsVolumeRaw)) / 100
+        : 1,
+    };
+
     const baseCommand = {
       name: actionName,
       command: commandText,
@@ -593,6 +670,7 @@ async function confirmAdd(event) {
       showOverlay,
       overlayText,
       duration,
+      ...cmdTts,
     };
 
     const profileId = getSelectedProfileId();
@@ -997,10 +1075,12 @@ async function _loadCommandsImpl(profileIdParam, noCache) {
         <td style="vertical-align: middle; text-align: center;">
           <input type="checkbox" class="active-checkbox" data-field="active" ${isActiveChecked} ${isDisabled ? "disabled" : ""} style="margin: 0;">
         </td>
-        <td class="options" style="white-space: nowrap;">
-          <button class="delete-btn" type="button" ${isDisabled ? "disabled" : ""} style="background: none; border: none; cursor: pointer; color: #f44336; font-size: 18px; display: inline-block; margin: 0 2px;"><i class="fas fa-trash-alt"></i></button>
-          <button class="edit-btn" type="button" ${isDisabled ? "disabled" : ""} style="background: none; border: none; cursor: pointer; color: #1dd9e6e1; font-size: 18px; display: inline-block; margin: 0 2px;"><i class="fas fa-edit"></i></button>
-          <button class="execute-btn" type="button" ${isDisabled ? "disabled" : ""} style="background: none; border: none; cursor: pointer; color: #2196f3; font-size: 18px; display: inline-block; margin: 0 2px;"><i class="fas fa-play"></i></button>
+        <td class="options" style="white-space: nowrap; min-width: 140px;">
+          <div class="row-actions" style="display: flex; align-items: center; justify-content: center; width: 100%;">
+            <button class="row-act del delete-btn" type="button" ${isDisabled ? "disabled" : ""} title="حذف"><i class="fas fa-trash-alt"></i></button>
+            <button class="row-act edit-btn" type="button" ${isDisabled ? "disabled" : ""} title="تعديل"><i class="fas fa-edit"></i></button>
+            <button class="row-act execute-btn" type="button" ${isDisabled ? "disabled" : ""} title="تشغيل"><i class="fas fa-play"></i></button>
+          </div>
         </td>
         <td><input type="text" value="${safeName}" data-field="name" ${isDisabled ? "disabled" : ""}></td>
         <td style="text-align: center; vertical-align: middle;">${commandCellContent}</td>
@@ -1503,5 +1583,33 @@ function enableDragAndDrop() {
   });
 }
 
+
+// ============================================================
+// ✅ تكامل TTS في منشئ الأوامر — ربط أحداث النموذج (مرة واحدة عند التحميل)
+// ============================================================
+document.getElementById("cmdTtsEnabled")?.addEventListener("change", (e) => {
+  const group = document.getElementById("cmdTtsGroup");
+  if (group) group.style.display = e.target.checked ? "block" : "none";
+  if (e.target.checked) {
+    const select = document.getElementById("cmdTtsVoice");
+    // ✅ تعبئة القائمة مرة واحدة فقط — إعادة الفتح لا تمسح الاختيار المحفوظ
+    if (select && !select.options.length)
+      getTtsVoices().then((voices) =>
+        populateVoiceSelect(select, voices, "tt:en_us_002"),
+      );
+  }
+});
+document.getElementById("cmdTtsSpeed")?.addEventListener("input", (e) => {
+  const out = document.getElementById("cmdTtsSpeedVal");
+  if (out) out.textContent = Number(e.target.value).toFixed(2);
+});
+document.getElementById("cmdTtsPitch")?.addEventListener("input", (e) => {
+  const out = document.getElementById("cmdTtsPitchVal");
+  if (out) out.textContent = Number(e.target.value).toFixed(2);
+});
+document.getElementById("cmdTtsVolume")?.addEventListener("input", (e) => {
+  const out = document.getElementById("cmdTtsVolumeVal");
+  if (out) out.textContent = e.target.value;
+});
 
 export { updateInputsForType, captureOriginalFormValues, hasFormChanged, checkForChangesAndClose, showAddCard, _showAddCard, hideAddCard, confirmAdd, loadCommands, _loadCommandsImpl, scheduleAutoSave, saveRowFromTr, moveRowUp, moveRowDown, executeCommand, _executeCommandImpl, deleteCommand, enableDragAndDrop };

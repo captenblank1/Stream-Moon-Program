@@ -155,9 +155,30 @@
   border-color: rgba(255, 209, 102, 0.65);
   box-shadow: 0 0 0 3px rgba(255, 209, 102, 0.12);
 }
+/* ✅ أزرار الصف بنفس شكل .btn الموحد — بلا تجاوزات مقاسات محلية */
 .vps-date-row .btn {
-  padding: 8px 15px;
+  padding: 8px 18px;
+  font-size: 14px;
+}
+
+/* ✅ شريط توضيح وضع "حتى تاريخ" — يشرح معنى القيم المعروضة */
+.vps-asof-info {
+  width: 100%;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, rgba(255, 209, 102, 0.1), rgba(255, 209, 102, 0.03));
+  border: 1px solid rgba(255, 209, 102, 0.35);
+  border-radius: 12px;
+  color: var(--text-light);
   font-size: 12.5px;
+  line-height: 1.9;
+  text-align: center;
+}
+.vps-asof-info i {
+  color: #ffd166;
+  margin: 0 4px;
+}
+.vps-asof-info b {
+  color: #ffd166;
 }
 
 /* زر حذف الكل — أحمر مميز */
@@ -189,6 +210,11 @@
   background: transparent;
   font-size: 13px;
   min-width: 860px;
+  /* ✅ اتجاه RTL إلزامي — الجدول كان يورث LTR من body فينقلب ترتيب
+  الأعمدة (المشاهد شمال والخيارات ملاصقة لحد الطاولة من الجهة الخاطئة)
+  ويبدو عمود الأزرار "ملصوقاً بالبوردر" بدل قراءة عربية طبيعية:
+  المشاهد يميناً والخيارات في آخر العمود يساراً */
+  direction: rtl;
 }
 .vps-table th {
   background: linear-gradient(180deg, rgba(255, 209, 102, 0.12), rgba(255, 209, 102, 0.04));
@@ -226,7 +252,48 @@
 .vps-options {
   white-space: nowrap;
 }
+/* ✅ عمود الخيارات بعرض مريح ثابت — الأزرار متوسطة جوه العمود بمسافة
+   واضحة من الحدود (كان width:1% يسحق العمود لعرض المحتوى فيلزق بالحد
+   الشمال وتبدو الأزرار "ملتصقة بالبوردر" رغم توسيطها داخل الخلية)
+   ✅ white-space:nowrap إلزامية — بدونها الزرين يلتفان فوق بعض عمودين
+   عندما يضيق العمود وتبدو الأيقونات مكدسة رأسياً */
+.vps-table .vps-opts-col {
+  width: 140px !important;
+  min-width: 140px;
+  white-space: nowrap;
+}
+.vps-table td.vps-options {
+  white-space: nowrap;
+}
+/* ✅✅ تثبيت على مستوى الخلية نفسها (ليس الترويسة فقط) — كل خلية خيارات
+   في أي جدول vps تأخذ عرضاً مريحاً ثابتاً فتتوسط الأزرار بمسافة واضحة من
+   الحدود مهما كان هيكل الجدول (كان العمود يتقلص لعرض المحتوى فيلزق
+   بالحد الشمال وتبدو الأزرار "ملتصقة بالبوردر") */
+.vps-table td.vps-options,
+.vps-table tbody td:last-child {
+  min-width: 140px;
+}
+/* ✅ توسيط أزرار الخيارات (تعديل/حذف/تشغيل) أفقياً بالمنتصف في كل
+   جداول الأقسام (نقاط المشاهدين/النقاط/المميزين/الأصوات المخصصة/
+   الكلمات الممنوعة) — كانت تبدو ملتصقة ببداية الخلية */
+.vps-table td.vps-options,
+.vps-table tbody td:last-child {
+  text-align: center !important;
+  vertical-align: middle;
+}
+.vps-table td .vps-act,
+.vps-table td .btn {
+  vertical-align: middle;
+}
 .vps-act {
+  /* ✅ الأيقونة في منتصف الزر تماماً (أفقي وعمودي): بدون flex كانت
+     الأيقونة بتقعد على خط الأساس فتبان لفوق، وpadding المتصفح الافتراضي
+     كان بيدي إزاحة إضافية */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: var(--text-muted);
@@ -238,10 +305,12 @@
   transition: var(--transition);
   margin: 0 2px;
 }
+/* ✅ التحويم بلون الموقع الموحد — نفس .row-act في table.css (كان ذهبياً
+   هنا وتركوازياً هناك فاختلف شكل نفس الزر بين الجداول) */
 .vps-act:hover {
-  border-color: #ffd166;
-  color: #ffd166;
-  box-shadow: 0 0 10px rgba(255, 209, 102, 0.2);
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  box-shadow: 0 0 10px rgba(29, 217, 230, 0.2);
 }
 .vps-act.del:hover {
   border-color: var(--danger-color);
@@ -382,6 +451,12 @@
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+/* ✅ علامة ≈ — قيمة تقريبية لمشاهد قديم قبل بدء السجل التفصيلي */
+.vps-approx {
+  color: #ffb3a7;
+  font-size: 11px;
+  cursor: help;
+}
 .vps-open {
   color: #ffd166;
   font-size: 15px;
@@ -405,11 +480,10 @@
   }
 }
 
-/* ✅ حقول بحث جداول النقاط/الأشخاص المميزين داخل البطاقات */
+/* ✅ حقول بحث جداول النقاط/الأشخاص المميزين داخل البطاقات — بلا هامش
+   تلقائي يدفع الحقل للحافة؛ الصفوف تتمركز بـ justify-content:center */
 .pb-search {
-  flex: 1;
-  max-width: 180px;
-  margin-inline-start: auto;
+  flex: 0 1 180px;
   padding: 7px 12px;
   background: rgba(0, 0, 0, 0.35);
   color: var(--text-light);
@@ -425,4 +499,13 @@
 }
 .pb-search::placeholder {
   color: var(--text-muted, #8a8f98);
+}
+
+.vps-asof-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.vps-asof-line b {
+  color: var(--text-light);
 }

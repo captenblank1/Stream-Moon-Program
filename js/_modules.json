@@ -3,6 +3,7 @@
     "js/config.js",
     "js/state.js",
     "js/utils-core.js",
+    "js/user-context.js",
     "js/pairing.js",
     "js/update-banner.js",
     "js/captcha.js",

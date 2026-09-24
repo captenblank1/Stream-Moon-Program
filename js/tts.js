@@ -5,8 +5,8 @@
 //    عند فصل البث (منع التضاعف والتراكم — دروس أعطال حقيقية)
 // ============================================================
 import __S from "./state.js";
-import { fetchWithAuth, showMessage, showConfirm, getDeviceId } from "./utils-core.js";
-import { showAddonSection } from "./addons-nav.js";
+import { fetchWithAuth, showMessage, showConfirm, getDeviceId, initPointsMasterSwitch } from "./utils-core.js";
+import { showAddonSection, registerAddonLoader } from "./addons-nav.js";
 import { tryUnlockAudio } from "./socket.js";
 import { getAuthToken } from "./pairing.js";
 // ✅ لوحة أعلى المشاهدين نقاطاً وجدول الأشخاص المميزين — مشتركان مع الأغاني
@@ -18,6 +18,7 @@ let loadedOnce = false;
 let settingsReady = false; // ✅ لا حفظ قبل تحميل الإعدادات الفعلية من السيرفر
 let voicesCache = [];
 let userVoices = []; // جدول المستخدمين بصوت مخصص [{user, voiceURI, pitch, volume}]
+let blacklistWords = []; // ✅ جدول الكلمات الممنوعة [{word, active}]
 
 function el(id) {
   return document.getElementById(id);
@@ -101,15 +102,124 @@ function renderUserVoices() {
       "<td>" +
       Math.round((uv.volume ?? 1) * 100) +
       "%</td>" +
-      '<td><button class="btn btn-secondary tts-uv-act" data-act="edit" data-i="' +
+      '<td class="vps-options" style="min-width: 140px;"><div class="row-actions" style="display: flex; align-items: center; justify-content: center; width: 100%;">' +
+      '<button type="button" class="vps-act tts-uv-act" data-act="edit" data-i="' +
       idx +
+      '" title="' +
+      T("تعديل") +
       '"><i class="fas fa-pen"></i></button> ' +
-      '<button class="btn btn-secondary tts-uv-act" data-act="del" data-i="' +
+      '<button type="button" class="vps-act del tts-uv-act" data-act="del" data-i="' +
       idx +
-      '"><i class="fas fa-trash"></i></button></td>';
+      '" title="' +
+      T("حذف") +
+      '"><i class="fas fa-trash"></i></button></div></td>';
     if (!active) tr.style.opacity = "0.5";
     tbody.appendChild(tr);
   });
+  syncUserVoicesToggleAllLabel();
+}
+
+// ============================================================
+// ✅ جدول الكلمات الممنوعة — كل كلمة صف بمفتاح تفعيل مستقل + تعديل/حذف
+// (الحذف بنافذة تأكيد) + زر تفعيل/تعطيل الكل بضغطة واحدة
+// ============================================================
+function renderBlacklist() {
+  const tbody = el("ttsBlacklistBody");
+  if (!tbody) return;
+  if (!blacklistWords.length) {
+    tbody.innerHTML =
+      '<tr><td colspan="3" class="vps-empty">' +
+      T("لا توجد كلمات ممنوعة بعد — أضف من الحقل أعلاه") +
+      "</td></tr>";
+    syncBlacklistToggleAllLabel();
+    return;
+  }
+  tbody.innerHTML = "";
+  blacklistWords.forEach((bw, idx) => {
+    const active = bw.active !== false;
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      '<td><input type="checkbox" class="tts-bw-active" data-i="' +
+      idx +
+      '" ' +
+      (active ? "checked" : "") +
+      ' title="' +
+      T("مفعلة = تُفلتر من القراءة") +
+      '" style="cursor:pointer; accent-color: var(--primary-color); width:17px; height:17px;" /></td>' +
+      "<td" +
+      (active ? "" : ' style="opacity:.5; text-decoration: line-through;"') +
+      ">" +
+      escapeHtml(bw.word) +
+      "</td>" +
+      '<td class="vps-options" style="min-width: 140px;"><div class="row-actions" style="display: flex; align-items: center; justify-content: center; width: 100%;">' +
+      '<button class="vps-act tts-bw-act" data-act="edit" data-i="' +
+      idx +
+      '" title="' +
+      T("تعديل") +
+      '"><i class="fas fa-pen"></i></button> ' +
+      '<button class="vps-act del tts-bw-act" data-act="del" data-i="' +
+      idx +
+      '" title="' +
+      T("حذف") +
+      '"><i class="fas fa-trash"></i></button></div></td>';
+    tbody.appendChild(tr);
+  });
+  syncBlacklistToggleAllLabel();
+}
+
+// ✅ زر الكل الموحد: الكل مفعّل → "إغلاق الكل" (أحمر)، يوجد مغلق →
+// "تفعيل الكل" (أخضر) — بالكلام والتصميم معاً
+function applyToggleAllBtnState(btn, anyOff) {
+  if (!btn) return;
+  btn.innerHTML = anyOff
+    ? '<i class="fas fa-toggle-on"></i> ' + T("تفعيل الكل")
+    : '<i class="fas fa-toggle-off"></i> ' + T("إغلاق الكل");
+  btn.style.color = anyOff ? "#66e08a" : "#ff8a80";
+  btn.style.borderColor = anyOff
+    ? "rgba(102, 224, 138, 0.55)"
+    : "rgba(255, 138, 128, 0.55)";
+}
+
+function syncBlacklistToggleAllLabel() {
+  applyToggleAllBtnState(
+    el("ttsBlacklistToggleAll"),
+    blacklistWords.some((b) => b.active === false),
+  );
+}
+
+// زر الكل لمستخدمي الصوت المخصص — نفس الحالتين
+function syncUserVoicesToggleAllLabel() {
+  applyToggleAllBtnState(
+    el("ttsUVToggleAll"),
+    userVoices.some((v) => v.active === false),
+  );
+}
+
+async function addOrUpdateBlacklistWord() {
+  const input = el("ttsBlacklistWord");
+  const word = (input?.value || "").trim().slice(0, 60);
+  if (!word) {
+    showMessage("<i class='fas fa-triangle-exclamation'></i> " + T("اكتب الكلمة أولاً"));
+    return;
+  }
+  const addBtn = el("ttsBlacklistAdd");
+  const editing = addBtn?.dataset.editing;
+  if (editing !== undefined && editing !== "") {
+    const idx = parseInt(editing, 10);
+    if (blacklistWords[idx]) blacklistWords[idx].word = word;
+    if (addBtn) delete addBtn.dataset.editing;
+    if (addBtn) addBtn.innerHTML = '<i class="fas fa-plus"></i> ' + T("إضافة");
+  } else {
+    // ✅ منع التكرار (مقارنة غير حساسة لحالة الأحرف)
+    const existing = blacklistWords.findIndex(
+      (b) => b.word.toLowerCase() === word.toLowerCase(),
+    );
+    if (existing >= 0) blacklistWords[existing].active = true;
+    else blacklistWords.push({ word, active: true });
+  }
+  if (input) input.value = "";
+  renderBlacklist();
+  scheduleAutoSave();
 }
 
 function escapeHtml(s) {
@@ -211,6 +321,11 @@ function processLocalTTSQueue() {
   const item = localTtsQueue.shift();
   const done = () => {
     localTtsSpeaking = false;
+    // بلاغ انتهاء النطق حتى تنتظر شاشات الأوامر انتهاء الكلام قبل إخفاء التراكب
+    try {
+      if (item.refId && __S.frontendSocket?.connected)
+        __S.frontendSocket.emit("tts-item-done", { refId: String(item.refId) });
+    } catch (e) {}
     setTimeout(processLocalTTSQueue, 400);
   };
   if (item.audioBase64) {
@@ -247,13 +362,25 @@ function processLocalTTSQueue() {
 }
 
 // ============================================================
-// واجهة الإعدادات
+// ✅ مكونات TTS قابلة لإعادة الاستخدام — تُستخدم في قسم TTS وفي
+// منشئ الأوامر (تكامل TTS) لضمان توحيد قائمة الأصوات وسهولة الصيانة
 // ============================================================
-function fillVoiceSelect(settings) {
-  const select = el("ttsVoiceSelect");
+
+// جلب قائمة الأصوات من الخادم مع كاش — /api/tts/settings هي المصدر الوحيد
+export async function getTtsVoices() {
+  if (voicesCache.length) return voicesCache;
+  try {
+    const res = await fetchWithAuth(`${__S.API_BASE}/api/tts/settings`);
+    const data = await res.json();
+    if (data.success && Array.isArray(data.voices)) voicesCache = data.voices;
+  } catch (e) {}
+  return voicesCache;
+}
+
+// تعبئة أي select أصوات بمجموعات (تيك توك/عربية/عالمية)
+export function populateVoiceSelect(select, voices, currentValue) {
   if (!select) return;
   const isEn = window.AppI18n && AppI18n.lang === "en";
-  const current = settings?.voiceURI || "tt:en_us_002";
   select.innerHTML = "";
   const groups = [
     ["tt", T("أصوات تيك توك")],
@@ -261,7 +388,7 @@ function fillVoiceSelect(settings) {
     ["en", T("أصوات عالمية")],
   ];
   for (const [group, label] of groups) {
-    const list = voicesCache.filter((v) => v.group === group);
+    const list = voices.filter((v) => v.group === group);
     if (!list.length) continue;
     const optgroup = document.createElement("optgroup");
     optgroup.label = label;
@@ -273,7 +400,13 @@ function fillVoiceSelect(settings) {
     }
     select.appendChild(optgroup);
   }
-  select.value = current;
+  select.value = currentValue || "";
+}
+
+function fillVoiceSelect(settings) {
+  const select = el("ttsVoiceSelect");
+  if (!select) return;
+  populateVoiceSelect(select, voicesCache, settings?.voiceURI || "tt:en_us_002");
   if (!select.value) select.value = "tt:en_us_002";
 }
 
@@ -325,12 +458,37 @@ function fillForm(settings) {
   setToggle("ttsPointsMsgOn", (s.pointsPerMessage ?? 0) > 0);
   setToggle("ttsPointsLikeOn", (s.pointsPerLike ?? 0) > 0);
   setToggle("ttsPointsCoinsOn", (s.pointsPerCoins ?? 0) > 0);
-  el("ttsReadCost").value = s.readCost ?? 0;
-  setToggle("ttsReadCostOn", (s.readCost ?? 0) > 0);
+  // ✅ المفتاح الرئيسي لخيارات النقاط — محفوظ بالسيرفر: إعادة التفعيل
+  // تعرض الخيارات كما كانت قبل الإيقاف
+  const master = el("ttsPointsMaster");
+  if (master) {
+    master.checked = s.pointsEnabled !== false;
+    master.__applyPointsMasterState?.();
+  }
+  // ✅ سعر القراءة (نقاط تُخصم مع كل تعليق يُقرأ — 0 = مجاني)
+  const readCostEl = el("ttsReadCost");
+  if (readCostEl) readCostEl.value = s.readCost ?? 0;
   setToggle("ttsFilterCmds", s.filterCmds ?? true);
   setToggle("ttsFilterLetter", s.filterLetter ?? true);
-  setToggle("ttsFilterMentions", s.filterMentions ?? false);
-  el("ttsBlacklist").value = s.blacklist ?? "";
+  setToggle("ttsFilterNameEmoji", s.filterNameEmoji ?? false);
+  // ✅ خيار المنشن — مفعل افتراضياً: اسم المُشار إليه لا يُقرأ؛
+  // عند الإيقاف يُقرأ اسم المُشار إليه بدون @ (كلمة «منشن» أُزيلت نهائياً)
+  setToggle("ttsSkipMentionName", s.skipMentionName ?? true);
+  // ✅ جدول الكلمات الممنوعة — من الحقل الجديد، ولو حفظ قديم (نص مفصول
+  // بفاصلة فقط) تُشتق منه الصفوف كلها مفعلة
+  if (Array.isArray(s.blacklistWords) && s.blacklistWords.length) {
+    blacklistWords = s.blacklistWords.map((b) => ({
+      word: String(b?.word || "").trim(),
+      active: b?.active !== false,
+    })).filter((b) => b.word);
+  } else {
+    blacklistWords = String(s.blacklist || "")
+      .split(/[,،]/)
+      .map((w) => w.trim())
+      .filter(Boolean)
+      .map((w) => ({ word: w, active: true }));
+  }
+  renderBlacklist();
   setToggle("ttsBlacklistBlockAll", s.blacklistBlockAll ?? false);
 }
 
@@ -359,6 +517,7 @@ function collectForm() {
       active: v.active !== false,
     })),
     // ✅ ثلاثية النقاط: التشيك بوكس مطفي = القيمة تصفر (0 = معطل بالباكند)
+    pointsEnabled: el("ttsPointsMaster")?.checked !== false,
     pointsPerMessage: el("ttsPointsMsgOn")?.checked
       ? parseInt(el("ttsPointsPerMessage").value, 10) || 0
       : 0,
@@ -368,16 +527,27 @@ function collectForm() {
     pointsPerCoins: el("ttsPointsCoinsOn")?.checked
       ? parseInt(el("ttsPointsPerCoins").value, 10) || 0
       : 0,
-    readCost: el("ttsReadCostOn")?.checked
-      ? parseInt(el("ttsReadCost").value, 10) || 0
-      : 0,
+    // ✅ سعر القراءة — نقاط تُخصم من المشاهد مع كل تعليق يُقرأ (0 = مجاني)
+    readCost: parseInt(el("ttsReadCost")?.value, 10) || 0,
     cooldown: 0, // ✅ الكولداون ملغي من الواجهة — بدون تأخير بين القراءات
     maxLen: parseInt(el("ttsMaxLen").value, 10) || 150,
-    blacklist: el("ttsBlacklist").value,
+    // ✅ جدول الكلمات الممنوعة + نص مشتق من الكلمات المفعلة فقط —
+    // النص يبقى متوافقاً مع أي باكند قديم والفلترة تعتمد المصفوفة
+    blacklist: blacklistWords
+      .filter((b) => b.active !== false)
+      .map((b) => b.word)
+      .join("، "),
+    blacklistWords: blacklistWords.map((b) => ({
+      word: b.word,
+      active: b.active !== false,
+    })),
     blacklistBlockAll: el("ttsBlacklistBlockAll").checked,
     filterCmds: el("ttsFilterCmds").checked,
     filterLetter: el("ttsFilterLetter").checked,
-    filterMentions: el("ttsFilterMentions").checked,
+    // ✅ المنشن: مفعل = اسم المُشار إليه لا يُقرأ؛ مطفأ = يُقرأ بدون @
+    skipMentionName: el("ttsSkipMentionName")?.checked !== false,
+    // ✅ إزالة الإيموجي من الاسم — مطفأ افتراضياً (الاسم يظهر مع الإيموجي)
+    filterNameEmoji: !!el("ttsFilterNameEmoji")?.checked,
   };
   // ✅ حماية "لا أحد": لو كل أوضاع الصلاحيات طلعت مطفأة (لخبطة توگل —
   // كانت تحفظ إعدادات تمنع قراءة أي حد وتظهر كأن "الجميع" مش شغال)
@@ -496,7 +666,8 @@ async function doAutoSave() {
 
 async function testVoice() {
   const btn = el("ttsTestBtn");
-  const text = (el("ttsTestText").value || "").trim() || T("هذا صوت تجريبي من برنامج Stream Moon");
+  // ✅ النص الافتراضي للتجربة — حقل فارغ يُنطق تلقائياً بالجملة الافتراضية
+  const text = (el("ttsTestText").value || "").trim() || T("this is a test");
   try {
     if (btn) btn.disabled = true;
     const res = await fetchWithAuth(`${__S.API_BASE}/api/tts/test`, {
@@ -519,24 +690,27 @@ async function testVoice() {
   }
 }
 
+// ✅ ضمان تحميل بيانات القسم — يُستدعى من فتح القسم ومن تاب "الكل"
+export function ensureTtsLoaded() {
+  if (!loadedOnce) {
+    loadedOnce = true;
+    loadSettings();
+  } else if (!settingsReady) {
+    // ✅ تحميل سابق فشل (الخادم كان يعيد التشغيل مثلاً) — أعد المحاولة
+    loadSettings();
+  }
+  const st = el("ttsStatus");
+  if (st && !st.textContent) {
+    st.textContent = T("الحفظ تلقائي — أي تعديل يُحفظ مباشرة");
+    st.style.color = "var(--text-muted)";
+  }
+  // ✅ جدول نقاط TTS (مخزن مستقل) + جدول الأشخاص المميزين الخاص به
+  loadPointsBoard("ttsPointsBoardBody", "/api/tts");
+  loadVipBoard("ttsVipBody", "/api/tts");
+}
+
 function openTtsSection() {
-  showAddonSection("startSectionTts", ".tts", () => {
-    if (!loadedOnce) {
-      loadedOnce = true;
-      loadSettings();
-    } else if (!settingsReady) {
-      // ✅ تحميل سابق فشل (الخادم كان يعيد التشغيل مثلاً) — أعد المحاولة
-      loadSettings();
-    }
-    const st = el("ttsStatus");
-    if (st && !st.textContent) {
-      st.textContent = T("الحفظ تلقائي — أي تعديل يُحفظ مباشرة");
-      st.style.color = "var(--text-muted)";
-    }
-    // ✅ جدول نقاط TTS (مخزن مستقل) + جدول الأشخاص المميزين الخاص به
-    loadPointsBoard("ttsPointsBoardBody", "/api/tts");
-    loadVipBoard("ttsVipBody", "/api/tts");
-  });
+  showAddonSection("startSectionTts", ".tts", ensureTtsLoaded);
 }
 
 // ============================================================
@@ -546,10 +720,9 @@ function init() {
   const nav = document.querySelector(".tts");
   if (nav) nav.addEventListener("click", openTtsSection);
 
-  // ✅ تحديث جدول أعلى المشاهدين نقاطاً
-  el("ttsPointsRefresh")?.addEventListener("click", () =>
-    loadPointsBoard("ttsPointsBoardBody"),
-  );
+  // ✅ تاب "الكل" يعرض القسم ويحمّل بياناته (نفس محمّل الفتح)
+  registerAddonLoader("startSectionTts", ensureTtsLoaded);
+
   // ✅ جدول الأشخاص المميزين — إضافة/تعديل/حذف (قائمة TTS المستقلة)
   bindVipBoardControls("ttsVipUser", "ttsVipAdd", "ttsVipBody", "/api/tts");
 
@@ -561,7 +734,6 @@ function init() {
     ["ttsPointsMsgOn", "ttsPointsPerMessage", 1],
     ["ttsPointsLikeOn", "ttsPointsPerLike", 1],
     ["ttsPointsCoinsOn", "ttsPointsPerCoins", 1],
-    ["ttsReadCostOn", "ttsReadCost", 1],
   ];
   for (const [cbId, numId, def] of pointsStartDefaults) {
     el(cbId)?.addEventListener("change", (e) => {
@@ -630,6 +802,104 @@ function init() {
 
   // جدول المستخدمين بصوت مخصص
   el("ttsUVAdd")?.addEventListener("click", addOrUpdateUserVoice);
+
+  // ✅ تفعيل الكل / إلغاء تفعيل الكل — كل المستخدمين بضغطة واحدة
+  el("ttsUVToggleAll")?.addEventListener("click", () => {
+    if (!userVoices.length) {
+      showMessage("<i class='fas fa-triangle-exclamation'></i> " + T("لا يوجد مستخدمون مخصصون بعد"));
+      return;
+    }
+    const anyOff = userVoices.some((v) => v.active === false);
+    userVoices.forEach((v) => (v.active = anyOff));
+    renderUserVoices();
+    scheduleAutoSave();
+    showStatus(
+      anyOff
+        ? T("تم تفعيل جميع المستخدمين بصوت مخصص")
+        : T("تم إغلاق جميع المستخدمين بصوت مخصص"),
+      true,
+    );
+  });
+
+  // ✅ جدول الكلمات الممنوعة — إضافة/تعديل/حذف/تفعيل
+  el("ttsBlacklistAdd")?.addEventListener("click", addOrUpdateBlacklistWord);
+  el("ttsBlacklistWord")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addOrUpdateBlacklistWord();
+    }
+  });
+  el("ttsBlacklistToggleAll")?.addEventListener("click", () => {
+    if (!blacklistWords.length) {
+      showMessage("<i class='fas fa-triangle-exclamation'></i> " + T("لا توجد كلمات ممنوعة بعد"));
+      return;
+    }
+    const anyOff = blacklistWords.some((b) => b.active === false);
+    blacklistWords.forEach((b) => (b.active = anyOff));
+    renderBlacklist();
+    scheduleAutoSave();
+    showStatus(
+      anyOff ? T("تم تفعيل جميع الكلمات الممنوعة") : T("تم إغلاق جميع الكلمات الممنوعة"),
+      true,
+    );
+  });
+  el("ttsBlacklistBody")?.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".tts-bw-act");
+    if (!btn) return;
+    const idx = parseInt(btn.dataset.i, 10);
+    const victim = blacklistWords[idx];
+    if (!victim) return;
+    if (btn.dataset.act === "del") {
+      // ✅ تأكيد الحذف بنفس نافذة التأكيد المستخدمة في الموقع
+      const ok = await showConfirm(
+        T("حذف الكلمة الممنوعة") + ' "' + victim.word + '" ' + T("من القائمة؟"),
+      );
+      if (!ok) return;
+      blacklistWords.splice(idx, 1);
+      // ✅ تصحيح حالة "تحديث" المعلقة بعد الحذف — نفس إصلاح جدول الأصوات
+      const addBtn = el("ttsBlacklistAdd");
+      const editingIdx = parseInt(addBtn?.dataset.editing, 10);
+      if (addBtn && Number.isFinite(editingIdx)) {
+        if (editingIdx === idx) {
+          delete addBtn.dataset.editing;
+          addBtn.innerHTML = '<i class="fas fa-plus"></i> ' + T("إضافة");
+          const input = el("ttsBlacklistWord");
+          if (input) input.value = "";
+        } else if (editingIdx > idx) {
+          addBtn.dataset.editing = String(editingIdx - 1);
+        }
+      }
+      renderBlacklist();
+      scheduleAutoSave();
+    } else if (btn.dataset.act === "edit") {
+      const input = el("ttsBlacklistWord");
+      if (input) {
+        input.value = victim.word;
+        input.focus();
+      }
+      const addBtn = el("ttsBlacklistAdd");
+      if (addBtn) {
+        addBtn.dataset.editing = String(idx);
+        addBtn.innerHTML = '<i class="fas fa-save"></i> ' + T("تحديث");
+      }
+    }
+  });
+  el("ttsBlacklistBody")?.addEventListener("change", (e) => {
+    // ✅ مفتاح تفعيل الكلمة — change يمر أصلاً بتفويض الحفظ التلقائي للقسم
+    const box = e.target.closest(".tts-bw-active");
+    if (!box) return;
+    const i = parseInt(box.dataset.i, 10);
+    if (blacklistWords[i]) {
+      blacklistWords[i].active = box.checked;
+      renderBlacklist();
+    }
+  });
+
+  // ✅ المفتاح الرئيسي لخيارات النقاط: إيقاف = تعطيل كل الخيارات الفرعية
+  // (إلغاء تعليمها وتعطيل مدخلاتها فيُحفظ صفراً)، وتفعيل = استعادة حالة
+  // كل خيار كما كانت قبل الإيقاف — القيم الرقمية لا تُمس أبداً
+  initPointsMasterSwitch("ttsPointsMaster", "ttsPointsOptions");
+
   el("ttsUserVoicesBody")?.addEventListener("click", async (e) => {
     // ✅ عمود الاكتيف: مفعّل = يُقرأ دائماً / غير مفعّل = لا يُقرأ
     const activeBox = e.target.closest(".tts-uv-active");
@@ -687,7 +957,9 @@ function init() {
       if (!payload || !payload.text) return;
       // سقف الطابور: الزحمة → الأحدث تتقرى (مرفوع من 2 لـ 3 لتغطية تعليقات أكثر)
       while (localTtsQueue.length >= 3) localTtsQueue.shift();
-      localTtsQueue.push(payload);
+      // ✅ TTS الأوامر (priority) يقفز لطليعة الطابور — يبدأ فوراً مع التراكب
+      if (payload.priority) localTtsQueue.unshift(payload);
+      else localTtsQueue.push(payload);
       processLocalTTSQueue();
     });
     __S.frontendSocket.on("stop-local-tts", () => stopLocalTTS());

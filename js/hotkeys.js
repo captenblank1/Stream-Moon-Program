@@ -299,7 +299,7 @@ function clearHotkeyFormFields() {
   const saveBtn = document.getElementById("saveHotkeyBtn");
   if (saveBtn) {
     saveBtn.textContent = "حفظ الإعدادات";
-    saveBtn.style.backgroundColor = "";
+    saveBtn.classList.remove("btn-warning");
   }
   __S.editingHotkeyId = null;
 }
@@ -817,21 +817,31 @@ async function _renderHotkeysListNow(preloaded = null) {
 
       const tdActions = document.createElement("td");
       tdActions.style.textAlign = "center";
+      tdActions.style.minWidth = "140px";
+      // ✅ الحاوية الموحدة row-actions + توسيط inline مضمون للزرين
+      // (يتغلب على أي CSS قديم/ناقص في أي نسخة)
+      const actionsWrap = document.createElement("div");
+      actionsWrap.className = "row-actions";
+      actionsWrap.style.display = "flex";
+      actionsWrap.style.alignItems = "center";
+      actionsWrap.style.justifyContent = "center";
+      actionsWrap.style.width = "100%";
       const editBtn = document.createElement("button");
-      editBtn.className = "hotkey-edit-btn";
+      editBtn.className = "row-act hotkey-edit-btn";
       editBtn.innerHTML = '<i class="fas fa-pen-to-square"></i>';
       editBtn.title = "تعديل";
       editBtn.dataset.key = hk.key;
       editBtn.dataset.id = hk.commandId;
       editBtn.dataset.type = hk.commandType;
       editBtn.dataset.active = String(hk.active !== false);
-      tdActions.appendChild(editBtn);
+      actionsWrap.appendChild(editBtn);
       const deleteBtn = document.createElement("button");
-      deleteBtn.className = "hotkey-delete-btn";
+      deleteBtn.className = "row-act del hotkey-delete-btn";
       deleteBtn.innerHTML = '<i class="fas fa-trash-can"></i>';
       deleteBtn.title = "حذف";
       deleteBtn.dataset.key = hk.key;
-      tdActions.appendChild(deleteBtn);
+      actionsWrap.appendChild(deleteBtn);
+      tdActions.appendChild(actionsWrap);
       tr.appendChild(tdActions);
 
       tbody.appendChild(tr);
@@ -961,7 +971,9 @@ async function handleEditClick(e) {
   const saveBtn = document.getElementById("saveHotkeyBtn");
   if (saveBtn) {
     saveBtn.innerHTML = '<i class="fas fa-floppy-disk"></i> تحديث الاختصار';
-    saveBtn.style.backgroundColor = "#ff9800";
+    // ✅ نفس لغة الأزرار الموحدة — تحذير برتقالي عبر صنف .btn-warning
+    // بدل لون inline يدوي يكسر تناسق الموقع
+    saveBtn.classList.add("btn-warning");
   }
 
   document

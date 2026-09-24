@@ -2,27 +2,33 @@
 // js/viewerstats.js — قسم نقاط المشاهدين (Users Points)
 // سجل دائم لكل مشاهد: العملات المتراكمة + عدد متابعيه + أول وآخر نشاط
 // مع بحث وفلتر Min/Max وفلتر "حتى تاريخ معين بالوقت" وتعديل/حذف/بروفايل
+//
+// ✅ التحديث اللحظي بلا إعادة رسم الجدول: كل تفاعل (هدية/تعليق/متابعة)
+// يُحدّث صف المشاهد نفسه فقط عبر viewer-stats-row / viewer-info، والمشاهد
+// الجديد يُضاف فوراً في مكانه حسب النقاط — بدون مسح الجدول كله
 // ============================================================
 import __S from "./state.js";
 import { escapeHtml, fetchWithAuth, showConfirm, showMessage } from "./utils-core.js";
 import { avatarHtml, ensureAvatarToken } from "./overlay-links.js";
-import { showAddonSection } from "./addons-nav.js";
+import { showAddonSection, registerAddonLoader } from "./addons-nav.js";
+import { displayName } from "./user-context.js";
 
 const T = (s) => (window.AppI18n ? AppI18n.t(s) : s);
 
 let loadedOnce = false;
 let rows = []; // البيانات الخام من الخادم
 let dateFilterActive = false;
+let asOfInfo = null; // { asOf, ledgerStart } — بيانات وضع "حتى تاريخ"
+const rowEls = new Map(); // username → <tr> (التحديث الموضعي للصفوف)
 
 function el(id) {
   return document.getElementById(id);
 }
 
 function fmtCount(n) {
+  // ✅ الأرقام تُعرض كاملة بفواصل الآلاف (109,304) — بدون اختصار K/M
   if (n == null) return "—";
-  if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
-  if (n >= 1000) return (n / 1000).toFixed(1) + "K";
-  return String(n);
+  return (parseInt(n, 10) || 0).toLocaleString("en-US");
 }
 
 function fmtDate(d) {
@@ -31,6 +37,11 @@ function fmtDate(d) {
     window.AppI18n && AppI18n.lang === "en" ? "en-US" : "ar-EG",
     { dateStyle: "short", timeStyle: "short" },
   );
+}
+
+function showMessageSafe(text) {
+  if (typeof showMessage === "function")
+    showMessage("<i class='fas fa-triangle-exclamation'></i> " + text);
 }
 
 // ================ تحميل الجدول ================
@@ -56,6 +67,11 @@ async function loadRows() {
     if (data.success) {
       rows = data.rows || [];
       dateFilterActive = !!data.asOf;
+      asOfInfo =
+        data.asOf != null
+          ? { asOf: data.asOf, ledgerStart: data.ledgerStart || null }
+          : null;
+      updateAsOfInfo();
       renderTable();
     }
   } catch (e) {
@@ -63,34 +79,197 @@ async function loadRows() {
   }
 }
 
-function showMessageSafe(text) {
-  if (typeof showMessage === "function")
-    showMessage("<i class='fas fa-triangle-exclamation'></i> " + text);
+// ================ شريط توضيح وضع "حتى تاريخ" ================
+// يشرح للواجهة أن الجدول يعامل القيم كنقاط مسجلة حتى اللحظة المحددة،
+// ويحذر بوضوح لو التاريخ قبل بدء السجل التفصيلي (قيم تقريبية)
+function updateAsOfInfo() {
+  const box = el("vpsAsOfInfo");
+  if (!box) return;
+  if (!dateFilterActive || !asOfInfo?.asOf) {
+    box.style.display = "none";
+    box.innerHTML = "";
+    return;
+  }
+  const dateStr = fmtDate(asOfInfo.asOf);
+  let html =
+    "<i class='fas fa-clock-rotate-left'></i> " +
+    T("النقاط المعروضة هي المجموع المسجل لكل مشاهد حتى") +
+    " <b>" +
+    escapeHtml(dateStr) +
+    "</b>";
+  const ls = asOfInfo.ledgerStart ? new Date(asOfInfo.ledgerStart) : null;
+  if (ls && ls.getTime() > new Date(asOfInfo.asOf).getTime()) {
+    html +=
+      "<br><i class='fas fa-circle-info'></i> " +
+      T("السجل التفصيلي يبدأ من") +
+      " <b>" +
+      escapeHtml(fmtDate(asOfInfo.ledgerStart)) +
+      "</b> — " +
+      T("قيم المشاهدين الأقدم من ذلك تقريبية (≈ إجماليهم الحالي)");
+  }
+  box.innerHTML = html;
+  box.style.display = "block";
 }
 
-// ================ الفلاتر ================
-function filteredRows() {
+// ================ الفلاتر (إظهار/إخفاء الصفوف بلا إعادة بناء) ================
+function rowMatches(r) {
   const search = (el("vpsSearch")?.value || "").trim().toLowerCase();
   const min = parseInt(el("vpsMin")?.value, 10);
   const max = parseInt(el("vpsMax")?.value, 10);
-  return rows.filter((r) => {
-    if (search) {
-      const hay = `${r.nickname || ""} ${r.username}`.toLowerCase();
-      if (!hay.includes(search)) return false;
-    }
-    if (Number.isFinite(min) && r.coins < min) return false;
-    if (Number.isFinite(max) && max > 0 && r.coins > max) return false;
-    return true;
-  });
+  if (search) {
+    const hay = `${r.nickname || ""} ${r.username}`.toLowerCase();
+    if (!hay.includes(search)) return false;
+  }
+  if (Number.isFinite(min) && r.coins < min) return false;
+  if (Number.isFinite(max) && max > 0 && r.coins > max) return false;
+  return true;
 }
 
+// ✅ الفلترة بإخفاء الصفوف المخالفة فقط — الكتابة في البحث لا تعيد رسم الجدول
+function applyFilters() {
+  const tbody = el("vpsTableBody");
+  if (!tbody) return;
+  let visible = 0;
+  for (const r of rows) {
+    const tr = rowEls.get(r.username);
+    if (!tr) continue;
+    const show = rowMatches(r);
+    tr.style.display = show ? "" : "none";
+    if (show) visible++;
+  }
+  const count = el("vpsCount");
+  if (count) count.textContent = visible;
+  // لو مفيش أي صف ظاهر — أظهر رسالة الفراغ
+  syncEmptyRow(visible);
+}
+
+function syncEmptyRow(visible) {
+  const tbody = el("vpsTableBody");
+  if (!tbody) return;
+  let emptyTr = tbody.querySelector("tr.vps-empty-row");
+  if (!visible && rows.length) {
+    if (!emptyTr) {
+      emptyTr = document.createElement("tr");
+      emptyTr.className = "vps-empty-row";
+      emptyTr.innerHTML =
+        '<td colspan="9" class="vps-empty">' +
+        T("لا توجد بيانات مطابقة — تجمع تلقائياً من أحداث البث") +
+        "</td>";
+      tbody.appendChild(emptyTr);
+    }
+    emptyTr.style.display = "";
+  } else if (emptyTr) {
+    emptyTr.remove();
+  }
+}
+
+// ================ بناء الصفوف ================
+function medal(rank) {
+  if (rank === 1)
+    return '<span class="vps-rank r1"><i class="fas fa-crown"></i></span>';
+  if (rank === 2)
+    return '<span class="vps-rank r2"><i class="fas fa-award"></i></span>';
+  if (rank === 3)
+    return '<span class="vps-rank r3"><i class="fas fa-medal"></i></span>';
+  return `<span class="vps-rank">${rank}</span>`;
+}
+
+function coinsCellHtml(r) {
+  // ✅ ≈ بجوار القيمة = مشاهد قديم قبل بدء السجل التفصيلي — القيمة
+  // تقريبية (الإجمالي الحالي) لا دقيقة من دفعات ذلك التاريخ
+  return (
+    `<span class="vps-coins"><i class="fas fa-coins"></i> ${fmtCount(r.coins)}` +
+    (r.approx
+      ? ` <i class="fas fa-circle-info vps-approx" title="${T(
+          "قيمة تقريبية — قبل بدء السجل التفصيلي",
+        )}"></i>`
+      : "") +
+    "</span>"
+  );
+}
+
+function rowHtml(r) {
+  const u = escapeHtml(r.username);
+  return (
+    '<td class="vps-rank-cell">' + medal(0) + "</td>" +
+    '<td class="vps-avatar-cell">' +
+    // ✅ الصورة من المصدر الموحد (رابط أصلي → بروكسي → أيقونة)
+    avatarHtml(r.username, r.avatar) +
+    "</td>" +
+    '<td class="vps-user">' +
+    '<span class="vps-names"><b>' +
+    escapeHtml(displayName(r.nickname, r.username)) +
+    "</b><i>@" + u + "</i></span>" +
+    "</td>" +
+    `<td>${coinsCellHtml(r)}</td>` +
+    `<td class="vps-followers">${r.followersCount != null ? '<i class="fas fa-users"></i> ' + fmtCount(r.followersCount) : "—"}</td>` +
+    // ✅ خليتا أول/آخر نشاط لعرض التاريخ فقط — الاختيار من فلتر البحث
+    // الزمني الموحد «اعرض العملات حتى تاريخ معين»
+    `<td class="vps-date"><i class="fas fa-calendar-days"></i> ${r.firstActivity ? fmtDate(r.firstActivity) : "—"}</td>` +
+    `<td class="vps-date"><i class="fas fa-calendar-days"></i> ${r.lastActivity ? fmtDate(r.lastActivity) : "—"}</td>` +
+    '<td class="vps-link">' +
+    `<a class="vps-open" href="https://www.tiktok.com/@${u}" target="_blank" rel="noopener noreferrer" title="${T("فتح البروفايل")}"><i class="fas fa-up-right-from-square"></i></a>` +
+    "</td>" +
+    // ✅ عمود الخيارات أخيراً — في آخر الصف (يسار الجدول RTL) متسقاً مع
+    // باقي جداول الموقع بدل أول عمود ملاصق لحد الطاولة
+    '<td class="vps-options" style="min-width: 140px;">' +
+    // ✅ توسيط مضمون بتضمينه inline — يتغلب على أي CSS قديم/ناقص في أي نسخة
+    '<div class="row-actions" style="display: flex; align-items: center; justify-content: center; width: 100%;">' +
+    `<button class="vps-act edit" data-act="edit" data-u="${u}" title="${T("تعديل العملات")}"><i class="fas fa-pen-to-square"></i></button>` +
+    `<button class="vps-act del" data-act="del" data-u="${u}" title="${T("حذف من القائمة")}"><i class="fas fa-trash"></i></button>` +
+    "</div>" +
+    "</td>"
+  );
+}
+
+// ✅ تحديث أوسمة الترتيب (1-3) حسب الترتيب الحالي — بعد إضافة/إعادة ترتيب صف
+function refreshRankBadges() {
+  const tbody = el("vpsTableBody");
+  if (!tbody) return;
+  let rank = 0;
+  for (const tr of tbody.children) {
+    if (tr.style.display === "none" || tr.classList.contains("vps-empty-row"))
+      continue;
+    rank++;
+    const cell = tr.querySelector(".vps-rank-cell");
+    if (cell) cell.innerHTML = medal(rank);
+  }
+}
+
+// ✅ إعادة تموضع صف واحد حسب النقاط (ترتيب تنازلي) — يلمس صفه فقط
+function repositionRow(tr, r) {
+  const tbody = el("vpsTableBody");
+  if (!tbody || !tr) return;
+  tr.dataset.coins = r.coins || 0;
+  const others = [...tbody.children].filter(
+    (x) => x !== tr && !x.classList.contains("vps-empty-row"),
+  );
+  let before = null;
+  for (const other of others) {
+    const c = parseInt(other.dataset.coins || "0", 10) || 0;
+    if ((r.coins || 0) >= c) {
+      before = other;
+      break;
+    }
+  }
+  if (before) tbody.insertBefore(tr, before);
+  else {
+    const emptyTr = tbody.querySelector("tr.vps-empty-row");
+    if (emptyTr) tbody.insertBefore(tr, emptyTr);
+    else tbody.appendChild(tr);
+  }
+  refreshRankBadges();
+}
+
+// ================ الرسم الكامل (أول تحميل/تغيير فلتر التاريخ فقط) ================
 function renderTable() {
   const tbody = el("vpsTableBody");
   if (!tbody) return;
-  const list = filteredRows();
+  const list = filteredRowsAll();
   const count = el("vpsCount");
   if (count) count.textContent = list.length;
 
+  rowEls.clear();
   if (!list.length) {
     tbody.innerHTML =
       '<tr><td colspan="9" class="vps-empty">' +
@@ -99,49 +278,26 @@ function renderTable() {
     return;
   }
 
-  const medal = (rank) => {
-    if (rank === 1)
-      return '<span class="vps-rank r1"><i class="fas fa-crown"></i></span>';
-    if (rank === 2)
-      return '<span class="vps-rank r2"><i class="fas fa-award"></i></span>';
-    if (rank === 3)
-      return '<span class="vps-rank r3"><i class="fas fa-medal"></i></span>';
-    return `<span class="vps-rank">${rank}</span>`;
-  };
-
-  tbody.innerHTML = list
-    .map((r, i) => {
-      const u = escapeHtml(r.username);
-      return (
-        "<tr>" +
-        '<td class="vps-options">' +
-        `<button class="vps-act edit" data-act="edit" data-u="${u}" title="${T("تعديل العملات")}"><i class="fas fa-pen-to-square"></i></button>` +
-        `<button class="vps-act del" data-act="del" data-u="${u}" title="${T("حذف من القائمة")}"><i class="fas fa-trash"></i></button>` +
-        "</td>" +
-        '<td class="vps-rank-cell">' + medal(i + 1) + "</td>" +
-        '<td class="vps-avatar-cell">' +
-        // ✅ الصورة من المصدر الموحد (رابط أصلي → بروكسي → أيقونة)
-        avatarHtml(r.username, r.avatar) +
-        "</td>" +
-        '<td class="vps-user">' +
-        '<span class="vps-names"><b>' +
-        escapeHtml(r.nickname || r.username) +
-        "</b><i>@" + u + "</i></span>" +
-        "</td>" +
-        `<td><span class="vps-coins"><i class="fas fa-coins"></i> ${fmtCount(r.coins)}</span></td>` +
-        `<td class="vps-followers">${r.followersCount != null ? "👥 " + fmtCount(r.followersCount) : "—"}</td>` +
-        `<td class="vps-date">📅 ${fmtDate(r.firstActivity)}</td>` +
-        `<td class="vps-date">📅 ${fmtDate(r.lastActivity)}</td>` +
-        '<td class="vps-link">' +
-        `<a class="vps-open" href="https://www.tiktok.com/@${u}" target="_blank" rel="noopener noreferrer" title="${T("فتح البروفايل")}"><i class="fas fa-up-right-from-square"></i></a>` +
-        "</td>" +
-        "</tr>"
-      );
-    })
-    .join("");
+  tbody.innerHTML = "";
+  for (const r of list) {
+    const tr = document.createElement("tr");
+    tr.dataset.coins = r.coins || 0;
+    tr.innerHTML = rowHtml(r);
+    rowEls.set(r.username, tr);
+    tbody.appendChild(tr);
+  }
+  // ✅ طبّق فلاتر البحث/المدى المخزنة بعد أي إعادة بناء ثم أوسمة الترتيب
+  // (الترتيب يُحسب للصفوف الظاهرة فقط — بعد الإخفاء لا قبله)
+  applyFilters();
+  refreshRankBadges();
 }
 
-// ================ تعديل العملات ================
+// كل الصفوف (بلا فلتر بحث — الفلترة الآن بالإخفاء في applyFilters)
+function filteredRowsAll() {
+  return rows;
+}
+
+// ================ التعديل داخل الصف ================
 // ✅ تمرير زر البدء نفسه بدل بناء selector من اليوزر الخام — اليوزرات
 // التي تحوي " أو \ كانت تكسر querySelector فلا يفتح المحرر إطلاقاً
 function beginEdit(editBtn) {
@@ -172,10 +328,9 @@ async function saveEdit(saveBtn) {
     });
     const data = await res.json();
     if (data.success) {
-      showMessageSafe(
-        "<i class='fas fa-check'></i> " + T("تم الحفظ"),
-      );
-      await loadRows();
+      showMessageSafe("<i class='fas fa-check'></i> " + T("تم الحفظ"));
+      // ✅ حدّث صف هذا المشاهد فقط محلياً بدل إعادة تحميل الجدول كله
+      upsertRow({ username, coins, lastActivity: new Date().toISOString() });
     } else showMessageSafe(data.message || T("فشل الحفظ"));
   } catch (e) {
     showMessageSafe(T("فشل الحفظ"));
@@ -193,36 +348,128 @@ async function deleteRow(username) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username }),
     });
-    await loadRows();
+    // ✅ إزالة الصف من الذاكرة ومن الجدول مباشرة
+    rows = rows.filter((r) => r.username !== username);
+    rowEls.get(username)?.remove();
+    rowEls.delete(username);
+    refreshRankBadges();
+    applyFilters();
   } catch (e) {}
 }
 
+// ============================================================
+// ✅ التحديث الموضعي لصف واحد — من أحداث السوكيت (هدية/تعليق/متابعة)
+// يُحدّث خلايا الصف نفسه، ويضيف المشاهد الجديد فوراً في مكانه حسب النقاط
+// ============================================================
+function upsertRow(data, { keepCoins = false } = {}) {
+  if (!data?.username) return;
+  // وضع "حتى تاريخ" يمثل لقطة تاريخية — التحديثات الحية لا تنطبق عليه
+  if (dateFilterActive) return;
+
+  let r = rows.find((x) => x.username === data.username);
+  if (!r) {
+    r = {
+      username: data.username,
+      nickname: data.nickname || data.username,
+      avatar: data.avatar || "",
+      followersCount: data.followersCount ?? null,
+      coins: keepCoins ? 0 : data.coins || 0,
+      firstActivity: data.firstActivity || null,
+      lastActivity: data.lastActivity || null,
+      approx: false,
+    };
+    rows.push(r);
+  } else {
+    if (data.nickname) r.nickname = data.nickname;
+    if (data.avatar) r.avatar = data.avatar;
+    if (data.followersCount != null) r.followersCount = data.followersCount;
+    if (!keepCoins && data.coins != null) r.coins = data.coins;
+    if (data.firstActivity) r.firstActivity = data.firstActivity;
+    if (data.lastActivity) r.lastActivity = data.lastActivity;
+  }
+
+  const tbody = el("vpsTableBody");
+  if (!tbody) return;
+  // لا نلمس الصف أثناء تحرير النقاط فيه
+  const editing = tbody.querySelector(".vps-coins-edit");
+  const editingRow = editing?.closest("tr");
+
+  let tr = rowEls.get(r.username);
+  if (!tr) {
+    // مشاهد جديد — أضف صفه فوراً
+    tbody.querySelector("tr.vps-empty-row")?.remove();
+    tr = document.createElement("tr");
+    tr.dataset.coins = r.coins || 0;
+    tr.innerHTML = rowHtml(r);
+    rowEls.set(r.username, tr);
+    repositionRow(tr, r);
+  } else if (tr !== editingRow) {
+    // حدّث خلايا الصف الموجود في مكانه (بدون إعادة بناء الجدول)
+    tr.innerHTML = rowHtml(r);
+    repositionRow(tr, r);
+  }
+  applyFilters();
+}
+
+// ✅ من أحداث viewer-info اللحظية: اسم/صورة/متابعون فقط — بلا مساس بالنقاط
+// مع خفض التردد (ثانية لكل مشاهد) — الأحداث تتوالى بسرعة خلال اللايف
+const _livePending = new Map(); // username → آخر حالة
+const _liveTimers = new Map(); // username → مؤقت
+export function applyLiveProfile(profile) {
+  if (!profile?.username) return;
+  const key = String(profile.username).toLowerCase();
+  _livePending.set(key, profile);
+  if (_liveTimers.has(key)) return;
+  _liveTimers.set(
+    key,
+    setTimeout(() => {
+      _liveTimers.delete(key);
+      const p = _livePending.get(key);
+      if (p) {
+        _livePending.delete(key);
+        applyLiveProfileNow(p);
+      }
+    }, 1000),
+  );
+}
+
+function applyLiveProfileNow(profile) {
+  upsertRow(
+    {
+      username: profile.username,
+      nickname: profile.nickname,
+      avatar: profile.avatar,
+      followersCount: profile.followersCount,
+      lastActivity: profile.lastSeen ? new Date(profile.lastSeen) : null,
+    },
+    { keepCoins: true },
+  );
+}
+
 // ================ الفتح والربط ================
+// ✅ ضمان التحميل مرة واحدة — من فتح القسم ومن تاب "الكل"
+export function ensureViewerStatsLoaded() {
+  if (!loadedOnce) {
+    loadedOnce = true;
+    loadRows();
+  }
+}
+
 function openSection() {
-  showAddonSection("startSectionViewerpoints", ".viewerpoints", () => {
-    if (!loadedOnce) {
-      loadedOnce = true;
-      loadRows();
-    }
-  });
+  showAddonSection("startSectionViewerpoints", ".viewerpoints", ensureViewerStatsLoaded);
 }
 
 function init() {
   const nav = document.querySelector(".viewerpoints");
   if (nav) nav.addEventListener("click", openSection);
 
-  // ✅ التحديث الفوري انتقل إلى socket.js (refreshFromSocket) — المستمع
-  // القديم هنا كان ميتاً لأن __S.frontendSocket يُنشأ بعد تحميل الموديول
+  // ✅ تاب "الكل" يعرض القسم ويحمّل بياناته (نفس محمّل الفتح)
+  registerAddonLoader("startSectionViewerpoints", ensureViewerStatsLoaded);
 
-  // ✅ الفلاتر لا تعيد البناء أثناء تعديل عملات مفتوح — نفس حماية
-  // refreshFromSocket (كان الكتابة في البحث تمسح المحرر وقيمته غير المحفوظة)
-  const rerenderIfIdle = () => {
-    if (document.querySelector(".vps-coins-edit")) return;
-    renderTable();
-  };
-  el("vpsSearch")?.addEventListener("input", rerenderIfIdle);
-  el("vpsMin")?.addEventListener("input", rerenderIfIdle);
-  el("vpsMax")?.addEventListener("input", rerenderIfIdle);
+  // ✅ الفلاتر تخفي/تظهر الصفوف فقط — لا إعادة بناء للجدول أثناء الكتابة
+  el("vpsSearch")?.addEventListener("input", applyFilters);
+  el("vpsMin")?.addEventListener("input", applyFilters);
+  el("vpsMax")?.addEventListener("input", applyFilters);
   el("vpsDateApply")?.addEventListener("click", () => {
     dateFilterActive = !!el("vpsDate").value;
     loadRows();
@@ -244,6 +491,7 @@ function init() {
         body: JSON.stringify({}),
       });
       rows = [];
+      rowEls.clear();
       renderTable();
       showMessageSafe(T("تم حذف جميع السجلات"));
     } catch (e) {
@@ -257,23 +505,27 @@ function init() {
     const act = btn.dataset.act;
     if (act === "edit") beginEdit(btn);
     else if (act === "save") saveEdit(btn);
-    else if (act === "cancel") renderTable();
-    else if (act === "del") deleteRow(btn.dataset.u);
+    else if (act === "cancel") {
+      // استعادة خلايا الصف كما كانت — من بيانات الذاكرة
+      const tr = btn.closest("tr");
+      const username = btn.parentNode?.querySelector(".vps-act.save")?.dataset.u;
+      const r = rows.find((x) => x.username === username);
+      if (tr && r) tr.innerHTML = rowHtml(r);
+    } else if (act === "del") deleteRow(btn.dataset.u);
   });
 }
 
-// ✅ تحديث فوري عند بث السيرفر حدث تغيّر النقاط (يُستدعى من socket.js —
-// يعيش ويتجدد مع السوكيت بدل مستمع مربوط بموديول قبل وجود سوكيت)
-// تخفيف 2 ثانية + تجاهل أثناء تعديل صف حتى لا تُهدب المدخلات المفتوحة
-let refreshTimer = null;
+// ✅ بث السيرفر صفوفاً محدثة (بعد كل دفعة حفظ) — يُستدعى من socket.js
+export function applyStatsRow(row) {
+  upsertRow(row);
+}
+
+// ✅ تحديث فوري عند بث السيرفر حدث تغيّر النقاط — بقيت كنقطة أمان:
+// مع تحديث الصف الواحد (viewer-stats-row) لا حاجة لإعادة تحميل الجدول كله
 export function refreshFromSocket() {
   if (!loadedOnce) return;
-  if (document.querySelector(".vps-coins-edit")) return;
-  if (refreshTimer) return;
-  refreshTimer = setTimeout(() => {
-    refreshTimer = null;
-    loadRows();
-  }, 2000);
+  // وضع "حتى تاريخ": اللقطة التاريخية لا تتحدث صفياً — أعد الجلب كاملاً
+  if (dateFilterActive) loadRows();
 }
 
 init();

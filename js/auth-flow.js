@@ -130,6 +130,17 @@ async function updateAuthUI() {
               "none";
             const s5 = document.getElementById("startSection5");
             if (s5) s5.style.display = "none";
+            // ✅ إخفاء أقسام الإضافات (اللايف فيد/TTS/الأغاني/النقاط) —
+            // كانت تبقى ظاهرة متداخلة مع صفحة الأدمن
+            for (const addonId of [
+              "startSectionLivefeed",
+              "startSectionTts",
+              "startSectionSongs",
+              "startSectionViewerpoints",
+            ]) {
+              const addonEl = document.getElementById(addonId);
+              if (addonEl) addonEl.style.display = "none";
+            }
             document
               .querySelectorAll(".button-select-slide")
               .forEach((el) => el.classList.remove("active"));
@@ -145,6 +156,9 @@ async function updateAuthUI() {
       const showUpgrade = subscription.status !== "active";
       if (upgradeBtn)
         upgradeBtn.style.display = showUpgrade ? "inline-flex" : "none";
+
+      // ✅ إشعار انتهاء الاشتراك (تحذير قبل يومين / فترة سماح 3 أيام)
+      showSubscriptionNotification(subscription);
 
       let planText = "";
       if (subscription.status === "free") planText = "مجاني";
@@ -340,3 +354,70 @@ function withHotkeyChange(work) {
 }
 
 export { bindAgent, updateAuthUI, withSectionSkeleton, withTableSkeleton, withHotkeySkeleton, _hotkeyListRun, withHotkeyChange };
+// ============================================================
+// ✅ إشعار انتهاء الاشتراك — شريط عائم ثابت أعلى الشاشة
+// ── تحذير قبل 48 ساعة من الانتهاء (أحمر مثل إشعار الأدمن)
+// ── فترة سماح 72 ساعة (3 أيام) بعد الانتهاء
+// عدّاد حي بالثانية + زر X للإغلاق — يظهر في كل فتح للبرنامج
+// ============================================================
+function showSubscriptionNotification(subscription) {
+  const old = document.getElementById("subExpiryNotification");
+  if (old) old.remove();
+
+  const status = subscription?.status;
+  if (status !== "warning" && status !== "grace") return;
+
+  const isWarning = status === "warning";
+  const expiry = subscription.expiry ? new Date(subscription.expiry) : null;
+  const graceEnd = subscription.graceEnd ? new Date(subscription.graceEnd) : null;
+  const target = isWarning ? expiry : graceEnd;
+  if (!target) return;
+
+  const isEn = window.AppI18n && AppI18n.lang === "en";
+  const label = isEn
+    ? (isWarning ? "Subscription expires in:" : "Subscription ended — grace period:")
+    : (isWarning ? "سيتم انتهاء الاشتراك بعد:" : "انتهى الاشتراك — فترة سماح للتجديد:");
+
+  const bar = document.createElement("div");
+  bar.id = "subExpiryNotification";
+  bar.style.cssText = [
+    "position:fixed", "top:0", "left:0", "right:0", "z-index:100000",
+    "display:flex", "align-items:center", "justify-content:center",
+    "gap:8px", "padding:8px 20px", "font-size:13px", "font-weight:700",
+    "color:#fff", "user-select:none", "line-height:1.4",
+    "background:linear-gradient(135deg,rgba(120,8,30,.97) 0%,rgba(220,53,69,.97) 45%,rgba(150,12,40,.97) 100%)",
+    "backdrop-filter:blur(10px)", "-webkit-backdrop-filter:blur(10px)",
+    "border-bottom:1px solid rgba(255,255,255,0.15)",
+    "box-shadow:0 2px 16px rgba(0,0,0,0.35)",
+  ].join(";");
+
+  const iconHtml = isWarning
+    ? '<i class="fas fa-triangle-exclamation" style="font-size:14px;flex:none;align-self:center;"></i>'
+    : '<i class="fas fa-hourglass-half" style="font-size:14px;flex:none;align-self:center;"></i>';
+
+  const labelHtml = '<span style="flex:none;align-self:center;">' + label + '</span>';
+
+  bar.innerHTML =
+    iconHtml + labelHtml +
+    '<span id="subExpiryCountdown" style="font-family:monospace;font-size:15px;font-weight:900;letter-spacing:1.5px;flex:none;align-self:center;line-height:1;direction:ltr;"></span>' +
+    '<button id="subExpiryClose" style="position:absolute;inset-inline-end:14px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,0.12);border:none;color:#fff;width:22px;height:22px;border-radius:50%;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;align-self:center;" title="Close"><i class="fas fa-xmark"></i></button>';
+
+  document.body.appendChild(bar);
+
+  bar.querySelector("#subExpiryClose").addEventListener("click", () => {
+    bar.remove();
+    if (window._subExpTick) { clearInterval(window._subExpTick); window._subExpTick = null; }
+  });
+
+  const cd = bar.querySelector("#subExpiryCountdown");
+  function tick() {
+    const diff = target.getTime() - Date.now();
+    if (diff <= 0) { cd.textContent = "00:00:00"; return; }
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
+    cd.textContent = String(h).padStart(2,"0") + ":" + String(m).padStart(2,"0") + ":" + String(s).padStart(2,"0");
+  }
+  tick();
+  window._subExpTick = setInterval(tick, 1000);
+}

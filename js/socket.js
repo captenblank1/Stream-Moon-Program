@@ -18,6 +18,8 @@ import { escapeHtml } from "./utils-core.js";
 import { buildAdminUserActionsHtml } from "./admin.js";
 import { loadAdminNotifications } from "./admin.js";
 import { updateStreamerImages } from "./streamer.js";
+// ✅ كتابة هوية/حالة الاتصال عبر السياق الموحد user-context.js
+import { setConnectionStatus, setSidebarUsername } from "./user-context.js";
 import { showBlockScreen } from "./notifications.js";
 import { getDismissedNotifications } from "./notifications.js";
 import { showNotification } from "./notifications.js";
@@ -27,7 +29,7 @@ import { hideNotification } from "./notifications.js";
 import { applyContactLinksVisibility } from "./notifications.js";
 import { safeMediaUrl } from "./utils-core.js";
 import { forceSessionLogout } from "./notifications.js";
-import { refreshFromSocket } from "./viewerstats.js";
+import { refreshFromSocket, applyStatsRow, applyLiveProfile } from "./viewerstats.js";
 
 // ============================================================
 // دوال الاتصال بـ Socket.IO
@@ -96,12 +98,23 @@ async function connectFrontendSocket() {
         .catch((err) => console.warn("فشل جلب userId", err));
     });
 
-    // ===== ✅ نقاط المشاهدين: تحديث لحظي للجدول عند تغيّر النقاط =====
-    // (السيرفر يبث viewer-stats-updated بعد كل دفعة حفظ — المستمع هنا
-    // يتجدد مع كل إنشاء للسوكيت بدل مستمع ميت من لحظة تحميل الموديول)
+    // ===== ✅ نقاط المشاهدين: تحديث لحظي صفياً بلا إعادة رسم الجدول =====
+    // (viewer-stats-row = صف محدث واحد بعد كل دفعة حفظ — الواجهة تحدّث
+    // صف المشاهد نفسه أو تضيف مشهداً جديداً فوراً؛ وviewer-info = اسم/صورة/
+    // متابعون لحظية من اللايف؛ refreshFromSocket بقيت أماناً لوضع "حتى تاريخ")
+    __S.frontendSocket.on("viewer-stats-row", (data) => {
+      try {
+        applyStatsRow(data?.row);
+      } catch (e) {}
+    });
     __S.frontendSocket.on("viewer-stats-updated", () => {
       try {
         refreshFromSocket();
+      } catch (e) {}
+    });
+    __S.frontendSocket.on("viewer-info", (data) => {
+      try {
+        applyLiveProfile(data?.profile);
       } catch (e) {}
     });
 
@@ -282,13 +295,8 @@ async function connectFrontendSocket() {
     __S.frontendSocket.on("live-status-updated", (data) => {
       console.log("📡 [LIVE] استلام تحديث فوري:", data);
 
-      const connectText = document.getElementById("connect-text");
-      const tiktokDisplay = document.getElementById("tiktok-display");
       const userInput = document.getElementById("user-tiktok");
       const connectProfile = document.getElementById("connect-profile-aside");
-      const tiktokDisplayAside = document.getElementById(
-        "tiktok-display-aside",
-      );
 
       if (data.isLive) {
         // ===== حالة الاتصال =====
@@ -297,15 +305,10 @@ async function connectFrontendSocket() {
         // نتيجة tiktok-connect-result (كان الزر يبقى مقفولاً حتى تصل)
         unlockConnectUI();
         setConnectBtnState("disconnect");
-        connectText.textContent = window.AppI18n
-          ? AppI18n.t("Connected")
-          : "Connected";
-        connectText.style.color = "#1dd9e6e1";
+        setConnectionStatus("Connected", "#1dd9e6e1");
         if (data.username) {
-          tiktokDisplay.textContent = data.username;
+          setSidebarUsername(data.username);
           if (userInput) userInput.value = data.username;
-          if (tiktokDisplayAside)
-            tiktokDisplayAside.textContent = data.username;
         }
         if (connectProfile) {
           connectProfile.style.pointerEvents = "none";
@@ -314,22 +317,14 @@ async function connectFrontendSocket() {
       } else if (data.reconnecting) {
         // ✅ حالة إعادة الاتصال التلقائي: لا نغيّر الزر إلى Connect فوراً
         // الخادم سيعيد الاتصال خلال ثوانٍ — نعرض حالة انتظار فقط
-        connectText.textContent = window.AppI18n
-          ? AppI18n.t("Reconnecting...")
-          : "Reconnecting...";
-        connectText.style.color = "#ffa500";
+        setConnectionStatus("Reconnecting...", "#ffa500");
         setConnectBtnState("disconnect");
         console.log("🔄 [LIVE] قطع مؤقت — جاري إعادة الاتصال تلقائياً");
       } else {
         // ===== حالة قطع الاتصال =====
         __S.isLiveConnected = false;
         setConnectBtnState("connect");
-        connectText.textContent = window.AppI18n
-          ? AppI18n.t("Disconnected")
-          : "Disconnected";
-        connectText.style.color = "red";
-        if (tiktokDisplay) tiktokDisplay.textContent = "";
-        if (tiktokDisplayAside) tiktokDisplayAside.textContent = "";
+        setConnectionStatus("Disconnected", "red");
         if (connectProfile) {
           connectProfile.style.pointerEvents = "auto";
           connectProfile.style.opacity = 1;
@@ -438,6 +433,18 @@ async function connectFrontendSocket() {
         audio.volume = Math.min(1, Math.max(0, (payload.volume || 100) / 100));
         audio.crossOrigin = "anonymous";
         await audio.play();
+        // ✅ مدة العرض تقص الصوت أيضاً — إيقاف تلقائي بعد المدة المحددة
+        // (نفس سلوك الفيديو والتراكب) — 0/ناقص = بلا حد، يُكمل للنهاية
+        const dur = Math.max(0, parseInt(payload.duration) || 0);
+        let stopTimer = null;
+        if (dur > 0) {
+          stopTimer = setTimeout(() => {
+            try { audio.pause(); } catch (e) {}
+          }, dur * 1000);
+        }
+        audio.onended = () => {
+          if (stopTimer) clearTimeout(stopTimer);
+        };
         // أخبر السيرفر أن الصوت اشتغل فعلاً (يظهر ✅ في لوج الباك اند)
         try { __S.frontendSocket.emit("sound-ack", { id: payload.id }); } catch (e) {}
         console.log(`🔊 تم تشغيل الصوت في الفرونت: ${finalUrl}`);

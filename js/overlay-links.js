@@ -10,67 +10,38 @@ let _cid = null;
 let _promise = null;
 
 // ============================================================
-// ✅ هوية المشاهد للجداول — المصدر الموحد للصورة/الاسم/اليوزر.
-// avatarHtml: سلسلة بدائل للصورة (رابط تيك توك → بروكسي الخادم →
-// أيقونة مستخدم) تُستخدم في جداول النقاط والمميزين ونقاط المشاهدين
+// ✅ هوية المشاهد للجداول — المنطق انتقل للسياق الموحد user-context.js
+// (المصدر الوحيد للاسم المعروض وسلسلة بدائل الصورة). الدوال هنا أُعاد
+// تصديرها للتوافق مع كل الموديولات التي تستوردها من هذا الملف
 // ============================================================
-let _avatarToken = "";
+import { avatarHtml as _avatarHtml, ensureAvatarToken as _ensureAvatarToken, setAvatarToken } from "./user-context.js";
 
 export async function ensureAvatarToken() {
   try {
-    _avatarToken = (await getScreenTokenCached()) || "";
+    // getScreenTokenCached معرَّف في هذا الملف أدناه (function declaration — hoisted)
+    setAvatarToken((await getScreenTokenCached()) || "");
   } catch (e) {}
-  return _avatarToken;
-}
-
-// سلسلة بدائل الصور (يُستدعى من onerror): الأصلي → البروكسي → الإزالة
-if (typeof window !== "undefined") {
-  window.__pbAvatarErr = function (img) {
-    if (!img.dataset.stage && img.dataset.proxy) {
-      img.dataset.stage = "1";
-      img.src = img.dataset.proxy;
-      return;
-    }
-    img.remove();
-  };
+  return _ensureAvatarToken();
 }
 
 export function avatarHtml(username, avatarUrl) {
-  const style =
-    "display:inline-flex;align-items:center;justify-content:center;overflow:hidden;position:relative;width:32px;height:32px;background:#2a2d3a;color:#ffd166;";
-  const fallback = '<i class="fas fa-user" style="opacity:.85;"></i>';
-  const u = encodeURIComponent(
-    String(username || "").trim().toLowerCase().slice(0, 60),
-  );
-  const direct = String(avatarUrl || "").trim();
-  const proxy =
-    u && _avatarToken
-      ? `${__S.API_BASE}/api/songs/avatar?u=${u}&token=${encodeURIComponent(
-          _avatarToken,
-        )}`
-      : "";
-  const imgAttrs =
-    'alt="" referrerpolicy="no-referrer" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" onerror="window.__pbAvatarErr && window.__pbAvatarErr(this)"';
-  if (direct)
-    return (
-      `<span class="vps-avatar" style="${style}">${fallback}` +
-      `<img src="${escapeHtml(
-        direct,
-      )}" data-proxy="${escapeHtml(proxy)}" ${imgAttrs}></span>`
-    );
-  if (proxy)
-    return (
-      `<span class="vps-avatar" style="${style}">` +
-      `<img src="${proxy}" ${imgAttrs}></span>`
-    );
-  return `<span class="vps-avatar" style="${style}">${fallback}</span>`;
+  return _avatarHtml(username, avatarUrl);
 }
 
-// أساس رابط الأوفرلايز = السيرفر الذي التطبيق متصل به فعلاً (API_BASE):
-// - متصل بالحساب السحابي → الروابط على الدومين https://www.streammoon.net
-// - متصل بسيرفر محلي → الروابط محلية (الدومين لا يعرف بياناتك المحلية — 404)
+// أساس رابط الأوفرلايز:
+// - ✅ متصل بالحساب السحابي → الروابط على الدومين https://www.streammoon.net
+//   (نفس روابط الشاشات — الأوفرلايز تُفتح في OBS بالدومين لا برابط الباك إند)
+// - متصل بسيرفر محلي (localhost/شبكة محلية) → الروابط محلية، فالدومين
+//   لا يعرف بيانات السيرفر المحلي (404)
 export function overlayBase() {
   const api = String(__S.API_BASE || "").trim();
+  const isLocalApi = /^(https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/i.test(
+    api,
+  );
+  if (api && !isLocalApi) {
+    const widget = String(__S.WIDGET_BASE || "").trim();
+    if (/^https?:\/\//i.test(widget)) return widget;
+  }
   if (/^https?:\/\//i.test(api)) return api;
   if (
     typeof window !== "undefined" &&
@@ -78,8 +49,8 @@ export function overlayBase() {
   ) {
     return window.location.origin;
   }
-  const widget = String(__S.WIDGET_BASE || "").trim();
-  if (/^https?:\/\//i.test(widget)) return widget;
+  const widget2 = String(__S.WIDGET_BASE || "").trim();
+  if (/^https?:\/\//i.test(widget2)) return widget2;
   return api;
 }
 

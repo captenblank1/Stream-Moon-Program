@@ -25,7 +25,7 @@
   display: grid;
   grid-template-columns: 1fr;
   gap: 18px;
-  max-width: 900px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
@@ -109,14 +109,14 @@
   font-weight: 700;
 }
 
+/* ✅ الأزرار في المنتصف — لا ملاصقة للحد، وبنفس مقاسات .btn الموحدة */
 .sr-controls {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  justify-content: center;
 }
 .sr-controls .btn {
-  padding: 8px 14px;
-  font-size: 13px;
   display: inline-flex;
   align-items: center;
   gap: 6px;

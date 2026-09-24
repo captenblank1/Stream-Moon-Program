@@ -6,6 +6,7 @@
 import "./config.js";
 import "./state.js";
 import "./utils-core.js";
+import "./user-context.js";
 import "./pairing.js";
 import "./update-banner.js";
 import "./captcha.js";
@@ -30,8 +31,8 @@ import "./init.js";
 import "./misc.js";
 import "./sidebar.js";
 import "./socket.js";
-// ✅ أقسام الإضافات: اللايف فيد + قراءة التعليقات + طلبات الأغاني
-// (بعد sidebar.js كي تلفّ معالجات التنقل القديمة وتخفي الأقسام الجديدة)
+// ✅ أقسام الإضافات: اللايف فيد + قراءة التعليقات + طلبات الأغاني + نقاط المشاهدين
+// (sidebar.js يستورد من addons-nav.js مباشرة — لا اعتماد بعد اليوم على ترتيب اللفّ)
 import "./addons-nav.js";
 import "./livefeed.js";
 import "./tts.js";

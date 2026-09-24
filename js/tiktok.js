@@ -5,6 +5,8 @@ import { fetchWithAuth, showMessage, showConfirm } from "./utils-core.js";
 import { updateStreamerImages } from "./streamer.js";
 import { checkLiveStatus } from "./live-status.js";
 import { updateUIForDisconnected } from "./live-status.js";
+// ✅ كتابة حالة الاتصال عبر السياق الموحد user-context.js
+import { setConnectionStatus } from "./user-context.js";
 
 // ============================================================
 // دوال الاتصال بـ TikTok
@@ -50,10 +52,9 @@ function setConnectBtnState(state) {
 }
 
 function setConnectText(text, color) {
-  const el = document.getElementById("connect-text");
-  if (!el) return;
-  el.textContent = t(text);
-  el.style.color = color;
+  // ✅ الكتابة عبر السياق الموحد — نفس الدالة التي تستخدمها
+  // live-status.js وsocket.js فلا تنازع على عنصر الحالة
+  setConnectionStatus(text, color);
 }
 
 async function performDisconnect(silent = false) {
@@ -279,6 +280,36 @@ document.getElementById("send-usertik").addEventListener("click", async (event) 
     if (!__S.connectInProgress) {
       btn.disabled = false;
       btn.style.opacity = "";
+    }
+  }
+});
+
+// ✅ الحاوية الجانبية للبروفايل (الصورة + الاسم + الحالة) قابلة للضغط:
+// غير متصل → بدء الاتصال فوراً بنفس اسم الحساب في حقل الإدخال،
+// متصل أو اتصال جارٍ → الضغطة تُتجاهل لمنع تكرار المحاولات
+document.querySelector(".connected-profile")?.addEventListener("click", async () => {
+  if (__S.isLiveConnected || __S.connectInProgress || __S.connectBtnBusy) return;
+  const username = document.getElementById("user-tiktok").value.trim();
+  if (!username) {
+    showMessage(
+      "<i class='fas fa-triangle-exclamation'></i> الرجاء إدخال اسم المستخدم أولاً",
+    );
+    document.getElementById("user-tiktok")?.focus();
+    return;
+  }
+  __S.lastEnteredUsername = username;
+  await performConnect(username);
+  // الاتصال جارٍ (النتيجة تصل عبر سوكت) — قفل نفس طبقة الحاوية كالزر
+  if (__S.connectInProgress) {
+    const connectProfile = document.getElementById("connect-profile-aside");
+    const connectBtn = document.getElementById("send-usertik");
+    if (connectBtn) {
+      connectBtn.disabled = true;
+      connectBtn.style.opacity = 0.6;
+    }
+    if (connectProfile) {
+      connectProfile.style.pointerEvents = "none";
+      connectProfile.style.opacity = 0.6;
     }
   }
 });

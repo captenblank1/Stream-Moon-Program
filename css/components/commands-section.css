@@ -58,3 +58,11 @@
 .sk-cdrag { display: flex; gap: 5px; justify-content: center; }
 .sk-cb { justify-self: center; }
 .sk-cbtns { display: flex; gap: 7px; justify-content: center; }
+
+/* ✅ أزرار الترتيب (نقل لأعلى/لأسفل) وأيقونة السحب أيقونية فقط —
+   هامش حماية الأيقونات (6px من fontawesome-protection.css) كان يدفع
+   الشيفرون 3px عن منتصف الزر؛ الصفر هنا يعيده لمنتصف الزر تماماً */
+.move-btn i,
+.drag-icon i {
+  margin: 0 !important;
+}

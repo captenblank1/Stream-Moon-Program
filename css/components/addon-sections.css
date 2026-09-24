@@ -89,8 +89,8 @@
 }
 
 /* شرائح التمرير (سرعة/نبرة/صوت) */
+/* ✅ الشكل والعرض الموحد في scrollbar.css — بلا تجاوزات عرض هنا */
 .addon-row input[type="range"] {
-  width: 100%;
   accent-color: var(--primary-color);
   cursor: pointer;
 }
@@ -421,27 +421,40 @@ html[dir="rtl"] .addon-switch input:checked + .addon-slider::before {
   box-shadow: 0 0 0 3px rgba(29, 217, 230, 0.12);
 }
 
-/* ---- شرائح التمرير: مسار متدرج + مقبض مضيء ---- */
-.addon-row input[type="range"] {
-  -webkit-appearance: none;
-  height: 6px;
-  border-radius: 6px;
-  background: linear-gradient(90deg, rgba(29, 217, 230, 0.7), rgba(29, 217, 230, 0.12));
-  cursor: pointer;
+/* ---- شرائح التمرير ---- */
+/* ✅ الشكل والعرض الموحد لكل السلايدرات في scrollbar.css — بلا تجاوزات هنا */
+
+.addon-row output {
+  color: var(--primary-color);
+  font-weight: 700;
 }
-.addon-row input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 17px;
-  height: 17px;
-  border-radius: 50%;
-  background: #fff;
-  border: 3px solid var(--primary-color);
-  box-shadow: 0 0 12px rgba(29, 217, 230, 0.55);
-  cursor: grab;
+
+/* ✅ لافتة سلايدر حديثة موحدة (النبرة/مستوى الصوت للمستخدم المخصص
+   وكل السلايدرات العمودية) — تسمية أعلى والقيمة الحية بارزة */
+.tts-section .uv-range-label,
+.songs-section .uv-range-label {
+  flex: 1 1 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-light);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  padding: 10px 12px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-.addon-row input[type="range"]::-webkit-slider-thumb:active {
-  cursor: grabbing;
-  box-shadow: 0 0 18px rgba(29, 217, 230, 0.8);
+.tts-section .uv-range-label:hover,
+.songs-section .uv-range-label:hover {
+  border-color: rgba(29, 217, 230, 0.35);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+.tts-section .uv-range-label output,
+.songs-section .uv-range-label output {
+  color: var(--primary-color);
+  font-weight: 800;
 }
 
 /* ---- أزرار الأقسام: رفع خفيف + توهج ---- */

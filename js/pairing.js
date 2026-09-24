@@ -158,7 +158,7 @@ document
     if (!code) {
       if (resultDiv) {
         resultDiv.innerHTML =
-          '<i class="fas fa-circle-exclamation"></i> اكتب كود الربط الظاهر في كونسول السيرفر';
+          '<i class="fas fa-circle-exclamation"></i> اكتب streammoon code الظاهر في كونسول السيرفر ثم انسخ الكود هنا';
         resultDiv.style.color = "#f44336";
       }
       return;
